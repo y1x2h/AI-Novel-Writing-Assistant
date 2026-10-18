@@ -17,7 +17,7 @@ import { generateAutoCharacterCastDraft, appendCharacterCastOptionsDraft } from 
 import { NovelCorePipelineService } from "../../services/novel/novelCorePipelineService";
 import {buildDirectorCompletionProfile} from "@ai-novel/shared/types/directorCompletion";
 import { DIRECTOR_ISSUE_POLICY_PRESETS, directorIssuePolicySchema } from "@ai-novel/shared/types/directorIssue";
-import { requireLaunch, modelOptions, bookContractInput, targetVolume, executionWindow } from "./productionInputs";
+import { requireLaunch, modelOptions, planningModelOptions, bookContractInput, targetVolume, executionWindow } from "./productionInputs";
 import { readBatchOutcome } from "./batchOutcome";
 import {readEditedArtifact, resumeBusiness, cancelBusiness} from "./savedContent";
 import {readExistingAssets} from "./existingAssets";
@@ -36,7 +36,7 @@ export function createDirectorProductionOptions(): DirectorNextServiceOptions {
   const contentHash = artifactContentHash;
   const fullVolumeRoutes = createVolumeChapterListStepHandler({volumeService: volumes, inputProvider: async context => {
     const workspace = await volumes.getVolumes(context.contract.novelId, {hydrateCanonical:false});
-    return {...modelOptions(context), workspace, targetVolumeId: targetVolume(context, workspace)};
+    return {...planningModelOptions(context), workspace, targetVolumeId: targetVolume(context, workspace)};
   }, contentHash});
   const routeService = new ChapterRouteWindowService(volumes);
   const productionRoutes = createChapterRouteWindowStepHandler({volumeService: volumes, routeService,
@@ -77,11 +77,11 @@ export function createDirectorProductionOptions(): DirectorNextServiceOptions {
         });
       }
       const workspace = await volumes.getVolumes(context.contract.novelId, {hydrateCanonical:false});
-      return {...modelOptions(context), workspace, targetVolumeId: targetVolume(context, workspace), reuseSaved: Boolean(range)};
+      return {...planningModelOptions(context), workspace, targetVolumeId: targetVolume(context, workspace), reuseSaved: Boolean(range)};
     }, contentHash}),
     volume_chapter_list: context => context.contract.chapterRange ? productionRoutes(context) : fullVolumeRoutes(context),
     chapter_detail_bundle: createChapterDetailBundleStepHandler({volumeService: volumes, inputProvider: async context => {
-      const workspace = await volumes.getVolumes(context.contract.novelId, {hydrateCanonical:false});return {...modelOptions(context), workspace, targets: executionWindow(context, workspace).targets};
+      const workspace = await volumes.getVolumes(context.contract.novelId, {hydrateCanonical:false});return {...planningModelOptions(context), workspace, targets: executionWindow(context, workspace).targets};
     }, resolveIssues: async (_context, reports) => resolveChapterQualityReports(reports), contentHash}),
     execution_contract_sync: createExecutionContractSyncStepHandler({volumeService: {syncVolumeChaptersWithOptions:(novelId,input,options)=>volumes.syncVolumeChaptersWithOptions(novelId,input,{...options,hydrateCanonical:false})}, chapterService: new ChapterService(), inputProvider: async context => {
       const workspace = await volumes.getVolumes(context.contract.novelId, {hydrateCanonical:false});return {workspace, executionRange: executionWindow(context, workspace).executionRange};
