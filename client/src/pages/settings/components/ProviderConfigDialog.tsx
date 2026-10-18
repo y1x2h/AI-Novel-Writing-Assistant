@@ -68,6 +68,7 @@ export default function ProviderConfigDialog({
 }: ProviderConfigDialogProps) {
   const primaryModelLabel = isCreatingCustomProvider ? "默认模型（可选）" : isCustomDialog ? "默认模型" : "模型名称";
   const canSelectListedModels = selectableModels.length > 0;
+  const freeModels = editingConfig?.freeModels ?? [];
   const imageModelOptions = editingConfig?.imageModels ?? [];
   const canSelectImageModels = imageModelOptions.length > 0;
   const modelGuidance = editingConfig?.provider === "deepseek"
@@ -215,7 +216,10 @@ export default function ProviderConfigDialog({
               <SearchableSelect
                 value={form.model}
                 onValueChange={(value) => setForm((prev) => ({ ...prev, model: value }))}
-                options={selectableModels.map((model) => ({ value: model }))}
+                options={selectableModels.map((model) => ({
+                  value: model,
+                  tag: freeModels.includes(model) ? "免费" : undefined,
+                }))}
                 placeholder="选择模型"
                 searchPlaceholder="搜索模型"
                 emptyText="没有可用模型"

@@ -10,6 +10,7 @@ export interface ProviderConfig {
   baseURL: string;
   defaultModel: string;
   models: string[];
+  freeModels?: string[];
   envKey: string;
   envBaseURLKey?: string;
   envModelKey?: string;
@@ -53,10 +54,14 @@ export const PROVIDERS: Record<BuiltinLLMProvider, ProviderConfig> = {
   anthropic: {
     name: "Anthropic",
     baseURL: "https://api.anthropic.com/v1",
-    defaultModel: "claude-3-5-sonnet-20241022",
+    defaultModel: "claude-sonnet-5",
     models: [
-      "claude-3-5-sonnet-20241022",
-      "claude-3-5-haiku-20241022",
+      "claude-sonnet-5",
+      "claude-opus-4-8",
+      "claude-fable-5",
+      "claude-sonnet-4-6",
+      "claude-opus-4-5",
+      "claude-haiku-4-5",
     ],
     envKey: "ANTHROPIC_API_KEY",
     envBaseURLKey: "ANTHROPIC_BASE_URL",
@@ -80,8 +85,8 @@ export const PROVIDERS: Record<BuiltinLLMProvider, ProviderConfig> = {
   kimi: {
     name: "Kimi",
     baseURL: "https://api.moonshot.cn/v1",
-    defaultModel: "moonshot-v1-32k",
-    models: ["moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k", "kimi-latest"],
+    defaultModel: "kimi-k3",
+    models: ["kimi-k3", "moonshot-v1-128k", "moonshot-v1-32k", "moonshot-v1-8k"],
     envKey: "KIMI_API_KEY",
     envBaseURLKey: "KIMI_BASE_URL",
     envModelKey: "KIMI_MODEL",
@@ -106,8 +111,9 @@ export const PROVIDERS: Record<BuiltinLLMProvider, ProviderConfig> = {
   glm: {
     name: "GLM",
     baseURL: "https://open.bigmodel.cn/api/paas/v4",
-    defaultModel: "glm-4.5-air",
-    models: ["glm-4.5-air", "glm-4.5", "glm-4.5-flash", "glm-4-flash-250414"],
+    defaultModel: "glm-5.2",
+    models: ["glm-5.2", "glm-5.3-flash", "glm-4.7-flash", "glm-4.5-air", "glm-4.5", "glm-4.5-flash", "glm-4-flash-250414"],
+    freeModels: ["glm-4.7-flash"],
     envKey: "GLM_API_KEY",
     envBaseURLKey: "GLM_BASE_URL",
     envModelKey: "GLM_MODEL",

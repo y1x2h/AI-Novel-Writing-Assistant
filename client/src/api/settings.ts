@@ -24,6 +24,7 @@ export interface APIKeyStatus {
   currentBaseURL: string;
   currentAuthMode: ProviderAuthMode;
   models: string[];
+  freeModels: string[];
   imageModels: string[];
   defaultModel: string;
   defaultImageModel: string | null;
