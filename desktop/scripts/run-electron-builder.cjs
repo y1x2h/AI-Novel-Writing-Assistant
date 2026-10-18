@@ -7,6 +7,27 @@ const repoRoot = path.resolve(__dirname, "..", "..");
 const desktopDir = path.resolve(__dirname, "..");
 const nsisEnvOverrideName = "AI_NOVEL_EB_NSIS_TEMPLATES_DIR";
 const traversalEnvOverrideName = "AI_NOVEL_EB_FORCE_TRAVERSAL";
+
+function resolveTargetPlatform(argv) {
+  const hasFlag = (...flags) => flags.some((flag) => argv.includes(flag));
+  if (hasFlag("--win", "--windows", "-w")) {
+    return "win";
+  }
+  if (hasFlag("--mac", "--macos", "-m")) {
+    return "mac";
+  }
+  if (hasFlag("--linux", "-l")) {
+    return "linux";
+  }
+  if (process.platform === "win32") {
+    return "win";
+  }
+  if (process.platform === "darwin") {
+    return "mac";
+  }
+  return "linux";
+}
+
 const nsisUtilOriginal = 'exports.nsisTemplatesDir = (0, pathManager_1.getTemplatePath)("nsis");';
 const nsisUtilPatched =
   'exports.nsisTemplatesDir = process.env.AI_NOVEL_EB_NSIS_TEMPLATES_DIR && process.env.AI_NOVEL_EB_NSIS_TEMPLATES_DIR.trim() ? path.resolve(process.env.AI_NOVEL_EB_NSIS_TEMPLATES_DIR.trim()) : (0, pathManager_1.getTemplatePath)("nsis");';
@@ -87,10 +108,24 @@ function firstNonEmpty(...values) {
   return "";
 }
 
-function normalizeBuildEnvironment(sourceEnv, args) {
+function isPublishRequested(args) {
+  const publishFlagIndex = args.indexOf("--publish");
+  if (publishFlagIndex === -1) {
+    return false;
+  }
+
+  const publishMode = args[publishFlagIndex + 1];
+  if (!publishMode || publishMode.startsWith("-")) {
+    return true;
+  }
+
+  return publishMode !== "never";
+}
+
+function normalizeBuildEnvironment(sourceEnv, args, targetPlatform) {
   const env = { ...sourceEnv };
   const releaseChannel = firstNonEmpty(env.AI_NOVEL_RELEASE_CHANNEL, "beta").toLowerCase();
-  const isPublishRequested = args.includes("--publish");
+  const publishRequested = isPublishRequested(args);
   const allowUnsignedRelease =
     firstNonEmpty(
       env.AI_NOVEL_ALLOW_UNSIGNED_RELEASE,
@@ -122,40 +157,48 @@ function normalizeBuildEnvironment(sourceEnv, args) {
   }
 
   const hasSigning = Boolean(signingLink);
-  if (!releaseChannel.startsWith("beta") && !hasSigning && !allowUnsignedRelease) {
+  if (targetPlatform === "win" && !releaseChannel.startsWith("beta") && !hasSigning && !allowUnsignedRelease) {
     throw new Error(
       "Public Windows desktop releases require signing material. Provide CSC_LINK/WIN_CSC_LINK first, or explicitly allow an unsigned release.",
     );
   }
 
-  if (isPublishRequested && !env.GH_TOKEN) {
+  if (publishRequested && !env.GH_TOKEN) {
     throw new Error("GitHub publish requested but no GH_TOKEN/GITHUB_TOKEN was provided.");
   }
 
   console.log(
-    `[dist:desktop] releaseChannel=${releaseChannel} publish=${isPublishRequested ? "yes" : "no"} signing=${hasSigning ? "configured" : allowUnsignedRelease ? "unsigned-opt-in" : "unsigned-beta"}`,
+    `[dist:desktop] target=${targetPlatform} releaseChannel=${releaseChannel} publish=${publishRequested ? "yes" : "no"} signing=${hasSigning ? "configured" : allowUnsignedRelease ? "unsigned-opt-in" : "unsigned-beta"}`,
   );
 
   return env;
 }
 
 function main() {
+  const args = ["--config", "electron-builder.config.cjs", ...process.argv.slice(2)];
+  const targetPlatform = resolveTargetPlatform(process.argv.slice(2));
+  const electronBuilderCli = resolveModule("electron-builder/cli.js");
+  const env = normalizeBuildEnvironment(process.env, args, targetPlatform);
+  const runtimeEnv = { [traversalEnvOverrideName]: "true" };
+
+  // The node-module collection patches apply to every platform; the staged pnpm layout
+  // only resolves correctly when the dependency traversal collector is forced.
   ensurePatchedElectronBuilder();
 
-  const shortNsisTemplatesDir = resolveShortNsisTemplateDir();
-  const electronBuilderCli = resolveModule("electron-builder/cli.js");
-  const args = ["--config", "electron-builder.config.cjs", ...process.argv.slice(2)];
-  const env = normalizeBuildEnvironment(process.env, args);
-
-  console.log(`[dist:desktop] using NSIS templates from ${shortNsisTemplatesDir}`);
+  if (targetPlatform === "win") {
+    const shortNsisTemplatesDir = resolveShortNsisTemplateDir();
+    runtimeEnv[nsisEnvOverrideName] = shortNsisTemplatesDir;
+    console.log(`[dist:desktop] using NSIS templates from ${shortNsisTemplatesDir}`);
+  } else {
+    console.log(`[dist:desktop] target ${targetPlatform}; skipping Windows NSIS preparation.`);
+  }
 
   execFileSync(process.execPath, [electronBuilderCli, ...args], {
     cwd: desktopDir,
     stdio: "inherit",
     env: {
       ...env,
-      [nsisEnvOverrideName]: shortNsisTemplatesDir,
-      [traversalEnvOverrideName]: "true",
+      ...runtimeEnv,
     },
   });
 }

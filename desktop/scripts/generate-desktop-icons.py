@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import io
+import struct
 from pathlib import Path
 from PIL import Image, ImageDraw
 
@@ -8,6 +10,18 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 BUILDER_DIR = REPO_ROOT / "desktop" / "builder"
 PNG_SIZES = [32, 64, 128, 256, 512]
 ICO_SIZES = [(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)]
+MAC_ICON_SIZE = 1024
+# ICNS representation type -> pixel size. Retina @2x slots reuse larger raster sizes.
+ICNS_REPRESENTATIONS = [
+    ("ic11", 32),
+    ("ic12", 64),
+    ("ic07", 128),
+    ("ic13", 256),
+    ("ic08", 256),
+    ("ic14", 512),
+    ("ic09", 512),
+    ("ic10", 1024),
+]
 
 
 def lerp_color(left: tuple[int, int, int], right: tuple[int, int, int], progress: float) -> tuple[int, int, int]:
@@ -105,6 +119,33 @@ def create_brand_icon(size: int) -> Image.Image:
     return canvas
 
 
+def encode_png(image: Image.Image) -> bytes:
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def build_icns(icon_sizes: dict[int, Image.Image]) -> bytes:
+    payloads: list[tuple[str, bytes]] = []
+    for icon_type, size in ICNS_REPRESENTATIONS:
+        image = icon_sizes.get(size)
+        if image is None:
+            continue
+        payloads.append((icon_type, encode_png(image)))
+
+    toc = struct.pack(">I", len(payloads))
+    chunks = bytearray()
+    for icon_type, payload in payloads:
+        chunk_size = len(payload) + 8
+        toc += struct.pack(">4sI", icon_type.encode("ascii"), chunk_size)
+        chunks += struct.pack(">4sI", icon_type.encode("ascii"), chunk_size)
+        chunks += payload
+
+    toc_chunk = struct.pack(">4sI", b"TOC ", len(toc) + 8) + toc
+    body = toc_chunk + bytes(chunks)
+    return struct.pack(">4sI", b"icns", len(body) + 8) + body
+
+
 def main() -> None:
     BUILDER_DIR.mkdir(parents=True, exist_ok=True)
     generated_images: dict[int, Image.Image] = {}
@@ -116,6 +157,13 @@ def main() -> None:
 
     generated_images[512].save(BUILDER_DIR / "app-icon.png")
     generated_images[512].save(BUILDER_DIR / "app-icon.ico", sizes=ICO_SIZES)
+
+    mac_icon = create_brand_icon(MAC_ICON_SIZE)
+    mac_icon.save(BUILDER_DIR / "app-icon-1024.png")
+    mac_icon_sizes = dict(generated_images)
+    mac_icon_sizes[MAC_ICON_SIZE] = mac_icon
+    (BUILDER_DIR / "app-icon.icns").write_bytes(build_icns(mac_icon_sizes))
+
     print(f"Generated desktop icon assets in {BUILDER_DIR}")
 
 

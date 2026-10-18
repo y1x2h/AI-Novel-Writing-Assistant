@@ -7,10 +7,53 @@ const repoRoot = path.resolve(desktopDir, "..");
 const electronBuilderPackageJson = require.resolve("electron-builder/package.json", { paths: [desktopDir] });
 const electronBuilderRequire = createRequire(electronBuilderPackageJson);
 const asar = electronBuilderRequire("@electron/asar");
+
+function resolveTargetPlatform(argv) {
+  const hasFlag = (...flags) => flags.some((flag) => argv.includes(flag));
+  if (hasFlag("--win", "--windows", "-w")) {
+    return "win";
+  }
+  if (hasFlag("--mac", "--macos", "-m")) {
+    return "mac";
+  }
+  if (hasFlag("--linux", "-l")) {
+    return "linux";
+  }
+  if (process.platform === "win32") {
+    return "win";
+  }
+  if (process.platform === "darwin") {
+    return "mac";
+  }
+  return "linux";
+}
+
+const targetPlatform = resolveTargetPlatform(process.argv.slice(2));
+const isMacTarget = targetPlatform === "mac";
 const buildDir = path.join(desktopDir, "build");
 const appDir = path.join(buildDir, "app");
-const unpackedDir = path.join(buildDir, "dist", "win-unpacked");
-const builderWindowIcon = path.join(desktopDir, "builder", "app-icon.ico");
+const unpackedDirNames = isMacTarget
+  ? ["mac-arm64", "mac-universal", "mac"]
+  : ["win-unpacked", "win-arm64-unpacked", "win-ia32-unpacked"];
+const unpackedDir = unpackedDirNames
+  .map((name) => path.join(buildDir, "dist", name))
+  .find((candidate) => fs.existsSync(candidate)) ?? path.join(buildDir, "dist", unpackedDirNames[0]);
+
+function resolveUnpackedResourcesDir() {
+  if (!isMacTarget) {
+    return path.join(unpackedDir, "resources");
+  }
+
+  const appBundle = fs.existsSync(unpackedDir)
+    ? fs.readdirSync(unpackedDir, { withFileTypes: true })
+      .find((entry) => entry.isDirectory() && entry.name.endsWith(".app"))
+    : undefined;
+  const bundleName = appBundle ? appBundle.name : "Biz Novel Studio.app";
+  return path.join(unpackedDir, bundleName, "Contents", "Resources");
+}
+
+const unpackedResourcesDir = resolveUnpackedResourcesDir();
+const builderWindowIcon = path.join(desktopDir, "builder", isMacTarget ? "app-icon.icns" : "app-icon.ico");
 const appPackageJsonPath = path.join(appDir, "package.json");
 const stagedServerEntry = path.join(appDir, "node_modules", "@ai-novel", "server", "dist", "app.js");
 const stagedPrismaRuntimeEntry = path.join(appDir, "node_modules", ".prisma", "client", "default.js");
@@ -28,9 +71,9 @@ const sourceServerSqliteMigrationsDir = path.join(repoRoot, "server", "src", "pr
 const stagedServerSqliteMigrationsDir = path.join(appDir, "node_modules", "@ai-novel", "server", "src", "prisma", "migrations.sqlite");
 const stagedAppUpdateConfig = path.join(buildDir, "resources", "app-update.yml");
 const stagedClientIndex = path.join(buildDir, "resources", "client", "dist", "index.html");
-const unpackedClientIndex = path.join(unpackedDir, "resources", "client", "dist", "index.html");
-const unpackedAppArchive = path.join(unpackedDir, "resources", "app.asar");
-const unpackedWindowIcon = path.join(unpackedDir, "resources", "icons", "app-icon.ico");
+const unpackedClientIndex = path.join(unpackedResourcesDir, "client", "dist", "index.html");
+const unpackedAppArchive = path.join(unpackedResourcesDir, "app.asar");
+const unpackedWindowIcon = path.join(unpackedResourcesDir, "icons", isMacTarget ? "app-icon.png" : "app-icon.ico");
 const stagedRuntimeFile = path.join(appDir, "dist", "runtime", "server.js");
 
 function assertExists(targetPath, description) {
@@ -108,7 +151,10 @@ function main() {
     throw new Error("Desktop updater feed configuration is missing the GitHub provider.");
   }
 
-  const packagedFiles = new Set(asar.listPackage(unpackedAppArchive).map((entry) => entry.replace(/^\\/, "").replace(/\\/g, "/")));
+  // @electron/asar returns archive-relative paths using the host separator (with a leading one).
+  const packagedFiles = new Set(
+    asar.listPackage(unpackedAppArchive).map((entry) => entry.replace(/\\/g, "/").replace(/^\/+/, "")),
+  );
   const packagedEntries = Array.from(packagedFiles);
   const sourceSqliteMigrations = listMigrationNames(sourceServerSqliteMigrationsDir);
   const stagedSqliteMigrations = listMigrationNames(stagedServerSqliteMigrationsDir);
