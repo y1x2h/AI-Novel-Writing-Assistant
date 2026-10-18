@@ -240,6 +240,7 @@ export function buildVolumeChapterListContextBlocks(input: VolumeChapterListProm
           targetChapterStartOrder: input.targetChapterStartOrder,
           targetChapterEndOrder: input.targetChapterEndOrder,
           nextAvailableChapterOrder: input.nextAvailableChapterOrder,
+          beatChapterSlice: input.beatChapterSlice,
         })}`,
       ].join("\n\n"),
     }),

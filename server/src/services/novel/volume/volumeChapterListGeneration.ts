@@ -222,6 +222,23 @@ function isMergedVolumeChapterListComplete(params: {
   });
 }
 
+/**
+ * 单次章节列表调用的最大章数。
+ * 长输出厂商存在输出上限，超过该章数必须拆批，避免结构化 JSON 被截断。
+ */
+const MAX_CHAPTERS_PER_CHAPTER_LIST_CALL = 4;
+
+function summarizeGeneratedBeatChapters(
+  chapters: GeneratedVolumeChapterBlock["chapters"],
+): string {
+  if (chapters.length === 0) {
+    return "none";
+  }
+  return chapters
+    .map((chapter, index) => `第${index + 1}章 ${chapter.title}｜${chapter.summary}`)
+    .join("\n");
+}
+
 async function generateBeatChapterBlock(params: {
   document: VolumePlanDocument;
   workspace: VolumeWorkspace;
@@ -238,66 +255,112 @@ async function generateBeatChapterBlock(params: {
   chapterBudgets: number[];
 }): Promise<GeneratedVolumeChapterBlock> {
   const targetIndex = params.document.volumes.findIndex((volume) => volume.id === params.targetVolume.id);
-  const promptInput = {
-    novel: params.novel,
-    workspace: params.workspace,
-    storyMacroPlan: params.storyMacroPlan,
-    strategyPlan: params.document.strategyPlan,
-    targetVolume: params.targetVolume,
-    targetBeatSheet: params.targetBeatSheet,
-    targetBeat: params.beatPlan.beat,
-    previousBeat: params.previousBeat,
-    nextBeat: params.nextBeat,
-    previousVolume: targetIndex > 0 ? params.document.volumes[targetIndex - 1] : undefined,
-    nextVolume: targetIndex >= 0 && targetIndex < params.document.volumes.length - 1
-      ? params.document.volumes[targetIndex + 1]
-      : undefined,
-    guidance: params.options.guidance,
-    targetBeatChapterCount: params.beatPlan.chapterCount,
-    targetChapterStartOrder: params.beatPlan.chapterStartOrder,
-    targetChapterEndOrder: params.beatPlan.chapterEndOrder,
-    nextAvailableChapterOrder: params.beatPlan.chapterStartOrder,
-    previousBeatChapterSummary: params.previousBeatChapterSummary,
-    preservedBeatChapterSummary: params.preservedBeatChapterSummary,
-  };
-
-  const generated = await runStructuredPrompt({
-    asset: createVolumeChapterListPrompt({
-      targetChapterCount: params.beatPlan.chapterCount,
-      targetBeatKey: params.beatPlan.beat.key,
-      targetBeatLabel: params.beatPlan.beat.label,
-      isBookFinale: isCompactBookFinaleBeat({
-        completionProfile: params.novel.completionProfile,
-        targetVolumeIndex: targetIndex,
-        chapterBudgets: params.chapterBudgets,
-        beatChapterEndOrder: params.beatPlan.chapterEndOrder,
-      }),
-      reservedChapterTitles: params.targetVolume.chapters
-        .filter((chapter) => chapter.beatKey !== params.beatPlan.beat.key)
-        .map((chapter) => chapter.title),
-      characterIds: params.options.entrypoint === "director_next" ? params.novel.characters.map(character => {
-        if (!character.id) throw new Error("角色出场初排缺少角色 ID。");
-        return character.id;
-      }) : undefined,
-    }),
-    promptInput,
-    contextBlocks: buildVolumeChapterListContextBlocks(promptInput),
-    options: {
-      provider: params.options.provider,
-      model: params.options.model,
-      temperature: params.options.temperature ?? 0.35,
-      novelId: params.document.novelId,
-      volumeId: params.targetVolume.id,
-      taskId: params.options.taskId,
-      stage: "structured_outline",
-      itemKey: "chapter_list",
-      scope: "chapter_list",
-      entrypoint: params.options.entrypoint,
-      signal: params.options.signal,
-    },
+  const isBookFinaleBeat = isCompactBookFinaleBeat({
+    completionProfile: params.novel.completionProfile,
+    targetVolumeIndex: targetIndex,
+    chapterBudgets: params.chapterBudgets,
+    beatChapterEndOrder: params.beatPlan.chapterEndOrder,
   });
+  const reservedChapterTitles = params.targetVolume.chapters
+    .filter((chapter) => chapter.beatKey !== params.beatPlan.beat.key)
+    .map((chapter) => chapter.title);
+  const characterIds = params.options.entrypoint === "director_next"
+    ? params.novel.characters.map((character) => {
+      if (!character.id) throw new Error("角色出场初排缺少角色 ID。");
+      return character.id;
+    })
+    : undefined;
 
-  return generated.output;
+  const sliceTotal = Math.max(
+    1,
+    Math.ceil(params.beatPlan.chapterCount / MAX_CHAPTERS_PER_CHAPTER_LIST_CALL),
+  );
+  const mergedChapters: GeneratedVolumeChapterBlock["chapters"] = [];
+
+  for (let sliceIndex = 0; sliceIndex < sliceTotal; sliceIndex += 1) {
+    const sliceOffset = sliceIndex * MAX_CHAPTERS_PER_CHAPTER_LIST_CALL;
+    const sliceChapterCount = Math.min(
+      MAX_CHAPTERS_PER_CHAPTER_LIST_CALL,
+      params.beatPlan.chapterCount - sliceOffset,
+    );
+    const sliceStartOrder = params.beatPlan.chapterStartOrder + sliceOffset;
+    const sliceEndOrder = sliceStartOrder + sliceChapterCount - 1;
+    const isFirstSlice = sliceIndex === 0;
+    const isLastSlice = sliceIndex === sliceTotal - 1;
+    const beatChapterSlice = {
+      index: sliceIndex,
+      total: sliceTotal,
+      isFirst: isFirstSlice,
+      isLast: isLastSlice,
+    };
+
+    const promptInput = {
+      novel: params.novel,
+      workspace: params.workspace,
+      storyMacroPlan: params.storyMacroPlan,
+      strategyPlan: params.document.strategyPlan,
+      targetVolume: params.targetVolume,
+      targetBeatSheet: params.targetBeatSheet,
+      targetBeat: params.beatPlan.beat,
+      previousBeat: params.previousBeat,
+      nextBeat: params.nextBeat,
+      previousVolume: targetIndex > 0 ? params.document.volumes[targetIndex - 1] : undefined,
+      nextVolume: targetIndex >= 0 && targetIndex < params.document.volumes.length - 1
+        ? params.document.volumes[targetIndex + 1]
+        : undefined,
+      guidance: params.options.guidance,
+      targetBeatChapterCount: sliceChapterCount,
+      targetChapterStartOrder: sliceStartOrder,
+      targetChapterEndOrder: sliceEndOrder,
+      nextAvailableChapterOrder: sliceStartOrder,
+      previousBeatChapterSummary: isFirstSlice
+        ? params.previousBeatChapterSummary
+        : [
+          params.previousBeatChapterSummary,
+          `本节奏段已生成章节：\n${summarizeGeneratedBeatChapters(mergedChapters)}`,
+        ].filter((part): part is string => Boolean(part)).join("\n"),
+      preservedBeatChapterSummary: params.preservedBeatChapterSummary,
+      reservedChapterTitles,
+      beatChapterSlice,
+    };
+
+    const generated = await runStructuredPrompt({
+      asset: createVolumeChapterListPrompt({
+        targetChapterCount: sliceChapterCount,
+        targetBeatKey: params.beatPlan.beat.key,
+        targetBeatLabel: params.beatPlan.beat.label,
+        isBookFinale: isBookFinaleBeat && isLastSlice,
+        reservedChapterTitles,
+        beatChapterSlice,
+        characterIds,
+      }),
+      promptInput,
+      contextBlocks: buildVolumeChapterListContextBlocks(promptInput),
+      options: {
+        provider: params.options.provider,
+        model: params.options.model,
+        temperature: params.options.temperature ?? 0.35,
+        novelId: params.document.novelId,
+        volumeId: params.targetVolume.id,
+        taskId: params.options.taskId,
+        stage: "structured_outline",
+        itemKey: "chapter_list",
+        scope: "chapter_list",
+        entrypoint: params.options.entrypoint,
+        signal: params.options.signal,
+      },
+    });
+
+    mergedChapters.push(...generated.output.chapters);
+    reservedChapterTitles.push(...generated.output.chapters.map((chapter) => chapter.title));
+  }
+
+  return {
+    beatKey: params.beatPlan.beat.key,
+    beatLabel: params.beatPlan.beat.label,
+    chapterCount: mergedChapters.length,
+    chapters: mergedChapters,
+  };
 }
 
 export async function generateBeatChunkedChapterList(params: {

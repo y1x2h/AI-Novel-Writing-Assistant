@@ -134,6 +134,24 @@ hard 卷锁定前期承诺、卖点、推进秩序和节奏稳定性；soft 卷�
 
 `single_beat` 生成成功后只校验目标 beat 的局部覆盖，并把该 beat 合并进 `VolumePlanDocument`，保留其他已生成 beat。未生成 beat 可以继续空缺，卷状态使用 `chapter_list_partial:*` 表示本卷拆章尚未全量完成；这不是执行阻断，已经 sync 的章节仍可细化和开写。
 
+### Bounded Chapter List Slices
+
+单个 beat 的章节列表调用有硬性章数上限（`MAX_CHAPTERS_PER_CHAPTER_LIST_CALL = 4`）。超过上限的 beat 会在 `generateBeatChapterBlock` 内拆成多批顺序生成，再合并成一个 beat 块落盘。
+
+背景：`planner` 任务类型路由可能被配置到有固定输出上限的厂商（如 DeepSeek 的 8192）。当输出预算被厂商固有限制收敛后，一个 8-10 章的 beat 一次生成会被截断成不完整 JSON（`[STRUCTURED_OUTPUT:incomplete_json]`），表现为任务长时间无输出或生成失败。
+
+当前规则：
+
+- 拆批只发生在单次结构化调用层，恢复、持久化、标题唯一性和相邻卷校准仍以「一个 beat」为原子单位。某个切片失败会重跑整个 beat，不保存半个 beat。
+- 切片信息必须作为结构化字段 `beatChapterSlice` 进入 `VolumeChapterListPromptInput`，并由 `buildBeatChapterRangeContext` 渲染，不能靠拼接临时字符串提示。
+- `isBookFinale` 只在 beat 的最后一个切片为真；`previousBeatChapterSummary` 在非首批时追加本节奏段已生成章节，`reservedChapterTitles` 在每批结束后追加本批标题，保证跨批标题唯一。
+- 本地章节功能质量门禁的「结尾章必须有兑现或牵引」检查按切片生效：中间批次的结尾章不是本 beat 的结尾，`getChapterFunctionQualityIssue` 会以 `requireBeatEnding: false` 跳过该条。
+
+失败模式：
+
+- 只按章数拆批、不改 prompt：中间批次会按「最后一章必须完成当前 beat 的 mustDeliver」提前兑现收尾，后续批次无内容可写。
+- 把切片信息写进 System 消息：会破坏 V2 资产的前缀稳定性，见 [模型输入缓存](../../prompts/llm-input-cache.md)。
+
 ### Cross-Beat Title Integrity
 
 章节标题唯一性属于整卷的确定性数据完整性规则，而不是只在当前 beat 内展示的质量建议。每次 `single_beat` 生成必须遵守以下边界：

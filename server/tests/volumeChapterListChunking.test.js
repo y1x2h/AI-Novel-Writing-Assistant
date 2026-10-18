@@ -271,7 +271,7 @@ test('V2 saves initial cast schedules in the existing beat calls without a separ
   let calls=0;
   promptRunner.runStructuredPrompt=async({asset,promptInput})=>{
     calls++;
-    assert.equal(asset.version,'v10');
+    assert.equal(asset.version,'v11');
     return {output:asset.outputSchema.parse({beatKey:promptInput.targetBeat.key,beatLabel:promptInput.targetBeat.label,
       chapterCount:promptInput.targetBeatChapterCount,chapters:Array.from({length:promptInput.targetBeatChapterCount},(_,i)=>({
         title:(promptInput.targetBeat.key==='open_hook'?'药铺开门':'医馆封门')+i,summary:'青禾主动选择救治伤者，打破官差追捕的僵局并承担药方暴露的代价。',
@@ -320,6 +320,67 @@ test("single-beat generation rejects a title copied from a completed beat before
       notifyIntermediateDocument: async () => { intermediateDocumentCount += 1; },
     }), /章节标题出现重复：旧开卷一/);
     assert.equal(intermediateDocumentCount, 0);
+  } finally {
+    promptRunner.runStructuredPrompt = originalRunStructuredPrompt;
+  }
+});
+
+test("a beat longer than the single-call limit is generated in bounded slices", async () => {
+  const base = createDocument();
+  const document = buildVolumeWorkspaceDocument({
+    ...base,
+    volumes: [{...base.volumes[0], chapters: []}],
+    beatSheets: [{
+      volumeId: "volume-1",
+      volumeSortOrder: 1,
+      status: "generated",
+      beats: [{
+        key: "long_beat",
+        label: "长节奏段",
+        summary: "持续加压直到局面翻转。",
+        chapterSpanHint: "1-6章",
+        mustDeliver: ["阶段兑现"],
+      }],
+    }],
+  });
+  const titles = ["封锁山门", "暗桩现身", "旧约破裂", "阵眼失守", "反手设局", "血契落定"];
+  const originalRunStructuredPrompt = promptRunner.runStructuredPrompt;
+  const receivedSlices = [];
+  let generatedCount = 0;
+
+  promptRunner.runStructuredPrompt = async ({promptInput}) => {
+    receivedSlices.push(promptInput.beatChapterSlice);
+    const chapterCount = promptInput.targetBeatChapterCount;
+    const chapters = Array.from({length: chapterCount}, (_, index) => ({
+      beatKey: "long_beat",
+      title: titles[generatedCount + index],
+      summary: "主角选择反击并承担代价，迫使对手改变布局。",
+    }));
+    generatedCount += chapterCount;
+    return {output: {beatKey: "long_beat", beatLabel: "长节奏段", chapterCount, chapters}};
+  };
+
+  try {
+    const result = await generateBeatChunkedChapterList({
+      document,
+      novel: {title: "测试小说", estimatedChapterCount: 6, characters: []},
+      workspace: {...document, workspaceVersion: "v2", readiness: {}},
+      storyMacroPlan: null,
+      options: {targetVolumeId: "volume-1", generationMode: "full_volume"},
+      notifyPhase: async () => {},
+    });
+
+    assert.equal(receivedSlices.length, 2);
+    assert.deepEqual(receivedSlices[0], {index: 0, total: 2, isFirst: true, isLast: false});
+    assert.deepEqual(receivedSlices[1], {index: 1, total: 2, isFirst: false, isLast: true});
+    assert.deepEqual(
+      result.mergedDocument.volumes[0].chapters.map((chapter) => chapter.chapterOrder),
+      [1, 2, 3, 4, 5, 6],
+    );
+    assert.deepEqual(
+      result.mergedDocument.volumes[0].chapters.map((chapter) => chapter.beatKey),
+      Array.from({length: 6}, () => "long_beat"),
+    );
   } finally {
     promptRunner.runStructuredPrompt = originalRunStructuredPrompt;
   }

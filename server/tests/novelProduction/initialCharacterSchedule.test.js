@@ -16,7 +16,7 @@ test('V2 chapter split requires a known character schedule while V1 retains its 
   assert.equal(asset.outputSchema.safeParse({...output,chapters:[old]}).success,false);
   assert.deepEqual(asset.outputSchema.parse({...output,chapters:[{...old,plannedCharacterIds:[]}]}).chapters[0].plannedCharacterIds,[]);
   const legacy=createVolumeChapterListPrompt(config);
-  assert.equal(legacy.version,'v9');
+  assert.equal(legacy.version,'v10');
   assert.equal(legacy.outputSchema.safeParse({...output,chapters:[old]}).success,true);
   assert.equal(Object.hasOwn(legacy.outputSchema.parse(output).chapters[0],'plannedCharacterIds'),false);
 });

@@ -2,7 +2,7 @@ import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import type { PromptAsset } from "../../../core/promptTypes";
 import { renderSelectedContextBlocks } from "../../../core/renderContextBlocks";
 import { createVolumeChapterBeatBlockSchema } from "../../../../services/novel/volume/volumeGenerationSchemas";
-import { type VolumeChapterListPromptInput } from "./shared";
+import { type BeatChapterSlice, type VolumeChapterListPromptInput } from "./shared";
 import { buildVolumeChapterListContextBlocks } from "./contextBlocks";
 import { NOVEL_PROMPT_BUDGETS } from "../promptBudgetProfiles";
 import {
@@ -58,12 +58,13 @@ function resolvePromptConfig(
   input:
     | number
     | {
-      targetChapterCount: number;
-      targetBeatKey?: string;
-      targetBeatLabel?: string | null;
-      isBookFinale?: boolean;
-      reservedChapterTitles?: string[];
-      characterIds?: string[];
+        targetChapterCount: number;
+        targetBeatKey?: string;
+        targetBeatLabel?: string | null;
+        isBookFinale?: boolean;
+        reservedChapterTitles?: string[];
+        characterIds?: string[];
+        beatChapterSlice?: BeatChapterSlice | null;
       },
 ): {
   targetChapterCount: number;
@@ -72,6 +73,7 @@ function resolvePromptConfig(
   isBookFinale: boolean;
   reservedChapterTitles: string[];
   characterIds?: string[];
+  beatChapterSlice?: BeatChapterSlice | null;
 } {
   if (typeof input === "number") {
     return {
@@ -90,6 +92,7 @@ function resolvePromptConfig(
     isBookFinale: input.isBookFinale === true,
     reservedChapterTitles: input.reservedChapterTitles ?? [],
     characterIds: input.characterIds,
+    beatChapterSlice: input.beatChapterSlice ?? null,
   };
 }
 
@@ -114,7 +117,9 @@ function getChapterFunctionQualityIssue(
     summary: string;
     beatKey: string;
   }>,
+  options?: {requireBeatEnding?: boolean},
 ): string | null {
+  const requireBeatEnding = options?.requireBeatEnding !== false;
   if (!chapters.length) {
     return "章节列表不能为空。";
   }
@@ -254,7 +259,7 @@ function getChapterFunctionQualityIssue(
     hookPatterns.some((pattern) => pattern.test(lastSummary)) ||
     hookPatterns.some((pattern) => pattern.test(lastTitle));
 
-  if (chapters.length >= 3 && !lastHasPayoffOrHook) {
+  if (requireBeatEnding && chapters.length >= 3 && !lastHasPayoffOrHook) {
     return "结尾章缺少当前 beat 的阶段兑现、明确转向或进入下一 beat 的阅读牵引。";
   }
 
@@ -283,18 +288,30 @@ export function createVolumeChapterListPrompt(
         isBookFinale?: boolean;
         reservedChapterTitles?: string[];
         characterIds?: string[];
+        beatChapterSlice?: BeatChapterSlice | null;
       },
 ): PromptAsset<
   VolumeChapterListPromptInput,
   ReturnType<typeof createVolumeChapterBeatBlockSchema>["_output"]
 > {
-  const { targetChapterCount, targetBeatKey, targetBeatLabel, isBookFinale = false, reservedChapterTitles, characterIds } =
-    resolvePromptConfig(input);
+  const {
+    targetChapterCount,
+    targetBeatKey,
+    targetBeatLabel,
+    isBookFinale = false,
+    reservedChapterTitles,
+    characterIds,
+    beatChapterSlice,
+  } = resolvePromptConfig(input);
   const withSchedule = characterIds !== undefined;
+  const sliceTotal = beatChapterSlice?.total ?? 1;
+  const hasMultipleSlices = sliceTotal > 1;
+  const sliceIndex = beatChapterSlice?.index ?? 0;
+  const isLastSlice = beatChapterSlice?.isLast ?? true;
 
   return {
     id: "novel.volume.chapter_list",
-    version: withSchedule ? "v10" : "v9",
+    version: withSchedule ? "v11" : "v10",
     taskType: "planner",
     mode: "structured",
     language: "zh",
@@ -346,7 +363,9 @@ export function createVolumeChapterListPrompt(
               "12. 摘要必须体现本章造成的局面变化，不得空泛复述标题。",
               isBookFinale
                 ? "13. 全书终章必须完成结局合同，不得创建必须续写的新主线或下一 beat 钩子。"
-                : "13. 最后一章必须完成当前 beat 的 mustDeliver，同时留下阅读牵引，但不得提前兑现下一 beat 的核心事件。",
+                : isLastSlice
+                  ? "13. 最后一章必须完成当前 beat 的 mustDeliver，同时留下阅读牵引，但不得提前兑现下一 beat 的核心事件。"
+                  : "13. 本批是当前 beat 的中间批次，任何一章都不得兑现当前 beat 的 mustDeliver，也不得为本节奏段收束，只需持续推进并留下阅读牵引。",
               "",
               "上一次的 JSON 输出：",
               safeJsonStringify(parsedOutput),
@@ -404,9 +423,13 @@ export function createVolumeChapterListPrompt(
           "3. 连续章节不能承担完全相同的功能，尤其不能连续多章只做调查、讨论、铺垫、等待、意识到或发现。",
           "4. 若目标章数大于等于 5，至少应包含一次局面加压、一次关键发现或判断反转、一次阶段性兑现或明确转向。",
           "5. 关键推进可以占更多章节，过渡章要短促有力，不要为了凑数制造低信息密度章节。",
-          withSchedule ? "6. 若用户指定为全书终章，完成结局合同，不创建新主线；否则兑现当前 beat 的 mustDeliver 并留下阅读牵引，不能偷跑下一 beat。" : isBookFinale
-            ? "6. 全书终章必须完成结局合同中的主冲突、关系变化、核心回报与主题落点，不得留下必须续写的新主线。"
-            : "6. 最后一章必须完成当前 beat 的 mustDeliver，同时留下进入下一 beat 的阅读牵引，但不得提前兑现下一 beat 的核心事件。",
+          withSchedule
+            ? "6. 严格按用户消息给出的批次说明与终章说明执行：收尾批次兑现当前 beat 的 mustDeliver 并留下阅读牵引；中间批次只持续推进加压，不得兑现该 beat，也不得收束该节奏段；全书终章批次完成结局合同，不创建新主线。"
+            : isLastSlice
+              ? isBookFinale
+                ? "6. 全书终章必须完成结局合同中的主冲突、关系变化、核心回报与主题落点，不得留下必须续写的新主线。"
+                : "6. 最后一章必须完成当前 beat 的 mustDeliver，同时留下进入下一 beat 的阅读牵引，但不得提前兑现下一 beat 的核心事件。"
+              : "6. 本批是当前 beat 的中间批次，不得兑现当前 beat 的 mustDeliver，也不得为该节奏段收束；每章只承担持续推进、加压、试探或转折，并留下下一章的阅读牵引。",
           "",
           "五、章节推进质量要求",
           "1. 每章 summary 都要体现核心视角角色的选择、试探、反击、隐忍、交换、布局、揭穿、妥协或承担代价，避免角色只是旁观外部事件。",
@@ -443,9 +466,13 @@ export function createVolumeChapterListPrompt(
           "1. 本次只覆盖当前目标 beat，不得为相邻 beats 生成章节。",
           "2. 开头章节要承接前序已生成章节状态，不能把已经发生的推进重新起一遍。",
           "3. 中段章节要围绕当前 beat 的核心矛盾持续加压、试探、转折或兑现。",
-          withSchedule ? "4. 全书终章完成结局合同，其余节奏段留下阅读牵引但不得偷跑下一 beat。" : isBookFinale
-            ? "4. 全书终章必须完成结局合同，不再要求下一阶段牵引。"
-            : "4. 结尾章节要把当前 beat 的 mustDeliver 落到位，但不要提前偷跑下一 beat 的核心兑现。",
+          withSchedule
+            ? "4. 严格按用户消息给出的批次说明与终章说明处理结尾：收尾批次把当前 beat 的 mustDeliver 落到位且不偷跑下一 beat；中间批次只留阅读牵引，不得兑现该 beat；全书终章批次完成结局合同，不再要求下一阶段牵引。"
+            : isLastSlice
+              ? isBookFinale
+                ? "4. 全书终章必须完成结局合同，不再要求下一阶段牵引。"
+                : "4. 结尾章节要把当前 beat 的 mustDeliver 落到位，但不要提前偷跑下一 beat 的核心兑现。"
+              : "4. 本批是当前 beat 的中间批次，结尾章节只需留下阅读牵引，不得兑现该 beat 的 mustDeliver，也不得偷跑下一 beat。",
           "",
           "九、质量自检要求",
           "1. 输出前在脑内检查：章节数量是否精确、beatKey 是否一致、是否越界、是否有重复功能章。",
@@ -470,6 +497,21 @@ export function createVolumeChapterListPrompt(
           `- chapterCount 与 chapters.length 必须严格等于 ${targetChapterCount}`,
           withSchedule ? "- 每章包含 title、summary、beatKey、plannedCharacterIds，逐章安排现场出场角色 ID" : "- 每章只能包含 title、summary、beatKey",
           ...(withSchedule ? [`- 本次${isBookFinale ? "是" : "不是"}全书终章`] : []),
+          ...(withSchedule
+            ? [
+                hasMultipleSlices
+                  ? `- 本批是当前节奏段的第 ${sliceIndex + 1}/${sliceTotal} 批：${
+                      isLastSlice ? "收尾批次，负责兑现该节奏段的 mustDeliver 并留下牵引" : "中间批次，不得兑现该节奏段的 mustDeliver，也不得收束该节奏段"
+                    }`
+                  : "- 本批覆盖当前节奏段的全部章节，需要完成该节奏段的收束与牵引",
+              ]
+            : hasMultipleSlices
+              ? [
+                  `- 当前节奏段分 ${sliceTotal} 批生成，本批是第 ${sliceIndex + 1} 批${
+                    isLastSlice ? "（收尾批次，负责该节奏段的收束与牵引）" : "（中间批次，不得收束该节奏段，也不得兑现其 mustDeliver）"
+                  }`,
+                ]
+              : []),
           "- 不得生成任何相邻 beat 的章节",
           "- 先在脑内规划章节功能分配与标题骨架配比，再输出完整章节块",
           "- 优先保证章节推进感、节奏承接、标题结构分散、摘要中的角色主动性与结尾牵引",
@@ -526,6 +568,7 @@ export function createVolumeChapterListPrompt(
 
       const chapterFunctionQualityIssue = getChapterFunctionQualityIssue(
         output.chapters,
+        {requireBeatEnding: isLastSlice},
       );
 
       if (chapterFunctionQualityIssue) {
