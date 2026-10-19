@@ -2,7 +2,9 @@ import * as React from "react";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -19,6 +21,7 @@ interface ParsedOption {
   value: string;
   label: React.ReactNode;
   disabled?: boolean;
+  group?: string;
 }
 
 export interface SelectControlProps
@@ -51,7 +54,7 @@ function optionValue(value: unknown, fallback: React.ReactNode): string {
   return "";
 }
 
-function collectOptions(children: React.ReactNode): ParsedOption[] {
+function collectOptions(children: React.ReactNode, group?: string): ParsedOption[] {
   const options: ParsedOption[] = [];
 
   React.Children.forEach(children, (child) => {
@@ -60,7 +63,13 @@ function collectOptions(children: React.ReactNode): ParsedOption[] {
     }
     if (child.type === React.Fragment) {
       const fragment = child as React.ReactElement<{ children?: React.ReactNode }>;
-      options.push(...collectOptions(fragment.props.children));
+      options.push(...collectOptions(fragment.props.children, group));
+      return;
+    }
+    if (child.type === "optgroup") {
+      const optgroup = child as React.ReactElement<{ children?: React.ReactNode; label?: React.ReactNode }>;
+      const label = typeof optgroup.props.label === "string" ? optgroup.props.label : undefined;
+      options.push(...collectOptions(optgroup.props.children, label));
       return;
     }
     if (child.type !== "option") {
@@ -71,6 +80,7 @@ function collectOptions(children: React.ReactNode): ParsedOption[] {
       value: optionValue(props.value, props.children),
       label: props.children,
       disabled: props.disabled,
+      group,
     });
   });
 
@@ -110,6 +120,55 @@ export default function SelectControl({
   );
   const normalizedValue = normalizeValue(value);
   const normalizedDefaultValue = normalizeValue(defaultValue);
+  const items = React.useMemo(() => {
+    const nodes: React.ReactNode[] = [];
+    let groupLabel: string | null = null;
+    let groupIndex = 0;
+    let groupBuffer: React.ReactNode[] = [];
+    const flushGroup = () => {
+      if (groupLabel === null) {
+        return;
+      }
+      const label = groupLabel;
+      nodes.push(
+        <SelectGroup key={`group-${label}-${groupIndex}`}>
+          <SelectLabel>{label}</SelectLabel>
+          {groupBuffer}
+        </SelectGroup>,
+      );
+      groupIndex += 1;
+      groupBuffer = [];
+      groupLabel = null;
+    };
+
+    options.forEach((option, index) => {
+      const itemValue = toSelectControlItemValue(option.value);
+      const item = (
+        <SelectItem
+          key={`${itemValue}-${index}`}
+          value={itemValue}
+          disabled={option.disabled}
+        >
+          {option.label}
+        </SelectItem>
+      );
+
+      if (option.group) {
+        if (groupLabel !== option.group) {
+          flushGroup();
+          groupLabel = option.group;
+        }
+        groupBuffer.push(item);
+        return;
+      }
+
+      flushGroup();
+      nodes.push(item);
+    });
+
+    flushGroup();
+    return nodes;
+  }, [options]);
 
   return (
     <Select
@@ -128,18 +187,7 @@ export default function SelectControl({
         <SelectValue placeholder={placeholder} />
       </SelectTrigger>
       <SelectContent className={contentClassName}>
-        {options.map((option, index) => {
-          const itemValue = toSelectControlItemValue(option.value);
-          return (
-            <SelectItem
-              key={`${itemValue}-${index}`}
-              value={itemValue}
-              disabled={option.disabled}
-            >
-              {option.label}
-            </SelectItem>
-          );
-        })}
+        {items}
       </SelectContent>
     </Select>
   );

@@ -17,10 +17,11 @@ import {
   rebuildBookAnalysis,
   regenerateBookAnalysisSection,
 } from "@/api/bookAnalysis";
-import { getKnowledgeDocument, getKnowledgeDocumentVersionChapters, listKnowledgeDocuments } from "@/api/knowledge";
+import { createKnowledgeDocument, getKnowledgeDocument, getKnowledgeDocumentVersionChapters, listKnowledgeDocuments } from "@/api/knowledge";
 import { exportNovelAsKnowledgeDocument, getNovelList } from "@/api/novel";
 import { queryKeys } from "@/api/queryKeys";
 import { toast } from "@/components/ui/toast";
+import { isTxtFile, readTextFile } from "@/lib/textFile";
 import { useLLMStore } from "@/store/llmStore";
 import type { LLMConfigState } from "../bookAnalysis.types";
 import { createDownload } from "../bookAnalysis.utils";
@@ -461,6 +462,57 @@ export function useBookAnalysisWorkspace(): BookAnalysisWorkspace {
 
   const requestSourceChapters = () => setSourceChaptersRequested(true);
 
+  const importSourceDocumentMutation = useMutation({
+    mutationFn: async (file: File) => {
+      if (!isTxtFile(file)) {
+        throw new Error("目前只支持 .txt 文本文件。");
+      }
+      const content = await readTextFile(file);
+      if (!content.trim()) {
+        throw new Error("这个文件没有可读取的正文，换一个带正文的 .txt 再试。");
+      }
+      return createKnowledgeDocument({ fileName: file.name, content });
+    },
+  });
+
+  const importSourceDocument = async (file: File) => {
+    try {
+      const result = await importSourceDocumentMutation.mutateAsync(file);
+      const documentId = result.data?.id ?? "";
+      if (!documentId) {
+        throw new Error("文档导入后没有拿到标识，请重试。");
+      }
+      await queryClient.invalidateQueries({ queryKey: queryKeys.knowledge.documents("book-analysis-source") });
+      selectDocument(documentId);
+      setSourceChaptersRequested(true);
+      toast.success("已导入这份参考作品，正在读取章节。");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "导入参考作品失败，请重试。");
+    }
+  };
+
+  const importSourceNovelMutation = useMutation({
+    mutationFn: async (novelId: string) => {
+      const response = await exportNovelAsKnowledgeDocument(novelId, { purpose: "reference" });
+      if (!response.data) {
+        throw new Error("小说正文导出失败。");
+      }
+      return response.data;
+    },
+  });
+
+  const importSourceNovel = async (novelId: string) => {
+    try {
+      const document = await importSourceNovelMutation.mutateAsync(novelId);
+      await queryClient.invalidateQueries({ queryKey: queryKeys.knowledge.documents("book-analysis-source") });
+      selectDocument(document.id);
+      setSourceChaptersRequested(true);
+      toast.success("已导出这本小说的正文，正在读取章节。");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "导出小说正文失败，请重试。");
+    }
+  };
+
   const createAnalysis = async () => {
     if (!selectedDocumentId) {
       return;
@@ -576,6 +628,8 @@ export function useBookAnalysisWorkspace(): BookAnalysisWorkspace {
       updateCharacter: charactersState.pending.updateCharacter,
       deleteCharacter: charactersState.pending.deleteCharacter,
       createDiagnosis: createDiagnosisMutation.isPending,
+      importSourceDocument: importSourceDocumentMutation.isPending,
+      importSourceNovel: importSourceNovelMutation.isPending,
     },
     queryState: {
       analysesLoading: analysesQuery.isLoading,
@@ -613,6 +667,8 @@ export function useBookAnalysisWorkspace(): BookAnalysisWorkspace {
     setLlmConfig,
     selectDocument,
     selectVersion,
+    importSourceDocument,
+    importSourceNovel,
     openAnalysis,
     createAnalysis,
     createDiagnosisAnalysis,

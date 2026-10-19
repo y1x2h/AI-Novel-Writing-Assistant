@@ -1281,6 +1281,12 @@ test("NovelExportService exports generated chapters as a knowledge document for 
     assert.match(createdDocuments[0].fileName, /^雪夜旧案-diagnosis-\d{8}-\d{6}\.txt$/);
     assert.match(createdDocuments[0].content, /第1章 雨夜来客/);
     assert.match(createdDocuments[0].content, /同伴隐瞒关键证词/);
+
+    // 拆书页把 App 内小说接进「参考作品」下拉时，用同一导出能力但换掉诊断口径的文案与文件名。
+    await service.exportAsKnowledgeDocument("novel-1", { purpose: "reference" });
+    assert.equal(createdDocuments[1].title, "雪夜旧案（正文导出）");
+    assert.match(createdDocuments[1].fileName, /^雪夜旧案-source-\d{8}-\d{6}\.txt$/);
+    assert.match(createdDocuments[1].content, /第1章 雨夜来客/);
   } finally {
     prisma.novel.findUnique = original.novelFindUnique;
   }
