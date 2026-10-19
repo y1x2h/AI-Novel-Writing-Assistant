@@ -1,5 +1,5 @@
 import { BookOpen, GitBranch, Settings2, Sparkles } from "lucide-react";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import LLMSelector from "@/components/common/LLMSelector";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,8 @@ interface StageModelRunProps {
   onBasicFormChange: (patch: Partial<NovelBasicFormState>) => void;
   canGenerate: boolean;
   isGenerating: boolean;
+  blockedHint?: ReactNode;
+  onBlockedAction?: () => void;
   onBack: () => void;
   onGenerate: () => void;
   issuePolicy?: DirectorIssuePolicy | null;
@@ -34,6 +36,8 @@ export default function StageModelRun({
   onBasicFormChange,
   canGenerate,
   isGenerating,
+  blockedHint,
+  onBlockedAction,
   onBack,
   onGenerate,
   issuePolicy,
@@ -162,9 +166,20 @@ export default function StageModelRun({
 
       <div className="flex flex-col gap-2 pt-2 sm:flex-row sm:justify-between">
         <Button type="button" variant="ghost" onClick={onBack}>返回世界与写法</Button>
-        <Button type="button" onClick={onGenerate} disabled={!canGenerate}>
-          {isGenerating ? "生成中..." : "开始生成方向"}
-        </Button>
+        <div className="flex flex-col items-stretch gap-2 sm:items-end">
+          {blockedHint ? (
+            <div className={`text-xs leading-5 text-muted-foreground ${AUTO_DIRECTOR_MOBILE_CLASSES.wrapText}`}>
+              {blockedHint}
+            </div>
+          ) : null}
+          <Button
+            type="button"
+            onClick={onBlockedAction ?? onGenerate}
+            disabled={!canGenerate && !onBlockedAction}
+          >
+            {isGenerating ? "生成中..." : "开始生成方向"}
+          </Button>
+        </div>
       </div>
     </section>
   );

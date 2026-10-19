@@ -59,6 +59,7 @@ Wiki 不记录单次提交改了什么，也不替代 release notes。它只记�
 - [模型流并发与超时生命周期](./debugging/llm-stream-lifecycle.md)
 - [服务端质量门禁与验证范围](./debugging/server-quality-gate.md)
 - [本地数据与版本控制边界](./debugging/local-data-and-version-control.md)
+- [结构化输出通过、业务层却校验失败（含 zod v4 错误文案陷阱）](./debugging/structured-output-length-and-zod-v4-messages.md)
 
 ### Product
 

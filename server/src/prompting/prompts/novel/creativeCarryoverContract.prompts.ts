@@ -92,6 +92,7 @@ export const creativeCarryoverContractPrompt: PromptAsset<
         "3. openingChapters：恰好 3 项，chapterNumber 为 1、2、3，写出可执行开篇方向。",
         "4. basis：每条依据写清 sectionKey、可用 fieldKeys 与一句话 summary，必须能在给定拆书材料里找到依据。",
         "5. 信息不足时保守归纳，禁止编造拆书里没有的关键事实。",
+        "6. 严格控制篇幅，超长会被截断：列表项每条不超过 200 字，hooks、conflictLoops、payoffRhythm、sourceTraits、bookRealization、finalCharacterStates、unfinishedThreads 各不超过 8 条，basis 不超过 12 条且 summary 不超过 240 字，openingChapters.direction 不超过 280 字，conversionPlan 不超过 400 字。",
       ].join("\n")),
       new HumanMessage([
         `模式：${isContinuation ? "续写原作" : "参考创作新书"}`,

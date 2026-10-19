@@ -39,6 +39,7 @@ import { ReasoningStreamCollector } from "./reasoning";
 import { claimModelRequest, currentModelRequestBudget } from "../platform/llm/retries";
 
 export {
+  normalizeOversizedValues,
   parseStructuredLlmRawContentDetailed,
   shouldUseJsonObjectResponseFormat,
   type StructuredInvokeRawParseInput,

@@ -38,7 +38,7 @@ interface ArrayLengthRepairHint {
 interface RepairHelpers<T> {
   tryParseStructuredJsonValue: (source: string) => { parsed: unknown } | { error: string };
   tryUnwrapSingletonArrayWrapper: (parsed: unknown, schema: ZodType<T>) => { data: T } | null;
-  normalizeOversizedArrays: (
+  normalizeOversizedValues: (
     parsed: unknown,
     error: ZodError,
     schema: ZodType<T>,
@@ -323,7 +323,7 @@ export async function repairWithLlm<T>(
         return unwrapped.data;
       }
 
-      const normalized = helpers.normalizeOversizedArrays(repairParse.parsed, final.error, input.schema);
+      const normalized = helpers.normalizeOversizedValues(repairParse.parsed, final.error, input.schema);
       if (normalized) {
         helpers.logStructuredInvokeEvent({
           event: "repair_normalized",
