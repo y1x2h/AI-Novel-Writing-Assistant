@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import type { useAutoDirectorCreateController } from "./useAutoDirectorCreateController";
 import NovelProductionExperienceHandoff from "../components/NovelProductionExperienceHandoff";
 import OnboardingTip from "@/components/onboarding/OnboardingTip";
+import PlanningComplianceSection from "../compliance/PlanningComplianceSection";
 import { isProductionExperienceChoicePending } from "@/lib/novelRoutes";
 
 type AutoDirectorCreateController = ReturnType<typeof useAutoDirectorCreateController>;
@@ -18,6 +19,8 @@ export default function StageCandidates({
   onRegenerateSettings,
 }: StageCandidatesProps) {
   const directorTask = controller.directorTask;
+  // 方向候选阶段项目尚未建立，只有项目已存在时才能对规划材料做合规预检。
+  const planningNovelId = directorTask?.resumeTarget?.novelId?.trim() ?? "";
   if (
     directorTask
     && isProductionExperienceChoicePending(directorTask)
@@ -45,6 +48,7 @@ export default function StageCandidates({
           isConfirmingAndContinuing={controller.continueMutation.isPending}
           quickRetryLabel="快速重试"
         />
+        {planningNovelId ? <PlanningComplianceSection novelId={planningNovelId} /> : null}
       </section>
     );
   }
@@ -108,6 +112,7 @@ export default function StageCandidates({
         onConfirmCandidate={controller.handleConfirmCandidate}
         onGenerateNext={() => controller.generateMutation.mutate()}
       />
+      {planningNovelId ? <PlanningComplianceSection novelId={planningNovelId} /> : null}
     </section>
   );
 }

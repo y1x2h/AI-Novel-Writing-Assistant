@@ -19,6 +19,7 @@ export const queryKeys = {
     pipelineJob: (id: string, jobId: string) => ["novels", "pipeline", id, jobId] as const,
     qualityReport: (id: string) => ["novels", "quality-report", id] as const,
     simpleShelf: (id: string) => ["novels", id, "simple-shelf"] as const,
+    complianceReport: (id: string) => ["novels", "compliance", id] as const,
     state: (id: string) => ["novels", "state", id] as const,
     latestStateSnapshot: (id: string) => ["novels", "state-snapshots", id, "latest"] as const,
     payoffLedger: (id: string, chapterOrder?: number) => ["novels", "payoff-ledger", id, chapterOrder ?? "latest"] as const,

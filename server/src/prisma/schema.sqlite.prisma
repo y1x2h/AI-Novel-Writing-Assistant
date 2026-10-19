@@ -438,6 +438,7 @@ model Novel {
   sideEffectJobs     NovelSideEffectJob[]
   novelWorld         NovelWorld?
   factEntries        NovelFactEntry[]
+  complianceReports  NovelComplianceReport[]
   intentVersions     NovelIntentVersion[]
   shortStoryPlan     ShortStoryPlan?
   shortStorySegments ShortStorySegment[]
@@ -3570,6 +3571,24 @@ model NovelFactEntry {
 
   @@index([novelId, chapterOrder])
   @@index([novelId, category])
+}
+
+// 合规预检报告：一本书多次预检各留一条，供导出页与创作页复看
+model NovelComplianceReport {
+  id                     String   @id @default(cuid())
+  novelId                String
+  // planning=只检查设定与大纲；full=设定、大纲加已写正文
+  scope                  String   @default("planning")
+  // pass=未发现明显风险；warn=建议改写；block=必须处理
+  level                  String   @default("pass")
+  summary                String?
+  // 本次检查用到的材料摘要，便于判断报告是否过期
+  checkedMaterialSummary String?
+  itemsJson              String   @default("[]")
+  novel                  Novel    @relation(fields: [novelId], references: [id], onDelete: Cascade)
+  createdAt              DateTime @default(now())
+
+  @@index([novelId, createdAt])
 }
 
 // ============================================================

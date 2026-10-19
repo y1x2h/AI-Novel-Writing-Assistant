@@ -37,6 +37,7 @@ import marketRadarRouter from "./modules/marketRadar/http/marketRadarRoutes";
 import novelDirectorRouter from "./services/novel/director/http/novelDirector";
 import creativeCarryoverContractsRouter from "./services/novel/director/http/creativeCarryoverContracts";
 import novelExportRouter from "./modules/export/http/novelExport";
+import novelComplianceRouter from "./modules/novel/compliance/http/novelComplianceRoutes";
 import novelWorkflowsRouter from "./services/novel/director/http/novelWorkflows";
 import promptWorkbenchRouter from "./routes/promptWorkbench";
 import ragRouter from "./routes/rag";
@@ -189,6 +190,7 @@ export function createApp() {
   }
   app.use("/api/novel-workflows", novelWorkflowsRouter);
   app.use("/api/novels", novelExportRouter);
+  app.use("/api/novels", novelComplianceRouter);
   app.use("/api/drama", dramaRouter);
   app.use("/api/comic", comicRouter);
   app.use("/api/market-radar", marketRadarRouter);
