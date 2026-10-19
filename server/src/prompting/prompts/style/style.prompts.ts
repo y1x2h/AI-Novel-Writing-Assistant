@@ -363,7 +363,7 @@ export const styleGenerationPrompt: PromptAsset<StyleGenerationPromptInput, stri
 
 export const styleRewritePrompt: PromptAsset<StyleRewritePromptInput, ChapterPatchRepairPlan> = {
   id: "style.rewrite",
-  version: "v4",
+  version: "v5",
   taskType: "repair",
   mode: "structured",
   language: "zh",
@@ -389,6 +389,11 @@ export const styleRewritePrompt: PromptAsset<StyleRewritePromptInput, ChapterPat
       "5. 不得引入原文没有的新设定、新人物、新冲突或新结论。新增小动作、物件外观、笔迹和布局也属于新增事实，不能为了自然感补造。",
       "6. issuesBlock 中的 suggestion 只表示修改方向，不是可复制文本。禁止直接照抄 suggestion 中的示例句。",
       "",
+      "信息守恒护栏：",
+      "1. 改写前后的数值、时间、金额、数量、专名、否定、条件、人物关系与事件先后必须保持一致。",
+      "2. 只允许减少表达冗余，不允许增加原文没有的信息；新人物、新地点、新物品、新数值、新动机、新线索以及原文没有的额外行动或警示都算新增信息。",
+      "3. 替换内容必须在原文有依据；找不到依据时保留原句或删去概括，不得用新细节占位。",
+      "",
       "修正原则：",
       "1. 优先做最小必要改动，能局部修好就不要整体推翻。",
       "2. 如果问题是写法违规，优先修正句式、措辞、节奏和表达方式，而不是改剧情。",
@@ -413,6 +418,7 @@ export const styleRewritePrompt: PromptAsset<StyleRewritePromptInput, ChapterPat
       "4. 是否没有照抄 suggestion 中的示例句。",
       "5. 每个替换细节是否有原文依据；例如把账册概括换成页脚铅笔字、指印或折回执动作会虚构事实。无依据时删去概括，不能用新细节占位。",
       "6. 是否只输出补丁 JSON，数字、时间、专名、否定和信息先后保持不变。",
+      "7. 把改写结果与对应原句逐项对照，信息只能减少冗余，不能增加原文没有的内容。",
     ].join("\n\n")),
     new HumanMessage([
       "原文：",

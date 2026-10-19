@@ -29,6 +29,21 @@ export const styleDetectionPayloadSchema = z.object({
   canAutoRewrite: z.boolean().optional().default(false),
 });
 
+export const styleRewriteConservationFindingSchema = z.object({
+  direction: z.enum(["added", "lost"]),
+  kind: z.enum(["number", "entity", "action", "relation", "order", "negation", "other"]),
+  detail: z.string().trim().min(1).max(200),
+  evidence: z.string().trim().max(300).optional().default(""),
+});
+
+export const styleRewriteConservationSchema = z.object({
+  status: z.enum(["preserved", "changed", "uncertain"]),
+  changes: z.array(styleRewriteConservationFindingSchema).max(20).optional().default([]),
+  reason: z.string().trim().min(1).max(600),
+});
+
+export type StyleRewriteConservationOutput = z.infer<typeof styleRewriteConservationSchema>;
+
 export const styleRecommendationSchema = z.object({
   summary: z.string().trim().min(1),
   candidates: z.array(z.object({

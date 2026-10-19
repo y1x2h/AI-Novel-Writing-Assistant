@@ -5,17 +5,22 @@ const shared = require('../../../shared/dist/types/styleEngine.js');
 const protection = require('../../dist/services/styleEngine/rewrite');
 const original = '张三缓缓打开木门，等李四进屋。';
 const violation = { layer: 'surface', ruleName: '动作堆叠', canAutoRewrite: true, excerpt: '张三缓缓打开木门，', suggestion: '删去副词' };
-function fixture(violations, patch = {}) {
+function fixture(violations, patch = {}, conservation = { status: 'preserved', reason: '只改变表达' }) {
   const requests = [];
   let checks = 0;
   const { StyleRewriteService } = loadRuntimeSource('../../styleEngine/StyleRewriteService.ts', {
     '@ai-novel/shared/types/styleEngine': shared,
     '../../prompting/core/promptRunner': { runStructuredPrompt: async request => {
       requests.push(request);
+      if (request.promptInput.originalContent !== undefined) {
+        return { output: { ...conservation, changes: conservation.status === 'changed'
+          ? [{ direction: 'added', kind: 'entity', detail: '新增了原文没有的人物', evidence: '王五' }] : [] } };
+      }
       return { output: { strategy: 'patch_first', summary: '修一处', requiresFullRewrite: false,
         patches: [{ id: 'p', targetExcerpt: violation.excerpt, replacement: '张三打开木门，', reason: '减少副词', issueIds: ['style:1'], ...patch }] } };
     } },
     '../../prompting/prompts/style/style.prompts': { styleRewritePrompt: {} },
+    '../../prompting/prompts/style/styleRewriteConservation.prompts': { styleRewriteConservationPrompt: { id: 'style.rewrite.conservation' } },
     './styleContractText': { buildWriterStyleContractText: () => '写法合同' },
     './StyleRuntimeResolver': { StyleRuntimeResolver: class { async resolve() { return { antiAiRules: [], context: {} }; } } },
     './antiAiPreviewRules': { buildAntiAiRuleDirectiveText: () => '', listPreviewAntiAiRules: async () => [] },
@@ -29,10 +34,19 @@ test('manual service recomputes authority, uses structured patches and never cop
   const h = fixture([violation]);
   const result = await h.instance.rewrite(input);
   assert.equal(h.checks, 1);
-  assert.equal(h.requests.length, 1);
+  assert.equal(h.requests.length, 2);
   assert.equal(result.content, '张三打开木门，等李四进屋。');
   assert.ok(!h.requests[0].promptInput.issuesBlock.includes('忽略规则'));
-  assert.equal(result.rewriteGuard.checks.at(-1).status, 'not_checked');
+  assert.equal(h.requests[1].promptInput.originalContent, original);
+  assert.deepEqual(h.requests[1].promptInput.changes, [{ original: violation.excerpt, replacement: '张三打开木门，' }]);
+  assert.equal(result.rewriteGuard.checks.at(-1).status, 'passed');
+});
+test('rewrite that adds or loses information retains the original draft', async () => {
+  const h = fixture([violation], {}, { status: 'changed', reason: '改写新增了原文没有的人物' });
+  const result = await h.instance.rewrite(input);
+  assert.equal(result.content, original);
+  assert.equal(result.rewriteGuard.checks.at(-1).status, 'blocked');
+  assert.match(result.rewriteGuard.checks.at(-1).reason, /改写增删了原文信息/);
 });
 test('manual request cannot bypass narrative, legacy or instance rewrite refusals', async () => {
   for (const item of [{ ...violation, layer: 'narrative' }, { ...violation, layer: undefined }, { ...violation, canAutoRewrite: false }]) {
@@ -52,7 +66,7 @@ test('first direct preview detects once and selects only authoritative automatic
   const h = fixture([violation, { ...violation, layer: 'narrative', ruleName: '主题收束' }]);
   const result = await h.instance.rewrite({ ...input, issues: [] });
   assert.equal(h.checks, 1);
-  assert.equal(h.requests.length, 1);
+  assert.equal(h.requests.length, 2);
   assert.equal(result.report.violations.length, 2);
   assert.equal(JSON.parse(h.requests[0].promptInput.issuesBlock).length, 1);
 });
