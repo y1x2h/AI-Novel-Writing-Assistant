@@ -80,6 +80,30 @@ export const stylePresetSchema = z.object({
   })),
 }).passthrough();
 
+export const styleFeatureVerificationItemSchema = z.object({
+  featureId: z.string().trim().min(1),
+  crossSource: z.object({
+    passed: z.boolean(),
+    sampleIndexes: z.array(z.number().int().min(1).max(200)).max(24).optional().default([]),
+    evidence: z.string().trim().max(300).optional().default(""),
+  }),
+  predictive: z.object({
+    passed: z.boolean(),
+    reason: z.string().trim().min(1).max(300),
+  }),
+  exclusive: z.object({
+    passed: z.boolean(),
+    reason: z.string().trim().min(1).max(300),
+  }),
+  reason: z.string().trim().min(1).max(400),
+});
+
+export const styleFeatureVerificationSchema = z.object({
+  items: z.array(styleFeatureVerificationItemSchema).min(1),
+});
+
+export type StyleFeatureVerificationOutput = z.infer<typeof styleFeatureVerificationSchema>;
+
 export const styleProfileExtractionSchema = z.object({
   name: z.string().trim().optional(),
   description: z.string().trim().optional().nullable(),

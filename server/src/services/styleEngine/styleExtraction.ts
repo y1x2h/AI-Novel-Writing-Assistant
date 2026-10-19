@@ -2,6 +2,7 @@ import type {
   StyleExtractionDraft,
   StyleExtractionFeature,
   StyleExtractionFeatureGroup,
+  StyleExtractionFeatureVerification,
   StyleProfileFeature,
   StyleExtractionPreset,
   StyleFeatureDecision,
@@ -10,6 +11,7 @@ import type {
 } from "@ai-novel/shared/types/styleEngine";
 import {
   buildStyleRuleSetFromFeatures,
+  decideStyleFeatureDecision,
   hasStyleRulePatchContent,
   resolveStyleFeatureRulePatch,
 } from "@ai-novel/shared/types/styleEngine";
@@ -65,6 +67,38 @@ function normalizeRulePatch(value: unknown): StyleRulePatch {
   };
 }
 
+function normalizeVerificationFlag(value: unknown): { passed: boolean; reason: string } {
+  const record = asRecord(value);
+  return {
+    passed: record?.passed === true,
+    reason: normalizeText(record?.reason),
+  };
+}
+
+function normalizeFeatureVerification(raw: unknown): StyleExtractionFeatureVerification | null {
+  const record = asRecord(raw);
+  const crossSource = asRecord(record?.crossSource);
+  if (!record || !crossSource || typeof crossSource.passed !== "boolean") {
+    return null;
+  }
+  const predictive = normalizeVerificationFlag(record.predictive);
+  const exclusive = normalizeVerificationFlag(record.exclusive);
+  return {
+    crossSource: {
+      passed: crossSource.passed,
+      sampleIndexes: Array.isArray(crossSource.sampleIndexes)
+        ? crossSource.sampleIndexes.filter((item): item is number => typeof item === "number" && Number.isInteger(item) && item > 0)
+        : [],
+      evidence: normalizeText(crossSource.evidence),
+    },
+    predictive,
+    exclusive,
+    reason: normalizeText(record.reason),
+    verifiedAt: normalizeText(record.verifiedAt),
+    sourceHash: normalizeText(record.sourceHash),
+  };
+}
+
 function normalizeFeature(raw: unknown, index: number): StyleExtractionFeature | null {
   const record = asRecord(raw);
   if (!record) {
@@ -96,6 +130,7 @@ function normalizeFeature(raw: unknown, index: number): StyleExtractionFeature |
       weakenRulePatch: normalizeRulePatch(record.weakenRulePatch ?? record.weakenPatch ?? record.softRulePatch),
     }),
     weakenRulePatch: normalizeRulePatch(record.weakenRulePatch ?? record.weakenPatch ?? record.softRulePatch),
+    verification: normalizeFeatureVerification(record.verification),
   };
 }
 
@@ -117,30 +152,7 @@ function normalizeProfileFeature(raw: unknown, index: number): StyleProfileFeatu
 }
 
 function decideFeatureDecision(feature: StyleExtractionFeature, presetKey: PresetKey): StyleFeatureDecision {
-  if (presetKey === "imitate") {
-    if (feature.imitationValue >= 0.45 || feature.importance >= 0.7) {
-      return "keep";
-    }
-    return feature.fingerprintRisk >= 0.8 ? "weaken" : "keep";
-  }
-
-  if (presetKey === "transfer") {
-    if (feature.transferability >= 0.7 && feature.fingerprintRisk <= 0.55) {
-      return "keep";
-    }
-    if (feature.transferability >= 0.45 && feature.fingerprintRisk <= 0.75) {
-      return "weaken";
-    }
-    return "remove";
-  }
-
-  if (feature.fingerprintRisk >= 0.8 && feature.transferability < 0.5) {
-    return "remove";
-  }
-  if (feature.fingerprintRisk >= 0.55 || feature.transferability < 0.55) {
-    return "weaken";
-  }
-  return "keep";
+  return decideStyleFeatureDecision(feature, presetKey);
 }
 
 function buildFallbackPreset(features: StyleExtractionFeature[], presetKey: PresetKey): StyleExtractionPreset {

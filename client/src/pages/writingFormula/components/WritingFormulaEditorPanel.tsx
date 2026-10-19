@@ -364,6 +364,31 @@ export default function WritingFormulaEditorPanel(props: WritingFormulaEditorPan
                                 指纹风险 {formatScorePercent(feature.fingerprintRisk)}
                               </span>
                             </span>
+                            {feature.verification ? (
+                              <span className="mt-2 block">
+                                <span className="flex flex-wrap gap-2">
+                                  {([
+                                    ["跨源出现", feature.verification.crossSource.passed],
+                                    ["有预测力", feature.verification.predictive.passed],
+                                    ["有排他性", feature.verification.exclusive.passed],
+                                  ] as const).map(([label, passed]) => (
+                                    <span
+                                      key={`${feature.id}-${label}`}
+                                      className={`rounded-lg px-2 py-1 text-[11px] font-medium ${passed ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}
+                                    >
+                                      {label} {passed ? "通过" : "未通过"}
+                                    </span>
+                                  ))}
+                                </span>
+                                <span className="mt-1 block text-[11px] leading-5 text-muted-foreground">
+                                  {feature.verification.reason}
+                                </span>
+                              </span>
+                            ) : (
+                              <span className="mt-2 block text-[11px] leading-5 text-muted-foreground">
+                                特征验证未完成，当前按提取结论保留
+                              </span>
+                            )}
                             <span className="mt-2 flex flex-wrap gap-2">
                               {listRulePatchSections(feature.keepRulePatch).length > 0 ? (
                                 listRulePatchSections(feature.keepRulePatch).map((label) => (
