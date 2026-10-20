@@ -463,6 +463,10 @@ export class DefaultNovelApplicationServices {
     return this.chapterEditorService.previewAiRevision(...args);
   }
 
+  previewChapterSceneDirected(...args: Parameters<NovelChapterEditorService["previewSceneDirectedRevision"]>) {
+    return this.chapterEditorService.previewSceneDirectedRevision(...args);
+  }
+
   previewChapterCursorContinuation(...args: Parameters<NovelChapterEditorService["previewCursorContinuation"]>) {
     return this.chapterEditorService.previewCursorContinuation(...args);
   }

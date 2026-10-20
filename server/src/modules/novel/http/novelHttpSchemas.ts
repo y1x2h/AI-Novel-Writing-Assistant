@@ -493,6 +493,34 @@ export const rewritePreviewSchema = z.object({
   temperature: z.number().min(0).max(2).optional(),
 });
 
+export const sceneDirectedPreviewSchema = z.object({
+  intent: z.enum(["flashback", "fight", "trap", "tension_beat", "exposition", "improvise"]),
+  sceneGoal: z.string().trim().max(800).optional().default(""),
+  scope: z.enum(["selection", "chapter"]),
+  contentSnapshot: z.string(),
+  targetRange: z.object({
+    from: z.number().int().min(0),
+    to: z.number().int().min(1),
+    text: z.string().trim().min(1),
+  }).refine((value) => value.to > value.from, {
+    message: "选区结束位置必须大于开始位置。",
+    path: ["to"],
+  }).optional(),
+  context: z.object({
+    beforeParagraphs: z.array(z.string()).max(3),
+    afterParagraphs: z.array(z.string()).max(2),
+  }).optional(),
+  constraints: z.object({
+    keepFacts: z.boolean(),
+    keepPov: z.boolean(),
+    noUnauthorizedSetting: z.boolean(),
+    preserveCoreInfo: z.boolean(),
+  }),
+  provider: llmProviderSchema.optional(),
+  model: z.string().trim().max(120).optional(),
+  temperature: z.number().min(0).max(2).optional(),
+});
+
 export const aiRevisionPreviewSchema = z.object({
   source: z.enum(["preset", "freeform"]),
   scope: z.enum(["selection", "chapter"]),

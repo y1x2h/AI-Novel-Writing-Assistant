@@ -9,6 +9,8 @@ import type {
   ChapterEditorOperation,
   ChapterEditorRecommendedTask,
   ChapterEditorRevisionScope,
+  ChapterEditorSceneDirectedRequest,
+  ChapterEditorSceneIntent,
   ChapterEditorTargetRange,
   ChapterEditorWorkspaceResponse,
 } from "@ai-novel/shared/types/novel";
@@ -19,7 +21,7 @@ import {
   type ChapterQualityDebtDetails,
 } from "@ai-novel/shared/types/chapterQualityLoop";
 import { AlertTriangle, Loader2 } from "lucide-react";
-import { createNovelSnapshot, previewChapterAiRevision, previewChapterCursorContinuation, resolveChapterAuditIssue, reviewNovelChapter, updateNovelChapter } from "@/api/novel";
+import { createNovelSnapshot, previewChapterAiRevision, previewChapterCursorContinuation, previewChapterSceneDirected, resolveChapterAuditIssue, reviewNovelChapter, updateNovelChapter } from "@/api/novel";
 import { queryKeys } from "@/api/queryKeys";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
@@ -36,6 +38,7 @@ import type {
 import {
   CHAPTER_EDITOR_CURSOR_OPERATION_LABELS,
   CHAPTER_EDITOR_OPERATION_LABELS,
+  CHAPTER_EDITOR_SCENE_INTENT_LABELS,
   buildAiRevisionRequest,
   countEditorWords,
   getSaveStatusLabel,
@@ -114,6 +117,7 @@ export default function ChapterEditorShell(props: ChapterEditorShellProps) {
   const lastPreviewRequestRef = useRef<ReturnType<typeof buildAiRevisionRequest> | null>(null);
   const lastPreviewDiagnosticRef = useRef<ChapterEditorDiagnosticCard | undefined>(undefined);
   const lastContinuationRequestRef = useRef<ChapterEditorCursorContinuationRequest | null>(null);
+  const lastSceneRequestRef = useRef<ChapterEditorSceneDirectedRequest | null>(null);
   const qualityDebtDetails = useMemo(
     () => readChapterQualityDebtDetails(chapter?.riskFlags),
     [chapter?.riskFlags],
@@ -125,6 +129,8 @@ export default function ChapterEditorShell(props: ChapterEditorShellProps) {
   const [session, setSession] = useState<ChapterEditorSessionState>(EMPTY_SESSION);
   const [revisionScope, setRevisionScope] = useState<ChapterEditorRevisionScope>("selection");
   const [revisionInstruction, setRevisionInstruction] = useState("");
+  const [sceneIntent, setSceneIntent] = useState<ChapterEditorSceneIntent>("improvise");
+  const [sceneGoal, setSceneGoal] = useState("");
   const [selectedDiagnosticId, setSelectedDiagnosticId] = useState<string | null>(null);
   const [focusRequestKey, setFocusRequestKey] = useState(0);
   const [isVersionDrawerOpen, setIsVersionDrawerOpen] = useState(false);
@@ -150,6 +156,7 @@ export default function ChapterEditorShell(props: ChapterEditorShellProps) {
     lastPreviewDiagnosticRef.current = undefined;
     setFocusRequestKey(0);
     lastContinuationRequestRef.current = null;
+    lastSceneRequestRef.current = null;
   }, [chapter?.id]);
 
   useEffect(() => {
@@ -428,13 +435,75 @@ export default function ChapterEditorShell(props: ChapterEditorShellProps) {
     },
   });
 
+  const sceneMutation = useMutation({
+    mutationFn: async (request: ChapterEditorSceneDirectedRequest) => {
+      if (!chapter) {
+        throw new Error("当前未选中章节。");
+      }
+      return previewChapterSceneDirected(novelId, chapter.id, request);
+    },
+    onMutate: (request) => {
+      lastSceneRequestRef.current = request;
+      setSession((current) => ({
+        ...current,
+        mode: "scene",
+        diagnosticCard: undefined,
+        status: "loading",
+        requestLabel: `正在生成场景：${CHAPTER_EDITOR_SCENE_INTENT_LABELS[request.intent]}`,
+        sceneIntent: request.intent,
+        sceneGoal: request.sceneGoal,
+        scope: request.scope,
+        targetRange: request.targetRange ?? {
+          from: 0,
+          to: contentDraft.length,
+          text: contentDraft,
+        },
+        candidates: [],
+        activeCandidateId: null,
+        errorMessage: undefined,
+      }));
+    },
+    onSuccess: (response) => {
+      const data = response.data;
+      if (!data) {
+        setSession((current) => ({
+          ...current,
+          status: "error",
+          errorMessage: "AI 未返回场景结果，请重试。",
+        }));
+        return;
+      }
+      setSession((current) => ({
+        ...current,
+        ...data,
+        mode: "scene",
+        sceneIntent: data.intent,
+        status: "ready",
+        viewMode: "block",
+        activeCandidateId: data.activeCandidateId ?? data.candidates[0]?.id ?? null,
+        errorMessage: undefined,
+      }));
+      setSelection(null);
+    },
+    onError: (error) => {
+      setSession((current) => ({
+        ...current,
+        status: "error",
+        errorMessage: error instanceof Error ? error.message : "AI 生成场景失败，请重试。",
+      }));
+    },
+  });
+
   const review = useCandidateReview(session.sessionId ?? "", session.targetRange?.text ?? "", activeCandidate);
   const acceptMutation = useCandidateAcceptance({
     novelId, chapter, session, candidate: activeCandidate,
     selectedChangeIds: review.selectedChangeIds,
     content: contentDraft,
     sourceSnapshot: session.mode === "continuation"
-      ? lastContinuationRequestRef.current?.contentSnapshot : lastPreviewRequestRef.current?.contentSnapshot,
+      ? lastContinuationRequestRef.current?.contentSnapshot
+      : session.mode === "scene"
+        ? lastSceneRequestRef.current?.contentSnapshot
+        : lastPreviewRequestRef.current?.contentSnapshot,
     savedUpdatedAt: draft.savedUpdatedAt,
     savedContent: draft.savedContent,
     acknowledgeSave: draft.acknowledgeSave,
@@ -476,6 +545,7 @@ export default function ChapterEditorShell(props: ChapterEditorShellProps) {
   });
 
   const isBusy = saveMutation.isPending || previewMutation.isPending || continuationMutation.isPending
+    || sceneMutation.isPending
     || acceptMutation.isPending || reviewMutation.isPending || resolveDiagnosticMutation.isPending;
   useEffect(() => {
     props.onEditingStateChange?.({ isDirty, isBusy, hasCandidate: session.status === "ready" });
@@ -609,9 +679,45 @@ export default function ChapterEditorShell(props: ChapterEditorShellProps) {
     continuationMutation.mutate(request);
   };
 
+  const handleRunSceneDirected = () => {
+    if (isBusy || session.status !== "idle") {
+      toast.error("请先完成或拒绝当前候选，再生成场景。");
+      return;
+    }
+    const scope: ChapterEditorRevisionScope = revisionScope;
+    const resolvedSelection = scope === "selection" ? getSelectionTarget() : null;
+    if (scope === "selection" && !resolvedSelection) {
+      toast.error("请先选中正文片段，再生成场景。");
+      return;
+    }
+    const request: ChapterEditorSceneDirectedRequest = {
+      intent: sceneIntent,
+      sceneGoal: sceneGoal.trim(),
+      scope,
+      contentSnapshot: contentDraft,
+      targetRange: scope === "selection" && resolvedSelection
+        ? { from: resolvedSelection.from, to: resolvedSelection.to, text: resolvedSelection.text }
+        : undefined,
+      constraints: {
+        keepFacts: true,
+        keepPov: true,
+        noUnauthorizedSetting: true,
+        preserveCoreInfo: true,
+      },
+      provider: llm.provider,
+      model: llm.model,
+      temperature: llm.temperature,
+    };
+    sceneMutation.mutate(request);
+  };
+
   const handleRegenerate = () => {
     if (session.mode === "continuation" && lastContinuationRequestRef.current) {
       continuationMutation.mutate(lastContinuationRequestRef.current);
+      return;
+    }
+    if (session.mode === "scene" && lastSceneRequestRef.current) {
+      sceneMutation.mutate(lastSceneRequestRef.current);
       return;
     }
     if (!lastPreviewRequestRef.current) {
@@ -813,6 +919,11 @@ export default function ChapterEditorShell(props: ChapterEditorShellProps) {
               revisionInstruction={revisionInstruction}
               canRunSelectionRevision={canRunSelectionRevision}
               isGenerating={isBusy}
+              sceneIntent={sceneIntent}
+              sceneGoal={sceneGoal}
+              onSceneIntentChange={setSceneIntent}
+              onSceneGoalChange={setSceneGoal}
+              onRunSceneDirected={handleRunSceneDirected}
               isApplying={acceptMutation.isPending}
               onInstructionChange={setRevisionInstruction}
               onScopeChange={(scope) => {

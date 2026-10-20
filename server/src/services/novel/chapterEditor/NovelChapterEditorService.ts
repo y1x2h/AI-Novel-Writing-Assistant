@@ -11,6 +11,9 @@ import type {
   ChapterEditorOperation,
   ChapterEditorRewritePreviewRequest,
   ChapterEditorRewritePreviewResponse,
+  ChapterEditorSceneDirectedRequest,
+  ChapterEditorSceneDirectedResponse,
+  ChapterEditorSceneIntent,
   ChapterEditorTargetRange,
 } from "@ai-novel/shared/types/novel";
 import { runStructuredPrompt } from "../../../prompting/core/promptRunner";
@@ -26,6 +29,10 @@ import {
   chapterEditorContinuationPreviewPrompt,
   type ChapterEditorContinuationPromptInput,
 } from "../../../prompting/prompts/novel/chapterEditor/continuePreview.prompts";
+import {
+  chapterEditorSceneDirectedPrompt,
+  type ChapterEditorSceneDirectedPromptInput,
+} from "../../../prompting/prompts/novel/chapterEditor/sceneDirected.prompts";
 import { buildChapterEditorDiffChunks } from "./chapterEditorDiff";
 import { ChapterEditorWorkspaceService } from "./ChapterEditorWorkspaceService";
 import {
@@ -57,6 +64,15 @@ const CURSOR_OPERATION_LABELS: Record<ChapterEditorCursorOperation, string> = {
   description: "增加环境描写",
   inner_thought: "增加心理描写",
   conflict: "推进冲突",
+};
+
+const SCENE_INTENT_LABELS: Record<ChapterEditorSceneIntent, string> = {
+  flashback: "闪回",
+  fight: "打斗",
+  trap: "陷阱",
+  tension_beat: "张力节拍",
+  exposition: "说明",
+  improvise: "即兴",
 };
 
 function buildConstraintsText(input: ChapterEditorAiRevisionRequest["constraints"]): string {
@@ -234,6 +250,76 @@ export class NovelChapterEditorService {
       targetRange: response.targetRange,
       candidates: response.candidates,
       activeCandidateId: response.activeCandidateId,
+    };
+  }
+
+  async previewSceneDirectedRevision(
+    novelId: string,
+    chapterId: string,
+    input: ChapterEditorSceneDirectedRequest,
+  ): Promise<ChapterEditorSceneDirectedResponse> {
+    const context = await this.workspaceService.loadContext(novelId, chapterId);
+    const content = normalizeChapterContent(input.contentSnapshot ?? context.chapter.content ?? "");
+    if (!content.trim()) {
+      throw new Error("当前章节正文为空，无法生成场景。请先写下至少一段正文。");
+    }
+
+    const targetRange = input.scope === "chapter"
+      ? createTargetRangeForWholeChapter(content)
+      : resolveSelectionTargetRange(content, input.targetRange);
+
+    const contextWindow = input.scope === "selection"
+      ? input.context ?? buildParagraphWindow(content, targetRange)
+      : { beforeParagraphs: [], afterParagraphs: [] };
+
+    const result = await this.promptRunner({
+      asset: chapterEditorSceneDirectedPrompt,
+      promptInput: {
+        intentLabel: SCENE_INTENT_LABELS[input.intent],
+        sceneGoal: input.sceneGoal?.trim() ?? "",
+        scope: input.scope,
+        selectedText: targetRange.text,
+        beforeParagraphs: contextWindow.beforeParagraphs,
+        afterParagraphs: contextWindow.afterParagraphs,
+        goalSummary: context.chapterPlan?.objective?.trim() || context.chapter.expectation?.trim() || null,
+        chapterSummary: context.chapterSummary,
+        styleSummary: context.styleSummary || null,
+        characterStateSummary: buildCharacterStateSummary(context.latestStateSnapshot),
+        worldConstraintSummary: context.macroContext.worldConstraintSummary,
+        macroContextSummary: buildMacroContextSummary(context.macroContext),
+        constraintsText: buildConstraintsText(input.constraints),
+      } satisfies ChapterEditorSceneDirectedPromptInput,
+      options: {
+        provider: input.provider ?? "deepseek",
+        model: input.model,
+        temperature: input.temperature ?? 0.6,
+      },
+    });
+
+    const candidates = dedupeCandidates(
+      result.output.candidates.slice(0, 3).map((candidate, index) => ({
+        id: randomUUID(),
+        label: candidate.label?.trim() || `场景 ${index + 1}`,
+        content: candidate.content.trim(),
+        summary: candidate.summary?.trim() || null,
+        rationale: candidate.rationale?.trim() || null,
+        riskNotes: candidate.riskNotes?.filter((item) => item.trim().length > 0) ?? [],
+        semanticTags: candidate.semanticTags?.filter((tag) => tag.trim().length > 0) ?? [],
+        diffChunks: buildChapterEditorDiffChunks(targetRange.text, candidate.content.trim()),
+      })),
+    );
+
+    if (candidates.length < 2) {
+      throw new Error("AI 未返回足够的候选版本，请重试。");
+    }
+
+    return {
+      sessionId: randomUUID(),
+      intent: input.intent,
+      targetRange,
+      macroAlignmentNote: result.output.macroAlignmentNote?.trim() || null,
+      candidates,
+      activeCandidateId: candidates[0]?.id ?? null,
     };
   }
 
