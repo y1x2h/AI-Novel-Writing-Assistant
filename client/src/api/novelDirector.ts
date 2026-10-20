@@ -29,6 +29,10 @@ import type {
   DirectorTakeoverRequest,
   DirectorStepCalibrationRequest,
 } from "@ai-novel/shared/types/novelDirector";
+import type {
+  NovelSpecClarificationRequest,
+  NovelSpecClarificationResponse,
+} from "@ai-novel/shared/types/novelSpecClarification";
 import { apiClient } from "./client";
 import type { DirectorIssuePolicy, DirectorIssuePolicyOverride } from "@ai-novel/shared/types/directorIssue";
 
@@ -93,6 +97,16 @@ export async function generateDirectorIdeaInspirations(
 ): Promise<ApiResponse<DirectorIdeaInspirationsResponse>> {
   const { data } = await apiClient.post<ApiResponse<DirectorIdeaInspirationsResponse>>(
     "/novels/director/idea-inspirations",
+    payload,
+  );
+  return data;
+}
+
+export async function generateSpecClarifications(
+  payload: NovelSpecClarificationRequest,
+): Promise<ApiResponse<NovelSpecClarificationResponse>> {
+  const { data } = await apiClient.post<ApiResponse<NovelSpecClarificationResponse>>(
+    "/novels/director/spec-clarification",
     payload,
   );
   return data;

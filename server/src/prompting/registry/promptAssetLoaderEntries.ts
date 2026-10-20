@@ -30,6 +30,10 @@ export const promptAssetLoaderEntries: PromptAssetLoaderEntry[] = [
     load: () => require("../prompts/novel/compliancePrecheck.prompts").novelCompliancePrecheckPrompt as UnknownPromptAsset,
   },
   {
+    key: "director.spec.clarify@v1",
+    load: () => require("../prompts/novel/specClarification.prompts").directorSpecClarificationPrompt as UnknownPromptAsset,
+  },
+  {
     key: "creation.intent.interpret@v2",
     load: () => require("../prompts/creation/creationIntent.prompts").creationIntentInterpretPrompt as UnknownPromptAsset,
   },

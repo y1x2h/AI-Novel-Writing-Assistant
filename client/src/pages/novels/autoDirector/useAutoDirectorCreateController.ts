@@ -25,8 +25,14 @@ import {
   confirmDirectorCandidate,
   generateDirectorIdeaInspirations,
   generateDirectorIdeaConstellationOptions,
+  generateSpecClarifications,
   retryOriginalDirectorOpening,
 } from "@/api/novelDirector";
+import {
+  composeIdeaWithClarifications,
+  type NovelSpecClarificationAnswer,
+  type NovelSpecClarificationQuestion,
+} from "@ai-novel/shared/types/novelSpecClarification";
 import { queryKeys } from "@/api/queryKeys";
 import {getDirectorVersions} from "@/api/novel/directorVersion";
 import { getStyleProfiles } from "@/api/styleEngine";
@@ -153,6 +159,10 @@ export function useAutoDirectorCreateController(input: UseAutoDirectorCreateCont
   const [candidatePatchFeedbacks, setCandidatePatchFeedbacks] = useState<Record<string, string>>({});
   const [titlePatchFeedbacks, setTitlePatchFeedbacks] = useState<Record<string, string>>({});
   const [isUpdatingFoundation, setIsUpdatingFoundation] = useState(false);
+  const [specClarification, setSpecClarification] = useState<{
+    candidate: DirectorCandidate;
+    questions: NovelSpecClarificationQuestion[];
+  } | null>(null);
   const issuePolicyQuery = useQuery({
     queryKey: ["settings", "auto-director-issue-policy"],
     queryFn: getAutoDirectorIssuePolicy,
@@ -481,15 +491,20 @@ export function useAutoDirectorCreateController(input: UseAutoDirectorCreateCont
   });
 
   const confirmMutation = useMutation({
-    mutationFn: async (payload: { candidate: DirectorCandidate; workflowTaskId?: string }) => {
+    mutationFn: async (payload: {
+      candidate: DirectorCandidate;
+      workflowTaskId?: string;
+      ideaOverride?: string;
+    }) => {
       const currentWorkflowTaskId = payload.workflowTaskId || await ensureWorkflowTask();
-      if (!requestIdea) {
+      const confirmIdea = payload.ideaOverride?.trim() || requestIdea;
+      if (!confirmIdea) {
         throw new Error("请先补充起始想法，再继续生成或确认书级方向。");
       }
       const autoExecutionPlan = buildAutoExecutionPlanForRunMode();
       const response = await confirmDirectorCandidate({
         directorVersion,
-        ...buildAutoDirectorRequestPayload(directorBasicForm, requestIdea, llm, runMode, currentWorkflowTaskId, {
+        ...buildAutoDirectorRequestPayload(directorBasicForm, confirmIdea, llm, runMode, currentWorkflowTaskId, {
           styleProfileId: selectedStyleProfileId,
           worldSetupMode,
           marketBriefId,
@@ -674,7 +689,17 @@ export function useAutoDirectorCreateController(input: UseAutoDirectorCreateCont
     }
   };
 
-  const handleConfirmCandidate = async (candidate: DirectorCandidate) => {
+  const specClarificationMutation = useMutation({
+    mutationFn: (candidate: DirectorCandidate) => generateSpecClarifications({
+      idea: requestIdea,
+      candidate,
+      provider: llm.provider,
+      model: llm.model,
+      temperature: llm.temperature,
+    }),
+  });
+
+  const performConfirmCandidate = async (candidate: DirectorCandidate, ideaOverride?: string) => {
     if (confirmSubmitLockedRef.current || confirmMutation.isPending) {
       return;
     }
@@ -694,6 +719,7 @@ export function useAutoDirectorCreateController(input: UseAutoDirectorCreateCont
       confirmMutation.mutate({
         candidate,
         workflowTaskId: currentWorkflowTaskId,
+        ideaOverride,
       });
     } catch (error) {
       confirmSubmitLockedRef.current = false;
@@ -703,6 +729,41 @@ export function useAutoDirectorCreateController(input: UseAutoDirectorCreateCont
       setExecutionError(message);
       toast.error(message);
     }
+  };
+
+  const handleConfirmCandidate = async (candidate: DirectorCandidate) => {
+    if (confirmSubmitLockedRef.current || confirmMutation.isPending || specClarificationMutation.isPending) {
+      return;
+    }
+    if (!requestIdea) {
+      toast.error("请先补充起始想法，再继续生成或确认书级方向。");
+      return;
+    }
+    try {
+      const response = await specClarificationMutation.mutateAsync(candidate);
+      const questions = response.data?.questions ?? [];
+      if (questions.length > 0) {
+        setSpecClarification({ candidate, questions });
+        return;
+      }
+    } catch {
+      // 澄清是确认前的可选项，接口异常时直接进入确认，不阻塞用户。
+    }
+    await performConfirmCandidate(candidate);
+  };
+
+  const submitSpecClarification = (answers: NovelSpecClarificationAnswer[]) => {
+    const current = specClarification;
+    if (!current) {
+      return;
+    }
+    const ideaOverride = composeIdeaWithClarifications(requestIdea, answers);
+    setSpecClarification(null);
+    void performConfirmCandidate(current.candidate, ideaOverride);
+  };
+
+  const cancelSpecClarification = () => {
+    setSpecClarification(null);
   };
 
   return {
@@ -765,5 +826,9 @@ export function useAutoDirectorCreateController(input: UseAutoDirectorCreateCont
     onBasicFormChange,
     applyCandidateTitleOption,
     handleConfirmCandidate,
+    specClarification,
+    isGeneratingSpecClarification: specClarificationMutation.isPending,
+    submitSpecClarification,
+    cancelSpecClarification,
   };
 }

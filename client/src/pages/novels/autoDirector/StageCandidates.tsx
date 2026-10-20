@@ -1,5 +1,6 @@
 import NovelAutoDirectorCandidateBatches from "../components/NovelAutoDirectorCandidateBatches";
 import NovelAutoDirectorProgressPanel from "../components/NovelAutoDirectorProgressPanel";
+import SpecClarificationPanel from "./SpecClarificationPanel";
 import { Button } from "@/components/ui/button";
 import type { useAutoDirectorCreateController } from "./useAutoDirectorCreateController";
 import NovelProductionExperienceHandoff from "../components/NovelProductionExperienceHandoff";
@@ -113,6 +114,18 @@ export default function StageCandidates({
         onGenerateNext={() => controller.generateMutation.mutate()}
       />
       {planningNovelId ? <PlanningComplianceSection novelId={planningNovelId} /> : null}
+      <SpecClarificationPanel
+        open={Boolean(controller.specClarification)}
+        candidateTitle={controller.specClarification?.candidate.workingTitle ?? ""}
+        questions={controller.specClarification?.questions ?? []}
+        submitting={controller.isGeneratingSpecClarification || controller.confirmMutation.isPending}
+        onOpenChange={(next) => {
+          if (!next) {
+            controller.cancelSpecClarification();
+          }
+        }}
+        onSubmit={controller.submitSpecClarification}
+      />
     </section>
   );
 }
