@@ -166,12 +166,15 @@ export function supportsGlmReasoningToggle(
 }
 
 /**
- * 这些规划类结构化任务单次输出规模大、需要长推理。强制思考模型（GLM 5.3+）在它们上面会持续输出
- * 思考内容、长时间不产出正文（实测流式 240 秒后正文仍为 0 字符），最终结构化输出空返回。
+ * 这些规划类结构化任务单次输出规模大、需要长推理，且调用方给定了较紧的输出上限。强制思考模型
+ * （GLM 5.3+）在它们上面会持续输出思考内容，思考占满输出预算后不再产出正文（例如卷战略预算为
+ * 1800，实测每次恰好用满 1800 个输出 token 却返回空正文），最终结构化输出空返回。
  * 因此这类任务不允许被显式模型覆盖绑定到强制思考模型，必须使用该任务类型路由配置的模型。
  */
 const ROUTE_BOUND_STRUCTURED_PLANNING_PROMPTS = new Set<string>([
   "novel.world.generate_from_theme",
+  "novel.volume.strategy",
+  "novel.volume.skeleton",
   "novel.volume.chapter_list",
 ]);
 

@@ -69,6 +69,17 @@ test("forced-thinking GLM models fall back to the route model on heavy planning 
     promptId: "novel.volume.chapter_list",
     model: "glm-5.3-flash",
   }), true);
+  // 卷战略与卷骨架同样带固定输出上限，思考会占满预算导致空返回。
+  assert.equal(shouldFallBackToRouteModel({
+    taskType: "planner",
+    promptId: "novel.volume.strategy",
+    model: "glm-5.3-flash",
+  }), true);
+  assert.equal(shouldFallBackToRouteModel({
+    taskType: "planner",
+    promptId: "novel.volume.skeleton",
+    model: "glm-5.3-flash",
+  }), true);
   // 其他任务类型或非重型任务保留调用方的模型选择。
   assert.equal(shouldFallBackToRouteModel({
     taskType: "writer",
