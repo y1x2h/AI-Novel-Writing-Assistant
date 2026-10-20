@@ -483,6 +483,10 @@ export class DefaultNovelApplicationServices {
     return this.core.getLatestStateSnapshot(...args);
   }
 
+  getNovelCharacterStates(...args: Parameters<NovelCoreService["getNovelCharacterStates"]>) {
+    return this.core.getNovelCharacterStates(...args);
+  }
+
   getChapterStateSnapshot(...args: Parameters<NovelCoreService["getChapterStateSnapshot"]>) {
     return this.core.getChapterStateSnapshot(...args);
   }

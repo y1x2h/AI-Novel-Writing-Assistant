@@ -10,6 +10,8 @@ const characterStateOutputSchema = z.object({
   secretExposure: z.string().trim().optional(),
   knownFacts: z.array(z.string().trim()).optional(),
   misbeliefs: z.array(z.string().trim()).optional(),
+  injuries: z.array(z.string().trim()).optional(),
+  possessions: z.array(z.string().trim()).optional(),
   summary: z.string().trim().optional(),
 });
 

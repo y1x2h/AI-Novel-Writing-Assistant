@@ -110,6 +110,10 @@ export class NovelCoreReviewService {
     return stateService.getLatestSnapshot(novelId);
   }
 
+  async getNovelCharacterStates(novelId: string) {
+    return stateService.getNovelCharacterStates(novelId);
+  }
+
   async getChapterStateSnapshot(novelId: string, chapterId: string) {
     return stateService.getChapterSnapshot(novelId, chapterId);
   }

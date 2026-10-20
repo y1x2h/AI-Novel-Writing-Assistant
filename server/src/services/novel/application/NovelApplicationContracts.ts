@@ -75,6 +75,7 @@ export interface NovelApplicationServices {
   getChapterEditorWorkspace: NovelApplicationMethod;
   getNovelState: NovelApplicationMethod;
   getLatestStateSnapshot: NovelApplicationMethod;
+  getNovelCharacterStates: NovelApplicationMethod;
   getChapterStateSnapshot: NovelApplicationMethod;
   rebuildNovelState: NovelApplicationMethod;
   generateBookPlan: NovelApplicationMethod;
@@ -195,6 +196,7 @@ export const novelApplicationServiceMethodNames = [
   "getChapterEditorWorkspace",
   "getNovelState",
   "getLatestStateSnapshot",
+  "getNovelCharacterStates",
   "getChapterStateSnapshot",
   "rebuildNovelState",
   "generateBookPlan",

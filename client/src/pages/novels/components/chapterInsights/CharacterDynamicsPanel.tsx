@@ -36,6 +36,8 @@ function buildSnapshotCharacters(snapshot?: StoryStateSnapshot | null): Snapshot
       summary: parsedItem?.summary?.trim() || item.summary?.trim() || "暂无摘要",
       currentGoal: parsedItem?.currentGoal?.trim() || item.currentGoal?.trim() || undefined,
       emotion: parsedItem?.emotion?.trim() || item.emotion?.trim() || undefined,
+      injuries: (parsedItem?.injuries ?? []).filter((entry) => Boolean(entry?.trim())),
+      possessions: (parsedItem?.possessions ?? []).filter((entry) => Boolean(entry?.trim())),
     };
   });
 }
@@ -101,6 +103,12 @@ function CharacterSnapshotCard(props: {
                     {item.emotion ? <Badge variant="secondary" className="text-[11px]">{item.emotion}</Badge> : null}
                   </div>
                   <div className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{item.summary}</div>
+                  {item.injuries.length > 0 ? (
+                    <div className="mt-1 text-xs leading-5 text-muted-foreground">伤势：{item.injuries.join("、")}</div>
+                  ) : null}
+                  {item.possessions.length > 0 ? (
+                    <div className="mt-1 text-xs leading-5 text-muted-foreground">持有物：{item.possessions.join("、")}</div>
+                  ) : null}
                 </div>
               ))}
             </div>

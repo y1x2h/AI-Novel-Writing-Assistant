@@ -47,6 +47,8 @@ export interface ParsedSnapshotData {
     characterName?: string;
     currentGoal?: string;
     emotion?: string;
+    injuries?: string[];
+    possessions?: string[];
     summary?: string;
   }>;
   relationStates: Array<{
@@ -68,6 +70,8 @@ export interface SnapshotCharacterItem {
   summary: string;
   currentGoal?: string;
   emotion?: string;
+  injuries: string[];
+  possessions: string[];
 }
 
 export interface SnapshotRelationItem {

@@ -2675,6 +2675,8 @@ model CharacterState {
   secretExposure String?
   knownFactsJson String?
   misbeliefsJson String?
+  injuriesJson   String?
+  possessionsJson String?
   summary        String?
   snapshot       StoryStateSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
   character      Character @relation(fields: [characterId], references: [id], onDelete: Cascade)

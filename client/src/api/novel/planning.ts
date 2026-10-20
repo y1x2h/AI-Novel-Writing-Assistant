@@ -1,5 +1,6 @@
 import type { ApiResponse } from "@ai-novel/shared/types/api";
 import type { ChapterQualityLoopAssessment } from "@ai-novel/shared/types/chapterQualityLoop";
+import type { NovelCharacterStatesResponse } from "@ai-novel/shared/types/characterStateQuery";
 import type { LLMProvider } from "@ai-novel/shared/types/llm";
 import type {
   AuditIssue,
@@ -44,6 +45,11 @@ export async function getNovelState(id: string) {
 
 export async function getLatestStateSnapshot(id: string) {
   const { data } = await apiClient.get<ApiResponse<StoryStateSnapshot | null>>(`/novels/${id}/state-snapshots/latest`);
+  return data;
+}
+
+export async function getNovelCharacterStates(id: string) {
+  const { data } = await apiClient.get<ApiResponse<NovelCharacterStatesResponse>>(`/novels/${id}/character-states`);
   return data;
 }
 

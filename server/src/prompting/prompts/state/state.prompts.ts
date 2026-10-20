@@ -23,6 +23,8 @@ const STATE_SNAPSHOT_EXAMPLE = {
       characterName: "林青",
       currentGoal: "先稳住身份，再追查异常来源",
       emotion: "警惕",
+      injuries: ["左臂刀伤尚未痊愈"],
+      possessions: ["一枚刻字铜牌"],
       summary: "林青确认危险已经逼近，不再把异常当作偶然。",
     },
   ],
@@ -62,7 +64,7 @@ export const stateSnapshotPrompt: PromptAsset<
   z.infer<typeof snapshotExtractionOutputSchema>
 > = {
   id: "state.snapshot.extract",
-  version: "v4",
+  version: "v5",
   taskType: "summary",
   mode: "structured",
   language: "zh",
@@ -100,10 +102,11 @@ export const stateSnapshotPrompt: PromptAsset<
       "",
       "字段目标：",
       "1. summary：简洁描述本章结束后整体局面处于什么状态。",
-      "2. characterStates：只保留会持续影响后续创作的重要角色状态。",
+      "2. characterStates：只保留会持续影响后续创作的重要角色状态，并在 injuries、possessions 中记录本章结束后仍然成立的身体伤势与随身持有物。",
       "3. relationStates：只记录本章实际发生变化的关系状态。",
       "4. informationStates：只记录会影响认知差、误会、悬念或冲突推进的关键信息状态。",
       "5. foreshadowStates：只记录本章中被建立、强化、等待兑现、已经兑现或失效的伏笔状态。",
+      "6. injuries 只写会影响行动或情绪的伤势，未受伤时省略该字段；possessions 只写具备剧情意义的随身物品，普通随身物件省略。",
       "",
       "质量要求：",
       "1. 输出要短、准、稳，服务系统读取，而不是写成人类点评。",
@@ -142,6 +145,7 @@ export const stateSnapshotPrompt: PromptAsset<
       "5. 不知道 targetCharacterId 时就省略，不要写 null。",
       "6. 不知道 setupChapterId / payoffChapterId 时就省略，不要写 null，也不要写占位 ID。",
       "7. summary 必须描述本章结束后的全局状态，而不是过程复述。",
+      "8. injuries、possessions 都是字符串数组，没有内容时省略字段，不要输出空字符串。",
     ].join("\n")),
   ],
 };

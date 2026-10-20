@@ -9,6 +9,7 @@ interface RegisterNovelPlanningRoutesInput {
   novelService: Pick<NovelApplicationServices,
     | "getNovelState"
     | "getLatestStateSnapshot"
+    | "getNovelCharacterStates"
     | "getChapterStateSnapshot"
     | "rebuildNovelState"
     | "generateBookPlan"
@@ -67,8 +68,21 @@ export function registerNovelPlanningRoutes(input: RegisterNovelPlanningRoutesIn
     }
   });
 
-  router.get(
-    "/:id/payoff-ledger",
+  router.get("/:id/character-states", validate({ params: idParamsSchema }), async (req, res, next) => {
+    try {
+      const { id } = req.params as z.infer<typeof idParamsSchema>;
+      const data = await novelService.getNovelCharacterStates(id);
+      res.status(200).json({
+        success: true,
+        data,
+        message: "Novel character states loaded.",
+      } satisfies ApiResponse<typeof data>);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get("/:id/payoff-ledger",
     validate({ params: idParamsSchema, query: payoffLedgerQuerySchema }),
     async (req, res, next) => {
       try {
