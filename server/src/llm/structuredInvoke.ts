@@ -195,7 +195,7 @@ async function resolveAttemptTarget(input: {
   return {
     provider: resolved.provider,
     model: resolved.model,
-    apiKey: input.apiKey,
+    apiKey: resolved.apiKey,
     baseURL: resolved.baseURL,
     authMode: resolved.authMode,
     temperature: resolved.temperature,

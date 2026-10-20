@@ -7,6 +7,8 @@ const { NovelWorldInstanceService } = require("../dist/services/novel/worldConte
 const { novelThemeWorldGenerationPrompt } = require("../dist/prompting/prompts/world/world.prompts.js");
 const { setWorldGenerationTimeoutForTests } = require("../dist/services/settings/worldGeneration/timeoutSettings.js");
 const { shouldFallBackToRouteModel } = require("../dist/llm/reasoning.js");
+const { resolveModel } = require("../dist/llm/modelRouter.js");
+const { resolveLLMClientOptions, setProviderSecretCache } = require("../dist/llm/factory.js");
 
 test("generating a novel world keeps the selected model instead of forcing DeepSeek", async () => {
   const originalNovel = prisma.novel;
@@ -97,6 +99,38 @@ test("forced-thinking GLM models fall back to the route model on heavy planning 
     promptId: "novel.world.generate_from_theme",
     model: "glm-4.7-flash",
   }), false);
+});
+
+test("falling back to the route model drops the previous provider credentials", async () => {
+  // 显式模型覆盖由上一次按所选模型完成的解析带入，除模型外还夹带原厂商的密钥与接入地址。
+  // 回落时必须一并清掉，否则会出现「路由厂商的密钥 + 原厂商的接入地址」混搭，上游直接返回 401。
+  const route = await resolveModel("planner");
+  setProviderSecretCache(route.provider, {
+    key: "route-provider-key",
+    baseURL: "https://route-provider.example/v1",
+    authMode: "bearer",
+    displayName: route.provider,
+    reasoningEnabled: true,
+    concurrencyLimit: 0,
+    requestIntervalMs: 0,
+  });
+  try {
+    const resolved = await resolveLLMClientOptions("glm", {
+      model: "glm-5.3-flash",
+      apiKey: "glm-provider-key",
+      baseURL: "https://open.bigmodel.cn/api/paas/v4",
+      authMode: "bearer",
+      taskType: "planner",
+      promptMeta: { promptId: "novel.volume.strategy" },
+    });
+
+    assert.equal(resolved.provider, route.provider);
+    assert.equal(resolved.model, route.model);
+    assert.equal(resolved.apiKey, "route-provider-key");
+    assert.notEqual(resolved.baseURL, "https://open.bigmodel.cn/api/paas/v4");
+  } finally {
+    setProviderSecretCache(route.provider, null);
+  }
 });
 
 test("novel theme world prompt stays within a one-shot JSON budget", () => {

@@ -238,7 +238,14 @@ export async function resolveLLMClientOptions(
       model: normalizeOptionalText(options.model),
     })) {
       shouldUseRouteProvider = true;
+      // 显式覆盖通常由上一次按所选模型完成的解析带入，除模型外还夹带了原厂商的密钥与接入地址。
+      // 回落到路由模型时必须一并清掉，否则会出现「路由厂商的密钥 + 原厂商的接入地址」这种混搭，
+      // 上游会直接返回 401（例如把智谱地址配上 DeepSeek 密钥，报「令牌已过期或验证不正确」）。
       options.model = undefined;
+      options.apiKey = undefined;
+      options.baseURL = undefined;
+      options.authMode = undefined;
+      options.requestProtocol = undefined;
     }
 
     const route = await resolveModel(options.taskType, {
