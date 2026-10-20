@@ -39,6 +39,7 @@
 - 顶部保存的 temperature 是用户偏好，不是绕过模型参数约束的最终请求值。正式调用必须先经过模型能力兼容层；例如 Kimi K3 的 temperature 固定为 `1.0`，即使经由自定义中转厂商调用、当前选择仍保存其他值，请求也必须按模型身份收敛到允许值。
 - structured_outline 链（卷节奏板、章节列表、章节任务单）属于规划类长输出，provider/model 与输出预算必须由 `planner` 任务类型路由决定。运行合同冻结的模型快照只代表导演运行的整体选择，不得作为这些规划步骤的显式 provider/model 覆盖；这些步骤也不得写死 maxTokens 覆盖路由预算，否则路由上配置的长输出上限会被短输出厂商的固有限制（如 DeepSeek 8192）夹断。
 - 路由到短输出厂商是允许的，但调用方必须让单次输出落在该厂商上限内。章节列表按 `MAX_CHAPTERS_PER_CHAPTER_LIST_CALL` 分批，就是因为 `planner` 可以被配置到 DeepSeek 这类 8192 上限的厂商；拆批规则见 [卷级规划工作流](../../workflows/volume-planning.md) 的 Bounded Chapter List Slices。
+- 强制思考型号（GLM 5.3+）不得被显式模型覆盖绑定到「重型规划类结构化任务」。这类任务单次输出规模大、需要长推理，强制思考型号会持续输出思考内容、长时间不产出正文，最终结构化结果为空。当前受此护栏保护的任务是 `novel.world.generate_from_theme` 与 `novel.volume.chapter_list`：当显式覆盖的模型命中强制思考型号时，运行时忽略该覆盖、改用该任务类型路由配置的模型，并让实况日志如实显示实际厂商与模型。护栏名单写在 `server/src/llm/reasoning.ts`，只描述模型能力边界，不判断用户意图；其余任务（标题、拆书、题材树等）仍尊重用户选择。
 
 ## 示例
 
@@ -69,6 +70,7 @@
 - 本地模型生成世界观在约 2 分钟时中断：先看「模型与厂商」里的单次生成最长等待是否仍是 2 分钟，再确认失败的是按主题生成或骨架生成。正文生成没有这项上限。页面若先报网络失败，检查这两次生成请求的页面等待是否仍长于服务端上限。
 - 规划阶段报 `[STRUCTURED_OUTPUT:incomplete_json]`：先看该步日志里的 provider/model 是否被运行模型快照写成短输出厂商（如 `deepseek-flash`），再确认生成调用是否传入写死的 maxTokens 覆盖了路由预算。规划类长输出应回到 `planner` 任务类型路由，不要靠继续放大调用方 budget 规避厂商固有限制。
 - 章节列表步骤长时间无输出或反复超时：先确认 `planner` 路由指向的厂商是否适合该步骤的体量。长输出能力弱的厂商（如 `glm-5.3-flash`）在该草稿体量下会长时间不出内容或返回空内容，表现为任务停在 running、`rawChars=0`。此时优先把路由换成响应稳定的厂商，并确认调用方已按该厂商输出上限拆批，而不是继续等待或放大超时。
+- 「内容规划」按主题生成世界观反复失败、实况日志显示输入输出 Token 均未返回：先看该次调用的 provider/model 是否被导演运行快照覆盖成强制思考型号（`glm-5.3-flash`）。这类型号在该任务上只会输出思考、正文长时间为空（实测流式 240 秒正文仍为 0 字符，放大 `max_tokens` 也无效），不是超时设置或 token 预算问题。确认护栏 `shouldFallBackToRouteModel` 是否生效、该次调用的 `promptId` 是否在保护名单内，以及 `planner` 路由是否指向响应稳定的厂商；不要通过加大世界观生成等待时间或调小思考深度来规避。
 
 ## 本地推理开关的协议边界
 
@@ -86,6 +88,8 @@ Ollama 的 OpenAI 兼容接口 `/v1/chat/completions` 在关闭思考时发送 `
 - `server/src/routes/settings.ts`
 - `server/src/llm/modelCatalog.ts`
 - `server/src/llm/capabilities.ts`
+- `server/src/llm/factory.ts`
+- `server/src/llm/reasoning.ts`
 - `client/src/components/layout/LLMSelectionBootstrap.tsx`
 - `client/src/components/common/LLMSelector.tsx`
 - `client/src/store/llmStore.ts`

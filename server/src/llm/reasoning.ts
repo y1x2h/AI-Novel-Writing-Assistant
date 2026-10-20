@@ -146,7 +146,7 @@ export function isGlmThinkingModeProvider(
 
 // GLM-5.3 起模型始终启用思考，关闭思考会返回 400（code 1210）。
 // 该错误提示虽然写着「请使用 low、high 或 max」，但实测 low/high 同样被拒，只有 enabled 或不传可用。
-function isGlmAlwaysThinkingModel(model?: string): boolean {
+export function isGlmAlwaysThinkingModel(model?: string): boolean {
   const normalizedModel = normalizeOptionalText(model)?.toLowerCase().split("/").at(-1);
   const version = normalizedModel?.match(/^glm-(\d+)(?:\.(\d+))?/);
   if (!version) {
@@ -163,6 +163,30 @@ export function supportsGlmReasoningToggle(
   model?: string,
 ): boolean {
   return isGlmThinkingModeProvider(provider, baseURL, model) && !isGlmAlwaysThinkingModel(model);
+}
+
+/**
+ * 这些规划类结构化任务单次输出规模大、需要长推理。强制思考模型（GLM 5.3+）在它们上面会持续输出
+ * 思考内容、长时间不产出正文（实测流式 240 秒后正文仍为 0 字符），最终结构化输出空返回。
+ * 因此这类任务不允许被显式模型覆盖绑定到强制思考模型，必须使用该任务类型路由配置的模型。
+ */
+const ROUTE_BOUND_STRUCTURED_PLANNING_PROMPTS = new Set<string>([
+  "novel.world.generate_from_theme",
+  "novel.volume.chapter_list",
+]);
+
+export function shouldFallBackToRouteModel(input: {
+  taskType: string | undefined;
+  promptId: string | undefined;
+  model: string | undefined;
+}): boolean {
+  if (input.taskType !== "planner") {
+    return false;
+  }
+  if (!input.promptId || !ROUTE_BOUND_STRUCTURED_PLANNING_PROMPTS.has(input.promptId)) {
+    return false;
+  }
+  return isGlmAlwaysThinkingModel(input.model);
 }
 
 export function resolveProviderReasoningBehavior(input: {

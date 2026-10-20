@@ -9,7 +9,7 @@ import { createAnthropicLLM } from "./anthropicClient";
 import { attachLLMDebugLogging } from "./debugLogging";
 import { attachLLMRequestLimiter } from "./requestLimiter";
 import { attachLLMRequestGuard } from "./requestGuard";
-import { resolveProviderReasoningBehavior } from "./reasoning";
+import { resolveProviderReasoningBehavior, shouldFallBackToRouteModel } from "./reasoning";
 import {
   resolveStructuredOutputProfile,
   type StructuredExecutionMode,
@@ -228,7 +228,19 @@ export async function resolveLLMClientOptions(
   if (options.taskType) {
     const hasExplicitProvider = provider != null;
     const hasExplicitModel = options.model != null;
-    const shouldUseRouteProvider = !hasExplicitProvider && !hasExplicitModel;
+    let shouldUseRouteProvider = !hasExplicitProvider && !hasExplicitModel;
+
+    // 强制思考模型（GLM 5.3+）在重型规划类结构化任务上只会持续思考、长时间不产出正文，
+    // 会直接导致结构化输出空返回。这里忽略该显式模型覆盖，回落到该任务类型路由配置的模型。
+    if (!shouldUseRouteProvider && shouldFallBackToRouteModel({
+      taskType: options.taskType,
+      promptId: options.promptMeta?.promptId,
+      model: normalizeOptionalText(options.model),
+    })) {
+      shouldUseRouteProvider = true;
+      options.model = undefined;
+    }
+
     const route = await resolveModel(options.taskType, {
       ...(shouldUseRouteProvider ? {} : { provider: resolvedProvider }),
       ...(options.model != null ? { model: options.model } : {}),
