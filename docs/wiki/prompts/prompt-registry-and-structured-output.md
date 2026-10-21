@@ -196,7 +196,7 @@
 
 模型上下文优化优先去掉重复内容和格式空白，不通过删除角色硬事实、义务、保密约束或问题证据降低消耗。自动导演的章节规划、验收、补丁、资产提取与窗口决策可设置 `structuredOutputHint.compact=true`：完整输出示例只移除缩进，字段、数组层级、示例和 Schema 不变；其他资产沿用默认格式。
 
-局部补丁的显式 issuesJson 是当前问题的主输入。仅当补充上下文的问题与已提供问题在 severity、category、evidence、fixSuggestion 四字段完全对应（忽略展示空白）时删除重复项。缺失问题、不同修法、不可解析的自定义载荷均保留补充上下文。missingObligations 和 blockingIssueCodes 不参与这种去重，必须保留。原文只提供一次，供全部补丁共同定位。
+局部补丁的显式 issuesJson 是当前问题的主输入。仅当补充上下文的问题与已提供问题在 severity、category、evidence、fixSuggestion 四字段完全对应（忽略展示空白）时删除重复项。缺失问题、不同修法、不可解析的自定义载荷均保留补充上下文。`missingObligations`、`anchoredFindings` 和 `blockingIssueCodes` 不参与这种去重，必须保留。`anchoredFindings` 承载每条审计问题的 `code`、行号与原文摘录，是修复器精确落点与复检对照的锚点，属于对已结构化输出的确定性透传，不得在服务层改写或按关键词重新分类。原文只提供一次，供全部补丁共同定位。
 
 重规划输入保留全部报告的身份、分数、摘要与问题。重复的完整评估合并到 assessments，再由 reports 的 assessmentIndex 引用；索引只是数据表示，不参与 AI 决策。历史评估不可解析时保留原文。创建/更新时间等记录元数据不属于选择规划窗口所需的输入。Canonical state 必须完整序列化，不能截取 JSON 前若干字符再追加省略号：尾部通常包含待兑现伏笔、角色知识或受保护秘密，截断会同时破坏语法和故事约束。
 

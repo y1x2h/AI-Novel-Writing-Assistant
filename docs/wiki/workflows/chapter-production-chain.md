@@ -104,6 +104,8 @@
 - 接收闸门必须把未兑现义务输出为结构化 `missingObligations`，并给出 `repairability`：局部漏写用 `patchable_obligation_gap`，需要整章调整用 `rewrite_needed`，章节职责与邻章安排失配才用 `plan_misalignment`。
 - `missingObligations` 需要结合 `repairability` 判断：明确标为 `patchable_obligation_gap` 的缺口必须保留为可修复事实，不能因义务种类较软而被确定性代码改判为 `continue_with_risk`；确实可以后续承接的缺口应由接收闸门直接输出 `continue_with_risk + repairability=none`。
 - 自动修文默认最多一次；失败后保留可用正文，并按统一问题策略形成质量债或人工恢复入口，不进入无限重试。只有真实章节修复问题才能创建修复工单，通用模型或运行时失败不得伪装成修复失败。
+- 同一批 issue code 在前后两次自动修复后都未解决时，运行时会熔断：本轮不再发起修复，保留原稿并把未解决的 code 集合记为章节级质量债（`repeatedUnresolvedCodes`）。熔断记录按 `novelId + chapterId` 持久化在章节检查点，章节通过时清除；熔断只降级为质量债，不写入 `replanAlertDetails` / `PIPELINE_REPLAN_REQUIRED`，也不触发人工门禁。
+- `acceptance_gate_unavailable` / `style_review_unavailable` 这类不可补丁化 code 只作为风险标签与债务提示，不进入修复输入、blocking 判定与熔断签名。它们不得因过滤后仍留在 `openIssues` 而反复出现在复检结论里；过滤后已无剩余可修复问题、且没有可执行的补丁指令时，不应继续消耗修复额度。
 - 自动流水线中的修复结果是候选稿，不是正史。原稿初审和候选复审都只能产生评估结果；候选复审结束并完成版本选择前，不得覆盖 `Chapter.content`，也不得提交 Timeline、Fact Ledger、终态事件或最终资产。
 - 保留稿选择只复用原稿与候选已有的结构化验收结果，不增加第三次模型评选。候选新增 `high/critical` 问题、新增未兑现义务或没有明确结构化改善时保留原稿；候选通过、减少阻塞问题或减少义务/审校缺口且没有新增严重风险时才采用候选。总分只作诊断辅助，不能单独触发换稿。
 - `ChapterContentFinalizationService` 的评估阶段负责生成 runtime package，终态提交阶段只消费已选中评估，不重新调用接收模型。Timeline、已接收事实、章节终态事件和最终资产同步必须只针对同一选中正文执行一次。
@@ -111,7 +113,7 @@
 - 局部 patch repair 是轻修模式的唯一正文改写动作。补丁计划 Schema 校验失败、`targetExcerpt` 不唯一或太短、目标片段缺失、补丁无效、模型建议全文重写时，应保留原正文并转为结构化 `quality.local_repair_failed`；任务策略再决定继续、暂停或结束，不能把技术失败直接升级为整章重写。
 - `acceptance_gate_unavailable` 或“章节接收判断不可用”属于审校系统风险，不代表正文中存在可替换片段。若当前待处理问题只包含这类风险，批量章节生产应保留当前正文并记录复查债务，等待重新审校或人工复查；不得调用局部 patch prompt，也不得为了系统风险改写正文。
 - 所有会改正文的修复入口必须遵守任务选定的修复模式：`light_repair / continuity_only / character_only / ending_only` 只允许局部 patch；`heavy_repair` 才允许整章重写。轻修失败不得自动切换模式，整章重写必须来自任务启动时的明确选择或后续人工恢复命令。
-- patch repair 必须同时收到结构化审计问题、`missingObligations` 和 `blockingIssueCodes`，不能只依赖压扁后的自然语言建议猜测缺口。
+- patch repair 必须同时收到结构化审计问题、`missingObligations`、`anchoredFindings` 和 `blockingIssueCodes`，不能只依赖压扁后的自然语言建议猜测缺口。`anchoredFindings` 由审计层 `openIssues` 的 `code` 与证据文本中的 `第 N 行：摘录` 派生，修复器据此先定位原文、确认问题仍在后再改；摘录已不在当前正文时不得凭空编造问题或只改标点充数。
 - patch repair 的 `targetExcerpt` 必须是正文中唯一可定位的原文片段；`replacement` 表示替换后的内容。删除重复片段时允许 `replacement` 为空字符串，但仍必须满足唯一定位和产生正文变化。
 - 已有正文进入复审或质量修复时，不应先把同一份正文重新保存为 `drafted/generating`。正文未变化时只做审校、必要修复和最终资产同步，避免 UI 更新时间、RAG 队列和章节状态被无意义刷新。
 - 章节执行队列允许移除尚未开始的手动空白章节：它必须仍为 `planned/unplanned`，且没有正文、目标、任务单、场景卡、修复记录或风险标记。删除入口与服务端必须使用同一规则；任何已进入规划、写作、审校或修复链路的章节都不得从此入口删除，以保护已生成内容和下游事实。
