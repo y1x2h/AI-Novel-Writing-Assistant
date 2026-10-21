@@ -156,6 +156,40 @@
 - **在护栏之前写入**：会把被否决的补丁记成已采用，台账反而会误导复盘。
 - **写入失败即抛出**：把审计能力变成正文链路的单点故障。
 
+## 按写法调门限（signal calibration）
+
+### Background
+
+统计信号是一套全局候选证据（同词簇聚集、标点密度、口头语堆叠、对话标签比例等），但不同语体对「噪音」的容忍度完全不同：口语粗粝流天然带语气词和散标点，冷峻专业流几乎没有；如果用同一套阈值，「底层循环现实流」会被判 AI 味，「冷峻专业流」则长期漏报。
+
+### Decision
+
+把阈值做成**写法档案可声明的覆盖项**，而不是给每个语体写一段 if-else，也不是加一段提示词让模型自己想。理由：阈值是机器配置，只有确定性映射才可复现、可做缓存标识，也才符合「不做关键词路由」的约束。写法模板通过显式数值声明「本语体放宽/收紧哪几项」，解析时与全局默认基线合并。
+
+### Current Rule
+
+- 承载字段：`LanguageRules.signalCalibration`（可选）。只声明要改的项，未声明的回退全局默认；**不做数据库迁移**，因为它本身就落在写法档案的 `languageRules` JSON 里。
+- 解析入口唯一：`StyleSignalPolicyResolver.resolve(languageRules)`，内部用 `styleSignalPolicyOverrideSchema.safeParse`。解析失败（含任一字段越界）整份回退全局默认，避免半套阈值生效导致不可解释的检测结果。
+- 合并规则：`{ ...全局默认, ...已声明项 }`；显式传入的 `undefined` 不会清掉基线阈值。
+- 生效范围：`StyleDetectionService`（写法检测）与 `startPipelineJob` 推导的运行包 `styleSignalPolicy`（章节验收、风格复核、缓存标识）使用同一份策略，避免手动面板与自动链路两套阈值。
+- 该字段**不进入写法契约文本**：`StyleCompiler` 通过 `NON_CONTRACT_RULE_KEYS` 把它从 `hasStructuredRuleContent` 与 `renderObjectRules` 里过滤掉，否则阈值会被当成写作要求念给模型。
+- 默认模板只给保守初值（口语系放宽 `clusterCount` / `punctuationCount` / `fillerCount` / `transitionRepeatCount`，专业系收紧 `punctuationCount` / `dialogueTagRatio`），不做激进调参。
+- 反 AI 规则渲染同时设上限：契约渲染 40 条、单条 120 字，超出部分以「另有 N 条规则未展开但仍生效」收尾，避免规则越积越多把正文预算挤掉。
+
+### Failure Modes
+
+- **给每个语体写硬编码分支**：语体一旦新增就要改代码，且无法被写法档案覆盖，违反 AI-First 的「规则是数据」。
+- **在 `LanguageRules` 里用 `.partial()` 解析覆盖项**：zod 的 `.default()` 会回填，空对象也会解析成整份默认值，覆盖彻底失效；必须逐字段 `unwrap().optional()`。
+- **忘记过滤 `signalCalibration`**：阈值会以普通规则的形式出现在写法契约里，模型开始「遵守」数字。
+- **只改检测服务、不改运行包**：自动导演链仍用全局阈值，用户会看到手动检测和章节验收结论不一致。
+
+### Related Modules（按写法调门限）
+
+- 阈值定义与解析：`shared/types/styleEngine/signals.ts`、`server/src/services/styleEngine/signals/StyleSignalPolicyResolver.ts`。
+- 接入点：`server/src/services/styleEngine/StyleDetectionService.ts`、`server/src/services/novel/novelCorePipelineService.ts`。
+- 契约过滤与规则封顶：`server/src/services/styleEngine/StyleCompiler.ts`、`server/src/services/styleEngine/antiAiPreviewRules.ts`。
+- 默认模板初值：`server/src/services/styleEngine/defaults.ts`。
+
 ## Failure Modes
 
 - **把可编辑基线规则做成硬编码黑名单**：会让用户无法调整规则库，也违反 AI-First 原则。规则必须是数据。
@@ -175,6 +209,7 @@
 - 改写护栏与力度阈值：`server/src/services/styleEngine/rewrite/index.ts`、`StyleRewriteService.ts`。
 - 禁改清单：`server/src/services/styleEngine/fragments/StyleFragmentRuleService.ts`、`shared/types/styleEngine/fragmentRules.ts`、`client/src/components/styleReview/StyleProtectedFragmentEditor.tsx`。
 - 改动台账：`server/src/services/styleEngine/ledger/StyleRewriteLedgerService.ts`、`ledger/buildLedgerEntries.ts`、`shared/types/styleEngine/ledger.ts`、`client/src/components/styleReview/StyleRewriteLedgerList.tsx`。
+- 按写法调门限：`server/src/services/styleEngine/signals/StyleSignalPolicyResolver.ts`、`shared/types/styleEngine/signals.ts`、`server/src/services/styleEngine/StyleDetectionService.ts`。
 - 力度选择 UI：`client/src/components/styleReview/index.tsx`、`client/src/pages/writingFormula/components/WritingFormulaCleanPanel.tsx`、`client/src/pages/antiAiRules/components/AntiAiRuleEffectTestCard.tsx`。
 
 ## Source Documents

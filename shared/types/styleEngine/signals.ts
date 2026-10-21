@@ -29,6 +29,24 @@ export const styleSignalPolicySchema = z.object({
 export type StyleSignalPolicy = z.infer<typeof styleSignalPolicySchema>;
 export const createStyleSignalPolicy = (): StyleSignalPolicy => styleSignalPolicySchema.parse({ revision: "style-signals-v1" });
 
+type StyleSignalThresholdKey = Exclude<keyof StyleSignalPolicy, "revision">;
+
+/**
+ * 写法档案可选的阈值覆盖：只声明要改的项，未声明的回退到全局默认基线。
+ * 逐字段去掉默认值，否则解析空对象也会把整份全局默认填回来，覆盖就失去意义。
+ */
+export const styleSignalPolicyOverrideSchema = z.object(
+  Object.fromEntries(
+    (Object.keys(styleSignalPolicySchema.shape) as Array<keyof StyleSignalPolicy>)
+      .filter((key): key is StyleSignalThresholdKey => key !== "revision")
+      .map((key) => {
+        const field = styleSignalPolicySchema.shape[key] as z.ZodDefault<z.ZodTypeAny>;
+        return [key, field.unwrap().optional()];
+      }),
+  ),
+) as unknown as z.ZodType<StyleSignalPolicyOverride>;
+export type StyleSignalPolicyOverride = Partial<Omit<StyleSignalPolicy, "revision">>;
+
 export const styleSignalFindingSchema = z.object({
   ruleId: z.enum([
     "template.transition",

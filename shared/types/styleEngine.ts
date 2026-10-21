@@ -1,4 +1,5 @@
 import type { LLMProvider } from "./llm";
+import type { StyleSignalPolicyOverride } from "./styleEngine/signals.js";
 
 export type StyleSourceType =
   | "manual"
@@ -42,6 +43,8 @@ export interface LanguageRules {
   sentenceVariation?: string | null;
   allowUselessDetails?: boolean | null;
   summary?: string | null;
+  /** 检测阈值覆盖：可选的语体级校准，未配置即使用全局默认阈值。 */
+  signalCalibration?: StyleSignalPolicyOverride | null;
   [key: string]: unknown;
 }
 
@@ -600,8 +603,8 @@ export interface CompiledStylePromptBlocks {
 
 export { styleRiskLayerSchema, styleRewriteEscalationSchema, styleRewriteGuardSchema, styleRewriteScopeSchema, isStyleIssueRewritable } from "./styleEngine/diagnostics.js";
 export type { StyleRiskLayer, StyleRewriteGuard, StyleRewriteBaseline, StyleRewriteScope, StyleRewriteEscalation } from "./styleEngine/diagnostics.js";
-export { styleSignalPolicySchema, styleSignalScanSchema, createStyleSignalPolicy } from "./styleEngine/signals.js";
-export type { StyleSignalPolicy, StyleSignalFinding, StyleSignalScan } from "./styleEngine/signals.js";
+export { styleSignalPolicySchema, styleSignalPolicyOverrideSchema, styleSignalScanSchema, createStyleSignalPolicy } from "./styleEngine/signals.js";
+export type { StyleSignalPolicy, StyleSignalPolicyOverride, StyleSignalFinding, StyleSignalScan } from "./styleEngine/signals.js";
 export {
   STYLE_FRAGMENT_MAX_CHARACTERS,
   STYLE_FRAGMENT_MAX_COUNT,

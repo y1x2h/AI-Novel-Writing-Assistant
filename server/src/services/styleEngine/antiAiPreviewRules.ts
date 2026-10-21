@@ -46,10 +46,29 @@ export function mergeAntiAiRules(baseRules: AntiAiRule[], previewRules: AntiAiRu
   return result;
 }
 
+/** 规则清单进入提示词时封顶：条数与单条字数都设上限，避免规则越积越多把正文挤出去。 */
+export const ANTI_AI_RULE_PROMPT_MAX_RULES = 40;
+const ANTI_AI_RULE_PROMPT_MAX_CHARACTERS = 120;
+
+function clampRuleInstruction(value: string): string {
+  const trimmed = value.trim();
+  const characters = Array.from(trimmed);
+  return characters.length > ANTI_AI_RULE_PROMPT_MAX_CHARACTERS
+    ? `${characters.slice(0, ANTI_AI_RULE_PROMPT_MAX_CHARACTERS).join("")}…`
+    : trimmed;
+}
+
 export function buildAntiAiRuleCatalogText(rules: AntiAiRule[]): string {
-  return rules
-    .map((rule) => `- [${rule.id}] ${rule.name} (${rule.type}/${rule.severity}): ${rule.promptInstruction ?? rule.description}`)
-    .join("\n");
+  const rendered = rules.slice(0, ANTI_AI_RULE_PROMPT_MAX_RULES);
+  const lines = rendered.map((rule) => {
+    const instruction = clampRuleInstruction(rule.promptInstruction ?? rule.description);
+    return `- [${rule.id}] ${rule.name} (${rule.type}/${rule.severity}): ${instruction}`;
+  });
+  const omitted = rules.length - rendered.length;
+  if (omitted > 0) {
+    lines.push(`- 其余 ${omitted} 条规则同样生效，但优先处理已列出的规则。`);
+  }
+  return lines.join("\n");
 }
 
 export function buildAntiAiRuleDirectiveText(rules: AntiAiRule[]): string {
@@ -60,9 +79,9 @@ export function buildAntiAiRuleDirectiveText(rules: AntiAiRule[]): string {
   return [
     "Temporary anti-AI test rules:",
     ...rules.map((rule) => {
-      const instruction = rule.promptInstruction?.trim() || rule.description;
+      const instruction = clampRuleInstruction(rule.promptInstruction?.trim() || rule.description);
       const suggestion = rule.rewriteSuggestion?.trim();
-      return `- [${rule.id}] ${rule.name} (${rule.type}/${rule.severity}): ${instruction}${suggestion ? ` 修正建议：${suggestion}` : ""}`;
+      return `- [${rule.id}] ${rule.name} (${rule.type}/${rule.severity}): ${instruction}${suggestion ? ` 修正建议：${clampRuleInstruction(suggestion)}` : ""}`;
     }),
   ].join("\n");
 }

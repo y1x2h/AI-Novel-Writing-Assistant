@@ -135,9 +135,21 @@ function compactText(value: unknown): string | null {
   return trimmed || null;
 }
 
+/** 检测阈值覆盖属于机器配置，不参与写法契约渲染，也不单独构成结构化写法内容。 */
+const NON_CONTRACT_RULE_KEYS = new Set(["signalCalibration"]);
+const ANTI_AI_RULE_RENDER_MAX_RULES = 40;
+const ANTI_AI_RULE_INSTRUCTION_MAX_CHARACTERS = 120;
+
+function truncateRuleInstruction(value: string): string {
+  const characters = Array.from(value.trim());
+  return characters.length > ANTI_AI_RULE_INSTRUCTION_MAX_CHARACTERS
+    ? `${characters.slice(0, ANTI_AI_RULE_INSTRUCTION_MAX_CHARACTERS).join("")}…`
+    : value.trim();
+}
+
 function hasStructuredRuleContent(rules: Record<string, unknown>): boolean {
   return Object.entries(rules).some(([key, value]) => {
-    if (key === "summary") {
+    if (key === "summary" || NON_CONTRACT_RULE_KEYS.has(key)) {
       return false;
     }
     if (value == null || value === "") {
@@ -160,7 +172,8 @@ function renderObjectRules(
   defaultWeight: number,
   sectionWeightMap?: Record<string, number>,
 ): string[] {
-  const entries = Object.entries(rules).filter(([, value]) => value !== undefined && value !== null && value !== "");
+  const entries = Object.entries(rules)
+    .filter(([key, value]) => !NON_CONTRACT_RULE_KEYS.has(key) && value !== undefined && value !== null && value !== "");
   if (entries.length === 0) {
     return [];
   }
@@ -189,16 +202,21 @@ function compileAntiAiRuleLines(
     encourage: [],
   };
 
-  for (const rule of rules) {
+  // 规则数量会随写法档案累积，渲染时封顶，避免契约文本无限膨胀。
+  const rendered = rules.slice(0, ANTI_AI_RULE_RENDER_MAX_RULES);
+
+  for (const rule of rendered) {
     const weight = clamp(ruleWeightMap?.[rule.id] ?? defaultWeight, 0.3, 1);
-    const instruction = rule.promptInstruction?.trim() || rule.description;
+    const instruction = truncateRuleInstruction(rule.promptInstruction?.trim() || rule.description);
     grouped[rule.type].push(`- ${resolveAntiAiVerb(weight, rule.type)}: ${instruction}`);
   }
 
+  const omitted = rules.length - rendered.length;
   return [
     ...(grouped.forbidden.length > 0 ? ["Forbidden:", ...grouped.forbidden] : []),
     ...(grouped.risk.length > 0 ? ["Risk watch:", ...grouped.risk] : []),
     ...(grouped.encourage.length > 0 ? ["Encourage:", ...grouped.encourage] : []),
+    ...(omitted > 0 ? [`- 另有 ${omitted} 条规则未在契约中展开，但它们依然生效。`] : []),
   ];
 }
 
