@@ -293,6 +293,7 @@ export class StyleCompiler {
         "- Remove static action loops that change neither choices nor information; do not fill the length target by repeating a scene.",
         "- Check for Chinese AI fingerprints and delete them instead of rewording: pseudo-poetic tails (象征着, 诉说着, 仿佛在暗示, 充满了……的气息), essay connectives (此外, 值得注意的是, 总而言之, 由此可见), advertising hype words (彰显, 赋能, 助力, 淋漓尽致, 叹为观止).",
         "- Check for contrast shells (不是……而是…… / 不仅……更是……) and decorative punctuation stacking (colons, semicolons, dashes used for tone); keep at most one and prefer plain declarative sentences.",
+        "- Check modifier length, 「的」 density and stacked degree words: keep modifiers before a noun under about six characters, use at most two 「的」 in a clause, and do not stack degree adverbs (非常, 十分, 极其, 特别) with vague words (仿佛, 好像, 似乎) in the same sentence.",
         "- If AI flavor remains, revise before returning the final draft.",
       ],
     });

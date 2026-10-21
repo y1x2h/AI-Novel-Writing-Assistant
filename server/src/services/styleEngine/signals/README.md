@@ -2,6 +2,10 @@
 
 `scanStyleSignals(content, policy)` 无 IO、无模型调用，只提供统计证据。固定判断用于输入数据预处理，不决定违规、修文权限或分数；语义诊断由统一接收闸门与手动检测 Prompt 完成。零命中仍调用原有 AI 检测。
 
+当前信号共七类：模板过渡词重复（`template.transition`）、长句逗号密度（`rhythm.comma-density`）、模糊词聚集（`surface.repeated-softeners`）、动作副词聚集（`surface.action-adverb-stack`）、名词前长定语（`syntax.attributive-stack`）、单句「的」字过载（`syntax.particle-overload`）、程度副词与模糊词同句叠用（`surface.degree-adverb-stack`）。
+
+长定语用「的」的位置向前回退到修饰语起点，遇到标点、空白、另一个「的」或谓语起始标记（是/了/在…）即停止；「的」字过载按句内计数；程度副词把程度词表与模糊词表合并后复用聚集逻辑。三者都只在同一句内统计，宁缺勿滥：定语与多个「的」在中文里本身合法，因此这两类在规则目录里是 `risk`，不做自动改写。
+
 每条规则最多两个片段、总计八个，片段与坐标来自保留空白的 CRLF 归一化正文，使用编辑器 UTF-16 坐标。阈值计数使用非空白 Unicode 字符。模板首现不报告；密度统计按句和段落边界，对白保留给 AI 判断。
 
 模型输入只展示每类首个示例、计数与统计标签 `signalCode`，不重复坐标和词表；完整快照、证据和缓存身份保持不变。统计标签不能作为真实反 AI 规则的 `ruleId/styleRuleId`，普通写法合同问题由 AI 使用 null 标识。这样减少重复输入并保留规则权限边界。

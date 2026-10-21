@@ -25,6 +25,11 @@ function positions(text: string, term: string): number[] {
   }
   return found;
 }
+// A modifier candidate ends at punctuation, whitespace, a second "的", or a clause
+// marker (是/了/在…) that normally starts the predicate. Precision matters more than
+// recall here: this stays candidate evidence, never a verdict.
+const attributiveBoundary = /[\s、，。！？；：""''「」『』（）()《》〈〉【】…\-,.!?;:—]/u;
+const attributiveClauseMarkers = "是了有在把被让给对从向到将与和而就都也还又却便只才";
 
 /** Pure evidence scan. Counts do not decide a violation, risk score or repair. */
 export function scanStyleSignals(content: string, policy: StyleSignalPolicy): StyleSignalScan {
@@ -58,11 +63,28 @@ export function scanStyleSignals(content: string, policy: StyleSignalPolicy): St
     for (const [ruleId, terms] of [
       ["surface.repeated-softeners", effective.softenerTerms],
       ["surface.action-adverb-stack", effective.actionAdverbTerms],
+      // Degree adverbs and vague modifiers are counted together: the signal is their
+      // stacking in one sentence, not either word list on its own.
+      ["surface.degree-adverb-stack", [...effective.degreeAdverbTerms, ...effective.softenerTerms]],
     ] as const) {
       const matches = [...new Set(terms)].map(term => ({ term, count: positions(sentence, term).length })).filter(item => item.count > 0);
       const hits = matches.reduce((sum, item) => sum + item.count, 0);
       if (hits >= effective.clusterCount) emit(ruleId, span.from, span.to, matches.map(item => item.term), hits, count, commas);
     }
+    // A long attributive is measured as the text between the previous boundary and each "的".
+    const modifiers: string[] = [];
+    for (const at of positions(sentence, "的")) {
+      let start = at;
+      while (start > 0 && sentence[start - 1] !== "的"
+        && !attributiveBoundary.test(sentence[start - 1])
+        && !attributiveClauseMarkers.includes(sentence[start - 1])) start--;
+      if (characters(sentence.slice(start, at)) >= effective.attributiveMinCharacters) modifiers.push(sentence.slice(start, at));
+    }
+    if (modifiers.length > 0) {
+      emit("syntax.attributive-stack", span.from, span.to, [...new Set(modifiers)].slice(0, 4), modifiers.length, count, commas);
+    }
+    const particles = positions(sentence, "的").length;
+    if (particles >= effective.particleCount) emit("syntax.particle-overload", span.from, span.to, [], particles, count, commas);
   }
   return { policy: effective, sourceContentHash: createHash("sha256").update(text).digest("hex"),
     coordinateSystem: "utf16-crlf-normalized", findings };

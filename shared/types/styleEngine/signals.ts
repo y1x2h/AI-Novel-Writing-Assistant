@@ -5,12 +5,15 @@ const terms = z.array(z.string().min(1).max(24)).max(32);
 export const styleSignalPolicySchema = z.object({
   revision: z.literal("style-signals-v1"),
   transitionTerms: terms.default(["值得注意的是", "不可否认", "毋庸置疑", "总而言之", "综上所述", "在这个过程中", "从某种意义上说"]),
-  softenerTerms: terms.default(["似乎", "仿佛", "某种", "一种", "难以言喻", "莫名", "隐隐"]),
+  softenerTerms: terms.default(["似乎", "仿佛", "好像", "某种", "一种", "难以言喻", "莫名", "隐隐"]),
   actionAdverbTerms: terms.default(["缓缓", "微微", "轻轻", "不禁", "下意识", "忍不住", "悄然"]),
+  degreeAdverbTerms: terms.default(["非常", "十分", "极其", "特别", "格外", "异常", "无比", "相当"]),
   minSentenceCharacters: z.number().int().min(1).max(100).default(12),
   longSentenceCharacters: z.number().int().min(12).max(2000).default(80),
   commaCount: z.number().int().min(1).max(100).default(4),
   clusterCount: z.number().int().min(2).max(20).default(3),
+  attributiveMinCharacters: z.number().int().min(4).max(20).default(7),
+  particleCount: z.number().int().min(2).max(12).default(3),
   transitionRepeatCount: z.number().int().min(2).max(20).default(2),
   maxPerRule: z.number().int().min(1).max(2).default(2),
   maxFindings: z.number().int().min(1).max(8).default(8),
@@ -20,7 +23,15 @@ export type StyleSignalPolicy = z.infer<typeof styleSignalPolicySchema>;
 export const createStyleSignalPolicy = (): StyleSignalPolicy => styleSignalPolicySchema.parse({ revision: "style-signals-v1" });
 
 export const styleSignalFindingSchema = z.object({
-  ruleId: z.enum(["template.transition", "rhythm.comma-density", "surface.repeated-softeners", "surface.action-adverb-stack"]),
+  ruleId: z.enum([
+    "template.transition",
+    "rhythm.comma-density",
+    "surface.repeated-softeners",
+    "surface.action-adverb-stack",
+    "syntax.attributive-stack",
+    "syntax.particle-overload",
+    "surface.degree-adverb-stack",
+  ]),
   excerpt: z.string().min(1).max(480),
   from: z.number().int().nonnegative(),
   to: z.number().int().nonnegative(),

@@ -558,7 +558,7 @@ export const promptAssetLoaderEntries: PromptAssetLoaderEntry[] = [
     load: () => require("../prompts/storyWorldSlice/storyWorldSlice.prompts").storyWorldSlicePrompt as UnknownPromptAsset,
   },
   {
-    key: "style.detection@v10",
+    key: "style.detection@v11",
     load: () => require("../prompts/style/style.prompts").styleDetectionPrompt as UnknownPromptAsset,
   },
   {
