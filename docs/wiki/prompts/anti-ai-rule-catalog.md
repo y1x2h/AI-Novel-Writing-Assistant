@@ -53,6 +53,32 @@
 - 「的」字过载 → `risk / medium / autoRewrite: false`。一个分句里三个以上「的」读起来拖沓，但修法是把修饰结构动词化、拆成短句，需要判断内容。
 - 程度副词与模糊词堆叠 → `forbidden / medium / autoRewrite: true`。「非常……仿佛……好像」同句叠用几乎没有正当用法，删掉多余程度词就成立。
 
+## 统计学校准（calibration）
+
+### Background
+
+反 AI 信号的阈值过去只有「工程初值」：改过词表或阈值后，没有任何机制能说明这会让检测变松还是变紧，也无法在回归时发现偏移。同时，规则在真人文本上会不会误触发，此前完全靠人工感觉。
+
+### Decision
+
+- 在 `server/src/services/styleEngine/calibration/` 下建立可复算的校准基线，语料以 `.txt` 提交进仓库，规模刻意保持小（当前 AI 语料 316 字、真人语料 179 字），保证任何人本地都能复现。
+- 基线只记录事实：每条规则的 `hits`、`perKilo`（AI 语料每千字命中条数）与 `falsePositiveRate`（命中里来自真人语料的比例，作为误报代理指标）。
+- 基线用 `signalRevision` 与信号策略 revision 绑定。改动 `shared/types/styleEngine/signals.ts` 的阈值、词表或新增信号后，必须同步提升 revision 并刷新基线，否则 `calibration.test.js` 直接失败。
+- AI 语料必须覆盖全部 10 条信号；检测到某条规则在 AI 语料里零命中时，测试提示补样本，避免基线在无声中失效。
+
+### Current Rule
+
+- 刷新方式：在 `server` 目录执行 `pnpm run calibrate:signals`，把输出的 entries 与 `sampleCharacters` 粘回 `calibrationBaseline.ts`。
+- 容差：`perKilo` 0.05、`falsePositiveRate` 0.02，`hits` 与 `sampleCharacters` 必须完全一致。
+- 校准只服务回归与解释，不参与运行时判定，也不产生任何规则路由。
+- 当前已知事实：`syntax.attributive-stack` 的 `falsePositiveRate` 为 0.5——真人语料里的 `巷子深处飘来煮面条的味道` 被误判为长定语。该信号的回溯没有在无边界词的短句中途停住，属于召回边界偏宽，已作为待收敛项保留在基线里，不在校准阶段顺手修改检测逻辑。
+
+### Failure Modes
+
+- **改了阈值不刷基线**：revision 不一致或数值漂移会让测试失败，这是期望行为，不要通过放宽容差绕过。
+- **把语料当判定样本**：语料只用于复算与回归，不能拿它当"AI 味标准答案"，更不能据此做关键词判定。
+- **扩大语料却不更新基线**：`sampleCharacters` 与 `hits` 是精确比对项，扩语料必须同一提交刷新基线。
+
 ## 改写力度分级（轻改 / 中改 / 重写）
 
 ### Background
@@ -97,6 +123,7 @@
 - 合同渲染与自检：`server/src/services/styleEngine/StyleCompiler.ts`、`styleContractText.ts`。
 - 检测与改写 prompt：`server/src/prompting/prompts/style/style.prompts.ts`、`style.promptSchemas.ts`。
 - 规则生效策略：`server/src/services/styleEngine/AntiAiPolicyResolver.ts`。
+- 统计学校准：`server/src/services/styleEngine/calibration/`（`calibrationMetrics.ts`、`calibrationBaseline.ts`、`runCalibration.ts`、`corpus/`）。
 - 改写护栏与力度阈值：`server/src/services/styleEngine/rewrite/index.ts`、`StyleRewriteService.ts`。
 - 力度选择 UI：`client/src/components/styleReview/index.tsx`、`client/src/pages/writingFormula/components/WritingFormulaCleanPanel.tsx`、`client/src/pages/antiAiRules/components/AntiAiRuleEffectTestCard.tsx`。
 

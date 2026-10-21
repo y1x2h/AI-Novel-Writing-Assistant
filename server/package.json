@@ -25,6 +25,7 @@
     "test:quality": "node scripts/quality/run-gate.cjs",
     "test": "pnpm --filter @ai-novel/shared build && pnpm run build && pnpm run test:node",
     "test:node": "node scripts/run-tests.cjs fast",
+    "calibrate:signals": "pnpm --filter @ai-novel/shared build && pnpm run build && node dist/services/styleEngine/calibration/runCalibration.js",
     "test:integration": "pnpm --filter @ai-novel/shared build && pnpm run build && node scripts/run-tests.cjs integration",
     "test:all": "pnpm run test && pnpm run test:integration",
     "test:planner": "pnpm --filter @ai-novel/shared build && pnpm run build && node --test tests/planner.test.js",
