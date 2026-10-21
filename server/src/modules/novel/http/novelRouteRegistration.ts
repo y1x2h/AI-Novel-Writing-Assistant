@@ -12,6 +12,7 @@ import { registerNovelCharacterPreparationRoutes } from "../characters/http/nove
 import { registerNovelCharacterResourceRoutes } from "../characters/http/novelCharacterResourceRoutes";
 import { registerNovelCharacterSyncRoutes } from "../characters/http/novelCharacterSyncRoutes";
 import { registerNovelCharacterVisibleProfileRoutes } from "../characters/http/novelCharacterVisibleProfileRoutes";
+import { registerNovelBlurbRoutes } from "../setup/http/novelBlurbRoutes";
 import { registerNovelFramingRoutes } from "../setup/http/novelFramingRoutes";
 import { registerNovelPlanningRoutes } from "../planning/http/novelPlanningRoutes";
 import { registerNovelProductionRoutes } from "../production/http/novelProductionRoutes";
@@ -93,6 +94,10 @@ export function registerNovelHttpRoutes(router: Router, services: NovelHttpServi
   registerDirectorIssuePolicyRoutes(router);
 
   registerNovelFramingRoutes({
+    router,
+  });
+
+  registerNovelBlurbRoutes({
     router,
   });
 

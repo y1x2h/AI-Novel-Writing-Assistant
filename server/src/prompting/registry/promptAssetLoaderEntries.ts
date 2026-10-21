@@ -322,6 +322,10 @@ export const promptAssetLoaderEntries: PromptAssetLoaderEntry[] = [
     load: () => require("../prompts/helper/titleGeneration.prompt").titleGenerationPrompt as UnknownPromptAsset,
   },
   {
+    key: "novel.blurb.generate@v1",
+    load: () => require("../prompts/novel/blurbGeneration.prompts").blurbGenerationPrompt as UnknownPromptAsset,
+  },
+  {
     key: "novel.volume.strategy@v2",
     load: () => require("../prompts/novel/volume/strategy.prompts").createVolumeStrategyPrompt() as UnknownPromptAsset,
   },

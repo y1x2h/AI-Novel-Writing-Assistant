@@ -72,6 +72,7 @@ interface NovelBasicInfoFormProps {
   submitLabel: string;
   showPublicationStatus?: boolean;
   titleQuickFill?: ReactNode;
+  blurbQuickFill?: ReactNode;
   framingQuickFill?: ReactNode;
   projectQuickStart?: ReactNode;
   resourceRecommendation?: ReactNode;
@@ -95,6 +96,7 @@ export default function NovelBasicInfoForm(props: NovelBasicInfoFormProps) {
     submitLabel,
     showPublicationStatus = true,
     titleQuickFill,
+    blurbQuickFill,
     framingQuickFill,
     projectQuickStart,
     resourceRecommendation,
@@ -124,6 +126,7 @@ export default function NovelBasicInfoForm(props: NovelBasicInfoFormProps) {
           basicForm={basicForm}
           onFormChange={onFormChange}
           titleQuickFill={titleQuickFill}
+          blurbQuickFill={blurbQuickFill}
           framingQuickFill={framingQuickFill}
           projectQuickStart={projectQuickStart}
         />
