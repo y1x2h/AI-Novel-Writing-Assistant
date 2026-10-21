@@ -39,6 +39,7 @@ import { ReasoningStreamCollector } from "./reasoning";
 import { claimModelRequest, currentModelRequestBudget } from "../platform/llm/retries";
 
 export {
+  normalizeOversizedValues,
   parseStructuredLlmRawContentDetailed,
   shouldUseJsonObjectResponseFormat,
   type StructuredInvokeRawParseInput,
@@ -194,7 +195,7 @@ async function resolveAttemptTarget(input: {
   return {
     provider: resolved.provider,
     model: resolved.model,
-    apiKey: input.apiKey,
+    apiKey: resolved.apiKey,
     baseURL: resolved.baseURL,
     authMode: resolved.authMode,
     temperature: resolved.temperature,

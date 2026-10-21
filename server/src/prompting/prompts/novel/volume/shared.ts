@@ -49,6 +49,17 @@ export interface VolumeBeatSheetPromptInput {
   guidance?: string;
 }
 
+/**
+ * 当前调用在目标节奏段内部的分批信息。
+ * 节奏段章数超过单次输出预算时会被拆成多批，中间批次不得兑现该节奏段的 mustDeliver。
+ */
+export interface BeatChapterSlice {
+  index: number;
+  total: number;
+  isFirst: boolean;
+  isLast: boolean;
+}
+
 export interface VolumeChapterListPromptInput {
   novel: VolumeGenerationNovel;
   workspace: VolumeWorkspace;
@@ -70,6 +81,7 @@ export interface VolumeChapterListPromptInput {
   preservedBeatChapterSummary?: string | null;
   reservedChapterTitles?: string[];
   retryReason?: string | null;
+  beatChapterSlice?: BeatChapterSlice | null;
 }
 
 export interface VolumeChapterDetailPromptInput {
@@ -328,13 +340,24 @@ export function buildBeatChapterRangeContext(input: {
   targetChapterStartOrder: number;
   targetChapterEndOrder: number;
   nextAvailableChapterOrder: number;
+  beatChapterSlice?: BeatChapterSlice | null;
 }): string {
-  return [
+  const lines = [
     `current beat: ${input.targetBeat.label} (${input.targetBeat.key})`,
     `chapter slot range in current volume: ${input.targetChapterStartOrder}-${input.targetChapterEndOrder}`,
     `target chapter count for this beat: ${input.targetBeatChapterCount}`,
     `next available chapter slot before generation: ${input.nextAvailableChapterOrder}`,
-  ].join("\n");
+  ];
+
+  const slice = input.beatChapterSlice;
+  if (slice && slice.total > 1) {
+    lines.push(`this beat is generated in ${slice.total} batches; current batch: ${slice.index + 1}/${slice.total}`);
+    lines.push(slice.isLast
+      ? "current batch closes the beat: its last chapter owns the beat mustDeliver and the reading pull."
+      : "current batch is an intermediate batch: it must keep escalating without resolving the beat mustDeliver or closing the beat.");
+  }
+
+  return lines.join("\n");
 }
 
 export function buildBeatChapterSummary(summary: string | null | undefined): string {

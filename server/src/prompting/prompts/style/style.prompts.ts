@@ -98,7 +98,7 @@ export const styleDetectionPrompt: PromptAsset<
   z.infer<typeof styleDetectionPayloadSchema>
 > = {
   id: "style.detection",
-  version: "v10",
+  version: "v12",
   taskType: "planner",
   mode: "structured",
   language: "zh",
@@ -141,7 +141,7 @@ export const styleDetectionPrompt: PromptAsset<
       "",
       "检测范围：",
       "1. 写法合同：检查文本是否违背当前要求的叙事方式、角色表达、语言风格、节奏组织、技法使用或表达边界。",
-      "2. 反 AI 规则：检查文本是否出现套路化、八股感、空泛总结、机械排比、情绪假热闹、模板痕迹或其他明显 AI 味问题。",
+      "2. 反 AI 规则：检查文本是否出现套路化、八股感、空泛总结、机械排比、情绪假热闹、模板痕迹或其他明显 AI 味问题。尤其注意中文 AI 句式指纹：句尾伪诗意补语（象征着/诉说着/仿佛在暗示）、说明文连接词（此外/值得注意的是/总而言之/由此可见）、公关广告腔大词（彰显/赋能/淋漓尽致/叹为观止）、二分对照壳（不是……而是……／不仅……更是……）、以及冒号分号的装饰性堆叠。另外核对表层句式：名词前超过 6 个字的定语堆砌、同一个分句里三个以上「的」、程度副词（非常/十分/极其/特别）与「仿佛/好像/似乎」这类模糊词在同一句叠用、以及感叹号省略号顿号当语气装饰堆叠。对话层面核对对话标签是否有节制、是否有口语与语气差异、是否穿插动作或答非所问、是否出现解释性台词（我的意思是／也就是说）；修辞层面核对比喻是否超量或套用「如……般」「宛如」这类万能画面，以及「深吸一口气」「眼中闪过一丝」这类套式微动作是否反复出现。",
       "3. issueCategory 必须判断问题更接近“style_expression”还是“story_structure”。只有当问题已经越过表达层、开始干扰剧情结构或场景推进时，才可标成 story_structure。",
       "4. 必须通读全文做召回，不要只抓开头、结尾或最显眼的 1-3 处问题；如果 AI 味集中出现在多个相邻段落，要合并为可修复的高价值 violation。",
       "5. 模板词仅是检查线索。须结合聚集、信息增量与作品写法判断，不得因单词命中强制判违规。",
@@ -363,7 +363,7 @@ export const styleGenerationPrompt: PromptAsset<StyleGenerationPromptInput, stri
 
 export const styleRewritePrompt: PromptAsset<StyleRewritePromptInput, ChapterPatchRepairPlan> = {
   id: "style.rewrite",
-  version: "v4",
+  version: "v5",
   taskType: "repair",
   mode: "structured",
   language: "zh",
@@ -389,6 +389,11 @@ export const styleRewritePrompt: PromptAsset<StyleRewritePromptInput, ChapterPat
       "5. 不得引入原文没有的新设定、新人物、新冲突或新结论。新增小动作、物件外观、笔迹和布局也属于新增事实，不能为了自然感补造。",
       "6. issuesBlock 中的 suggestion 只表示修改方向，不是可复制文本。禁止直接照抄 suggestion 中的示例句。",
       "",
+      "信息守恒护栏：",
+      "1. 改写前后的数值、时间、金额、数量、专名、否定、条件、人物关系与事件先后必须保持一致。",
+      "2. 只允许减少表达冗余，不允许增加原文没有的信息；新人物、新地点、新物品、新数值、新动机、新线索以及原文没有的额外行动或警示都算新增信息。",
+      "3. 替换内容必须在原文有依据；找不到依据时保留原句或删去概括，不得用新细节占位。",
+      "",
       "修正原则：",
       "1. 优先做最小必要改动，能局部修好就不要整体推翻。",
       "2. 如果问题是写法违规，优先修正句式、措辞、节奏和表达方式，而不是改剧情。",
@@ -413,6 +418,7 @@ export const styleRewritePrompt: PromptAsset<StyleRewritePromptInput, ChapterPat
       "4. 是否没有照抄 suggestion 中的示例句。",
       "5. 每个替换细节是否有原文依据；例如把账册概括换成页脚铅笔字、指印或折回执动作会虚构事实。无依据时删去概括，不能用新细节占位。",
       "6. 是否只输出补丁 JSON，数字、时间、专名、否定和信息先后保持不变。",
+      "7. 把改写结果与对应原句逐项对照，信息只能减少冗余，不能增加原文没有的内容。",
     ].join("\n\n")),
     new HumanMessage([
       "原文：",

@@ -9,6 +9,7 @@ const {
   isDeepSeekThinkingModeProvider,
   isMiniMaxCompatibleProvider,
   resolveProviderReasoningBehavior,
+  supportsGlmReasoningToggle,
 } = require("../dist/llm/reasoning.js");
 
 test("Ollama off controls the OpenAI-compatible request independently of local model names", () => {
@@ -200,4 +201,34 @@ test("ReasoningStreamCollector keeps provider reasoning even when it arrives out
   assert.equal(first, "先分析");
   assert.equal(second, "再确认");
   assert.equal(collector.flush(), "");
+});
+
+test("GLM 5.3 and later always think and must never receive thinking.type = disabled", () => {
+  // GLM-5.3 关闭思考会返回 400（code 1210），因此即使上游要求关闭也必须发 enabled。
+  for (const model of ["glm-5.3-flash", "glm-5.3", "glm-5.4-flash"]) {
+    const behavior = resolveProviderReasoningBehavior({
+      provider: "glm",
+      baseURL: "https://open.bigmodel.cn/api/paas/v4",
+      model,
+      reasoningEnabled: false,
+    });
+
+    assert.equal(behavior.reasoningEnabled, true);
+    assert.deepEqual(behavior.modelKwargs, { thinking: { type: "enabled" } });
+    assert.equal(supportsGlmReasoningToggle("glm", undefined, model), false);
+  }
+});
+
+test("GLM 5.2 and earlier keep the reasoning toggle and still disable thinking", () => {
+  const behavior = resolveProviderReasoningBehavior({
+    provider: "glm",
+    baseURL: "https://open.bigmodel.cn/api/paas/v4",
+    model: "glm-5.2",
+    reasoningEnabled: false,
+  });
+
+  assert.equal(behavior.reasoningEnabled, false);
+  assert.deepEqual(behavior.modelKwargs, { thinking: { type: "disabled" } });
+  assert.equal(supportsGlmReasoningToggle("glm", undefined, "glm-5.2"), true);
+  assert.equal(supportsGlmReasoningToggle("glm", undefined, "glm-4.5-air"), true);
 });

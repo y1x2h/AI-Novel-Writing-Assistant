@@ -12,6 +12,8 @@ import type {
   ChapterEditorWorkspaceResponse,
   ChapterEditorRewritePreviewRequest,
   ChapterEditorRewritePreviewResponse,
+  ChapterEditorSceneDirectedRequest,
+  ChapterEditorSceneDirectedResponse,
   ChapterStatus,
 } from "@ai-novel/shared/types/novel";
 import { apiClient } from "../client";
@@ -111,6 +113,18 @@ export async function previewChapterRewrite(
 export async function getChapterEditorWorkspace(novelId: string, chapterId: string) {
   const { data } = await apiClient.get<ApiResponse<ChapterEditorWorkspaceResponse>>(
     `/novels/${novelId}/chapters/${chapterId}/editor/workspace`,
+  );
+  return data;
+}
+
+export async function previewChapterSceneDirected(
+  novelId: string,
+  chapterId: string,
+  payload: ChapterEditorSceneDirectedRequest,
+) {
+  const { data } = await apiClient.post<ApiResponse<ChapterEditorSceneDirectedResponse>>(
+    `/novels/${novelId}/chapters/${chapterId}/editor/scene-directed-preview`,
+    payload,
   );
   return data;
 }

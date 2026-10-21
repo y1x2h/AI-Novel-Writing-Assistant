@@ -395,9 +395,12 @@ export default function BookAnalysisPage() {
         novelOptions={workspace.novelOptions}
         createPending={workspace.pending.create}
         createDiagnosisPending={workspace.pending.createDiagnosis}
+        importSourcePending={workspace.pending.importSourceDocument || workspace.pending.importSourceNovel}
         onModeChange={workspace.setAnalysisMode}
         onSelectDocument={workspace.selectDocument}
         onSelectVersion={workspace.selectVersion}
+        onImportSourceDocument={workspace.importSourceDocument}
+        onImportSourceNovel={workspace.importSourceNovel}
         onSelectDiagnosisNovel={workspace.setSelectedDiagnosisNovelId}
         onUserFocusInstructionChange={workspace.setUserFocusInstruction}
         onSourceRangeChange={workspace.setSelectedSourceRange}

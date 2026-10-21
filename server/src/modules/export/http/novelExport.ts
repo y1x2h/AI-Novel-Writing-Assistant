@@ -17,6 +17,10 @@ const exportQuerySchema = z.object({
   scope: z.enum(NOVEL_EXPORT_SCOPE_VALUES).default("full"),
 });
 
+const exportAsDocumentBodySchema = z.object({
+  purpose: z.enum(["diagnosis", "reference"]).default("diagnosis"),
+});
+
 router.use(authMiddleware);
 
 router.get(
@@ -38,11 +42,12 @@ router.get(
 
 router.post(
   "/:id/export-as-document",
-  validate({ params: idParamsSchema }),
+  validate({ params: idParamsSchema, body: exportAsDocumentBodySchema }),
   async (req, res, next) => {
     try {
       const { id } = req.params as z.infer<typeof idParamsSchema>;
-      const data = await novelExportService.exportAsKnowledgeDocument(id);
+      const { purpose } = req.body as z.infer<typeof exportAsDocumentBodySchema>;
+      const data = await novelExportService.exportAsKnowledgeDocument(id, { purpose });
       res.status(201).json({
         success: true,
         data,

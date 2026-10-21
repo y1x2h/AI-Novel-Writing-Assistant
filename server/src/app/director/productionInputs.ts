@@ -17,6 +17,13 @@ export function modelOptions(context: StepContext) {
   const input = requireLaunch(context.contract);
   return {provider: context.contract.modelConfig.route, model: context.contract.modelConfig.model, temperature: input.temperature};
 }
+/**
+ * Structured outline steps must follow the task-type route (planner) for provider/model and output budget.
+ * The frozen run model snapshot stays out of these calls so a short-output provider cannot truncate the plan.
+ */
+export function planningModelOptions(context: StepContext) {
+  return {temperature: requireLaunch(context.contract).temperature};
+}
 export async function bookContractInput(context: StepContext, macroService: StoryMacroPlanService): Promise<DirectorBookContractPromptInput> {
   const input = requireLaunch(context.contract);
   const novel = await prisma.novel.findUniqueOrThrow({where: {id: context.contract.novelId}});

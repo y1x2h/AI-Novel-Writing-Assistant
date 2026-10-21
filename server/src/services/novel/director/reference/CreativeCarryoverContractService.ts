@@ -12,6 +12,7 @@ import {
 } from "@ai-novel/shared/types/creativeCarryoverContract";
 import type { LLMProvider } from "@ai-novel/shared/types/llm";
 import { prisma } from "../../../../db/prisma";
+import { normalizeOversizedValues } from "../../../../llm/structuredInvoke";
 import { AppError } from "../../../../middleware/errorHandler";
 import { runStructuredPrompt } from "../../../../prompting/core/promptRunner";
 import { creativeCarryoverContractPrompt } from "../../../../prompting/prompts/novel/creativeCarryoverContract.prompts";
@@ -68,6 +69,23 @@ function clipText(value: string, maxChars: number): string {
     return normalized;
   }
   return `${normalized.slice(0, Math.max(0, maxChars - 1)).trimEnd()}…`;
+}
+
+/**
+ * 模型偶尔会把字段写得略超上限（如 adaptationFocus.conversionPlan 超过 400 字），
+ * 结构化输出的运行时 Schema 已放宽长度校验，这里在进入严格 Schema 前按 Schema 声明的
+ * 上限做确定性裁剪，避免仅因轻微超长就让整个承接方案生成失败。
+ */
+function parseCreativeCarryoverContractDraft(value: unknown): CreativeCarryoverContract {
+  const parsed = creativeCarryoverContractSchema.safeParse(value);
+  if (parsed.success) {
+    return parsed.data;
+  }
+  const normalized = normalizeOversizedValues(value, parsed.error, creativeCarryoverContractSchema);
+  if (normalized) {
+    return normalized.data;
+  }
+  return creativeCarryoverContractSchema.parse(value);
 }
 
 function formatSectionForPrompt(section: SectionRow): string {
@@ -236,7 +254,7 @@ export class CreativeCarryoverContractService {
       },
     });
 
-    const contract = creativeCarryoverContractSchema.parse({
+    const contract = parseCreativeCarryoverContractDraft({
       ...result.output,
       schemaVersion: CREATIVE_CARRYOVER_CONTRACT_SCHEMA_VERSION,
       mode: input.mode,

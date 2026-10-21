@@ -2,7 +2,7 @@ import { toJSONSchema, type ZodType } from "zod";
 import type { LLMProvider } from "@ai-novel/shared/types/llm";
 import type { ModelRouteRequestProtocol } from "@ai-novel/shared/types/novel";
 import { isBuiltInProvider } from "./providers";
-import { isDeepSeekThinkingModeProvider, isGlmThinkingModeProvider } from "./reasoning";
+import { isDeepSeekThinkingModeProvider, supportsGlmReasoningToggle } from "./reasoning";
 
 export type StructuredExecutionMode = "plain" | "structured";
 export type StructuredOutputStrategy = "json_schema" | "json_object" | "prompt_json";
@@ -178,7 +178,9 @@ export function resolveStructuredOutputProfile(input: {
     });
   }
   if (usesOfficialEndpoint("glm", GLM_HOST_PATTERN)) {
-    const supportsReasoningToggle = isGlmThinkingModeProvider(
+    // GLM-5.3 起模型始终思考，无法强制关闭；此时不能声明支持思考开关，
+    // 否则上游会发出 thinking.type = disabled 并收到 400。
+    const supportsReasoningToggle = supportsGlmReasoningToggle(
       input.provider,
       input.baseURL,
       input.model,

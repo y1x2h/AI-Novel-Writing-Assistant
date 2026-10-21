@@ -1,3 +1,4 @@
+import { useRef, type ChangeEvent } from "react";
 import {
   BOOK_ANALYSIS_PRESETS,
   BOOK_ANALYSIS_SECTIONS,
@@ -36,9 +37,12 @@ interface BookAnalysisCreateDialogProps {
   novelOptions: NovelOption[];
   createPending: boolean;
   createDiagnosisPending: boolean;
+  importSourcePending: boolean;
   onModeChange: (mode: BookAnalysisMode) => void;
   onSelectDocument: (documentId: string) => void;
   onSelectVersion: (versionId: string) => void;
+  onImportSourceDocument: (file: File) => Promise<void>;
+  onImportSourceNovel: (novelId: string) => Promise<void>;
   onSelectDiagnosisNovel: (novelId: string) => void;
   onUserFocusInstructionChange: (instruction: string) => void;
   onSourceRangeChange: (range: BookAnalysisSourceRangeDraft) => void;
@@ -52,6 +56,7 @@ interface BookAnalysisCreateDialogProps {
 
 const ESTIMATED_SEGMENT_CHARS = 10_000;
 const MAX_ESTIMATED_SEGMENTS = 12;
+const NOVEL_SOURCE_PREFIX = "novel:";
 
 function formatCount(value: number): string {
   return new Intl.NumberFormat("zh-CN").format(value);
@@ -109,7 +114,29 @@ export default function BookAnalysisCreateDialog(props: BookAnalysisCreateDialog
     onLlmConfigChange,
     onCreate,
     onCreateDiagnosis,
+    importSourcePending,
+    onImportSourceDocument,
+    onImportSourceNovel,
   } = props;
+
+  const sourceFileInputRef = useRef<HTMLInputElement>(null);
+  const handleSourceFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) {
+      return;
+    }
+    await onImportSourceDocument(file);
+  };
+
+  const handleSourceChange = (event: ChangeEvent<HTMLSelectElement>) => {
+    const selected = event.target.value;
+    if (selected.startsWith(NOVEL_SOURCE_PREFIX)) {
+      void onImportSourceNovel(selected.slice(NOVEL_SOURCE_PREFIX.length));
+      return;
+    }
+    onSelectDocument(selected);
+  };
 
   const isDiagnosisMode = analysisMode === "diagnosis";
   const selectedSourceVersion = sourceDocument?.versions.find((version) => version.id === selectedVersionId)
@@ -213,15 +240,54 @@ export default function BookAnalysisCreateDialog(props: BookAnalysisCreateDialog
                   <SelectControl
                     className="h-10 w-full rounded-md border bg-background px-3 text-sm"
                     value={selectedDocumentId}
-                    onChange={(event) => onSelectDocument(event.target.value)}
+                    onChange={handleSourceChange}
+                    disabled={importSourcePending}
+                    placeholder={importSourcePending ? "正在准备拆书来源..." : "选择文档"}
                   >
                     <option value="">选择文档</option>
-                    {documentOptions.map((document) => (
-                      <option key={document.id} value={document.id}>
-                        {document.title}
-                      </option>
-                    ))}
+                    {documentOptions.length > 0 ? (
+                      <optgroup label="知识库文档">
+                        {documentOptions.map((document) => (
+                          <option key={document.id} value={document.id}>
+                            {document.title}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ) : null}
+                    {novelOptions.length > 0 ? (
+                      <optgroup label="我的小说（导出正文后拆书）">
+                        {novelOptions.map((novel) => (
+                          <option key={novel.id} value={`${NOVEL_SOURCE_PREFIX}${novel.id}`}>
+                            {novel.title}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ) : null}
                   </SelectControl>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs text-muted-foreground">
+                      {documentOptions.length === 0 && novelOptions.length === 0
+                        ? "还没有可拆的来源，可以直接导入本地 txt。"
+                        : "要拆的作品不在这里？导入本地 txt，或从上面的「我的小说」里选一本。"}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="shrink-0"
+                      disabled={importSourcePending}
+                      onClick={() => sourceFileInputRef.current?.click()}
+                    >
+                      {importSourcePending ? "正在导入..." : "导入本地 txt"}
+                    </Button>
+                  </div>
+                  <input
+                    ref={sourceFileInputRef}
+                    type="file"
+                    accept=".txt"
+                    className="hidden"
+                    onChange={handleSourceFileChange}
+                  />
                 </div>
                 <div className="space-y-2">
                   <div className="text-sm font-medium">文档版本</div>

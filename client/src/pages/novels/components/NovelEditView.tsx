@@ -20,6 +20,8 @@ import DirectorFactDebugDialog from "./DirectorFactDebugDialog";
 import DirectorStepCalibrationDialog from "./DirectorStepCalibrationDialog";
 import NovelCharacterPanel from "./NovelCharacterPanel";
 import NovelTaskDrawer from "./NovelTaskDrawer";
+import NovelCompliancePanel from "../compliance/NovelCompliancePanel";
+import { useNovelCompliance } from "../compliance/useNovelCompliance";
 import OutlineTab from "./OutlineTab";
 import PipelineTab from "./PipelineTab";
 import StoryMacroPlanTab from "./StoryMacroPlanTab";
@@ -76,7 +78,13 @@ function DesktopNovelEditView(props: NovelEditViewProps) {
 
   const [isProjectToolsOpen, setIsProjectToolsOpen] = useState(false);
   const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
+  const [acknowledgedExportRisk, setAcknowledgedExportRisk] = useState(false);
   const queryClient = useQueryClient();
+
+  const compliance = useNovelCompliance(id, { enabled: Boolean(id) && isExportDialogOpen });
+  const hasBlockingComplianceRisk = compliance.report?.level === "block"
+    && (compliance.report.items?.length ?? 0) > 0;
+  const exportGatedByCompliance = hasBlockingComplianceRisk && !acknowledgedExportRisk;
 
   const resetChaptersMutation = useMutation({
     mutationFn: () => devResetNovelChapters(id),
@@ -225,17 +233,35 @@ function DesktopNovelEditView(props: NovelEditViewProps) {
               ) : activeStepTakeoverEntry
             ) : null}
 
-            <Dialog open={isExportDialogOpen} onOpenChange={setIsExportDialogOpen}>
+            <Dialog
+              open={isExportDialogOpen}
+              onOpenChange={(open) => {
+                setIsExportDialogOpen(open);
+                if (open) {
+                  setAcknowledgedExportRisk(false);
+                }
+              }}
+            >
               <DialogTrigger asChild>
                 <Button variant="outline">导出</Button>
               </DialogTrigger>
-              <DialogContent className="max-w-2xl">
+              <DialogContent className="max-h-[90vh] max-w-2xl overflow-auto">
                 <DialogHeader>
                   <DialogTitle>导出项目内容</DialogTitle>
                   <DialogDescription>
                     当前步骤会按你正在查看的工作台导出；整本书可导出项目资产，或下载只含正文的 TXT 文件。
                   </DialogDescription>
                 </DialogHeader>
+                <NovelCompliancePanel
+                  report={compliance.report}
+                  isLoading={compliance.isLoading}
+                  isRunning={compliance.isRunning}
+                  onRunPrecheck={compliance.runPrecheck}
+                  scope="full"
+                  gated
+                  acknowledged={acknowledgedExportRisk}
+                  onAcknowledgedChange={setAcknowledgedExportRisk}
+                />
                 <div className="grid gap-4 md:grid-cols-2">
                   <Card>
                     <CardHeader>
@@ -245,14 +271,14 @@ function DesktopNovelEditView(props: NovelEditViewProps) {
                       <Button
                         variant="outline"
                         onClick={() => exportControls.onExportCurrent("markdown")}
-                        disabled={!exportControls.canExportCurrentStep || exportControls.isExportingCurrentMarkdown}
+                        disabled={!exportControls.canExportCurrentStep || exportControls.isExportingCurrentMarkdown || exportGatedByCompliance}
                       >
                         {exportControls.isExportingCurrentMarkdown ? "导出中..." : "Markdown"}
                       </Button>
                       <Button
                         variant="outline"
                         onClick={() => exportControls.onExportCurrent("json")}
-                        disabled={!exportControls.canExportCurrentStep || exportControls.isExportingCurrentJson}
+                        disabled={!exportControls.canExportCurrentStep || exportControls.isExportingCurrentJson || exportGatedByCompliance}
                       >
                         {exportControls.isExportingCurrentJson ? "导出中..." : "JSON"}
                       </Button>
@@ -265,21 +291,21 @@ function DesktopNovelEditView(props: NovelEditViewProps) {
                     <CardContent className="flex flex-wrap gap-2">
                       <Button
                         onClick={() => exportControls.onExportFull("txt")}
-                        disabled={exportControls.isExportingFullTxt}
+                        disabled={exportControls.isExportingFullTxt || exportGatedByCompliance}
                       >
                         {exportControls.isExportingFullTxt ? "导出中..." : "TXT 正文"}
                       </Button>
                       <Button
                         variant="outline"
                         onClick={() => exportControls.onExportFull("markdown")}
-                        disabled={exportControls.isExportingFullMarkdown}
+                        disabled={exportControls.isExportingFullMarkdown || exportGatedByCompliance}
                       >
                         {exportControls.isExportingFullMarkdown ? "导出中..." : "Markdown"}
                       </Button>
                       <Button
                         variant="outline"
                         onClick={() => exportControls.onExportFull("json")}
-                        disabled={exportControls.isExportingFullJson}
+                        disabled={exportControls.isExportingFullJson || exportGatedByCompliance}
                       >
                         {exportControls.isExportingFullJson ? "导出中..." : "JSON"}
                       </Button>

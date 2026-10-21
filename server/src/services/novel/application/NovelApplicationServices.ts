@@ -463,6 +463,10 @@ export class DefaultNovelApplicationServices {
     return this.chapterEditorService.previewAiRevision(...args);
   }
 
+  previewChapterSceneDirected(...args: Parameters<NovelChapterEditorService["previewSceneDirectedRevision"]>) {
+    return this.chapterEditorService.previewSceneDirectedRevision(...args);
+  }
+
   previewChapterCursorContinuation(...args: Parameters<NovelChapterEditorService["previewCursorContinuation"]>) {
     return this.chapterEditorService.previewCursorContinuation(...args);
   }
@@ -477,6 +481,10 @@ export class DefaultNovelApplicationServices {
 
   getLatestStateSnapshot(...args: Parameters<NovelCoreService["getLatestStateSnapshot"]>) {
     return this.core.getLatestStateSnapshot(...args);
+  }
+
+  getNovelCharacterStates(...args: Parameters<NovelCoreService["getNovelCharacterStates"]>) {
+    return this.core.getNovelCharacterStates(...args);
   }
 
   getChapterStateSnapshot(...args: Parameters<NovelCoreService["getChapterStateSnapshot"]>) {

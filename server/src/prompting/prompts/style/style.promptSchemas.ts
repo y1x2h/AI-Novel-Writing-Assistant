@@ -29,6 +29,21 @@ export const styleDetectionPayloadSchema = z.object({
   canAutoRewrite: z.boolean().optional().default(false),
 });
 
+export const styleRewriteConservationFindingSchema = z.object({
+  direction: z.enum(["added", "lost"]),
+  kind: z.enum(["number", "entity", "action", "relation", "order", "negation", "other"]),
+  detail: z.string().trim().min(1).max(200),
+  evidence: z.string().trim().max(300).optional().default(""),
+});
+
+export const styleRewriteConservationSchema = z.object({
+  status: z.enum(["preserved", "changed", "uncertain"]),
+  changes: z.array(styleRewriteConservationFindingSchema).max(20).optional().default([]),
+  reason: z.string().trim().min(1).max(600),
+});
+
+export type StyleRewriteConservationOutput = z.infer<typeof styleRewriteConservationSchema>;
+
 export const styleRecommendationSchema = z.object({
   summary: z.string().trim().min(1),
   candidates: z.array(z.object({
@@ -64,6 +79,30 @@ export const stylePresetSchema = z.object({
     decision: z.enum(["keep", "weaken", "remove"]),
   })),
 }).passthrough();
+
+export const styleFeatureVerificationItemSchema = z.object({
+  featureId: z.string().trim().min(1),
+  crossSource: z.object({
+    passed: z.boolean(),
+    sampleIndexes: z.array(z.number().int().min(1).max(200)).max(24).optional().default([]),
+    evidence: z.string().trim().max(300).optional().default(""),
+  }),
+  predictive: z.object({
+    passed: z.boolean(),
+    reason: z.string().trim().min(1).max(300),
+  }),
+  exclusive: z.object({
+    passed: z.boolean(),
+    reason: z.string().trim().min(1).max(300),
+  }),
+  reason: z.string().trim().min(1).max(400),
+});
+
+export const styleFeatureVerificationSchema = z.object({
+  items: z.array(styleFeatureVerificationItemSchema).min(1),
+});
+
+export type StyleFeatureVerificationOutput = z.infer<typeof styleFeatureVerificationSchema>;
 
 export const styleProfileExtractionSchema = z.object({
   name: z.string().trim().optional(),

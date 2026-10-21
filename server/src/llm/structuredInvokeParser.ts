@@ -183,7 +183,22 @@ function setValueAtPath(root: unknown, path: Array<string | number>, nextValue: 
   return root;
 }
 
-function normalizeOversizedArrays<T>(
+function clipOversizedText(value: string, maximum: number): string {
+  if (value.length <= maximum) {
+    return value;
+  }
+  if (maximum <= 1) {
+    return value.slice(0, Math.max(maximum, 0));
+  }
+  return `${value.slice(0, maximum - 1).trimEnd()}…`;
+}
+
+/**
+ * 按 Schema 声明的最长长度确定性裁剪超长数组/文本，再重新校验。
+ * 供「结构化输出的运行时 Schema 被放宽、但后续业务层仍会用严格 Schema 校验」的链路复用，
+ * 避免模型只是略超上限就让整条链路失败。
+ */
+export function normalizeOversizedValues<T>(
   parsed: unknown,
   error: ZodError,
   schema: ZodType<T>,
@@ -192,9 +207,10 @@ function normalizeOversizedArrays<T>(
   const trimmedPaths: string[] = [];
 
   for (const issue of error.issues) {
-    if (issue.code !== "too_big" || !issue.message.toLowerCase().includes("array")) {
+    if (issue.code !== "too_big") {
       continue;
     }
+    const origin = (issue as { origin?: unknown }).origin;
     const maximum = typeof (issue as { maximum?: unknown }).maximum === "number"
       ? (issue as { maximum: number }).maximum
       : null;
@@ -204,11 +220,22 @@ function normalizeOversizedArrays<T>(
 
     const issuePath = normalizeIssuePath(issue.path);
     const currentValue = getValueAtPath(normalized, issuePath);
-    if (!Array.isArray(currentValue) || currentValue.length <= maximum) {
+    const isArrayIssue = origin === "array" || issue.message.toLowerCase().includes("array");
+
+    if (isArrayIssue) {
+      if (!Array.isArray(currentValue) || currentValue.length <= maximum) {
+        continue;
+      }
+      normalized = setValueAtPath(normalized, issuePath, currentValue.slice(0, maximum));
+      trimmedPaths.push(formatIssuePath(issuePath));
       continue;
     }
 
-    normalized = setValueAtPath(normalized, issuePath, currentValue.slice(0, maximum));
+    // 超长文本同样按 Schema 上限截断，避免模型写得略长就整条链路校验失败。
+    if (origin !== "string" || typeof currentValue !== "string" || currentValue.length <= maximum) {
+      continue;
+    }
+    normalized = setValueAtPath(normalized, issuePath, clipOversizedText(currentValue, maximum));
     trimmedPaths.push(formatIssuePath(issuePath));
   }
 
@@ -340,7 +367,7 @@ function getRepairHelpers<T>() {
   return {
     tryParseStructuredJsonValue,
     tryUnwrapSingletonArrayWrapper,
-    normalizeOversizedArrays,
+    normalizeOversizedValues,
     formatZodErrors,
     logStructuredInvokeEvent,
   };
@@ -453,7 +480,7 @@ export async function parseStructuredLlmRawContentDetailed<T>(
     };
   }
 
-  const normalizedInitial = normalizeOversizedArrays(parsed, first.error, runtimeSchema);
+  const normalizedInitial = normalizeOversizedValues(parsed, first.error, runtimeSchema);
   if (normalizedInitial) {
     logStructuredInvokeEvent({
       event: "normalized",

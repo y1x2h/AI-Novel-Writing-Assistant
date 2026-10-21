@@ -1,4 +1,5 @@
 import { prisma } from "../../db/prisma";
+import type { NovelCharacterStatesResponse } from "@ai-novel/shared/types/characterStateQuery";
 import { ChapterArtifactContentVersionError } from "../novel/runtime/artifactSync/contracts";
 import { stringifyStringArray } from "../novel/novelP0Utils";
 import { payoffLedgerSyncService } from "../payoff/PayoffLedgerSyncService";
@@ -20,6 +21,22 @@ function clampStateScore(value: unknown): number | null {
 function normalizeStatus(value: unknown, fallback: string): string {
   const text = String(value ?? "").trim();
   return text || fallback;
+}
+
+function parseStringArray(value: string | null | undefined): string[] {
+  const raw = value?.trim();
+  if (!raw) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+  } catch {
+    return [];
+  }
 }
 
 interface StateChapterReference {
@@ -112,6 +129,63 @@ export class StateService {
       },
       orderBy: { createdAt: "desc" },
     });
+  }
+
+  async getNovelCharacterStates(novelId: string): Promise<NovelCharacterStatesResponse> {
+    const [snapshot, characters] = await Promise.all([
+      prisma.storyStateSnapshot.findFirst({
+        where: { novelId },
+        include: { characterStates: true },
+        orderBy: { createdAt: "desc" },
+      }),
+      prisma.character.findMany({
+        where: { novelId },
+        select: {
+          id: true,
+          name: true,
+          role: true,
+          currentLocation: true,
+          availability: true,
+          outerGoal: true,
+          innerNeed: true,
+        },
+        orderBy: { createdAt: "asc" },
+      }),
+    ]);
+    const stateByCharacterId = new Map(
+      (snapshot?.characterStates ?? []).map((item) => [item.characterId, item] as const),
+    );
+    return {
+      novelId,
+      snapshotId: snapshot?.id ?? null,
+      sourceChapterId: snapshot?.sourceChapterId ?? null,
+      snapshotSummary: snapshot?.summary?.trim() || null,
+      characters: characters.map((character) => {
+        const state = stateByCharacterId.get(character.id);
+        return {
+          characterId: character.id,
+          name: character.name,
+          role: character.role,
+          currentLocation: character.currentLocation?.trim() || null,
+          availability: character.availability?.trim() || null,
+          injuries: parseStringArray(state?.injuriesJson),
+          possessions: parseStringArray(state?.possessionsJson),
+          knownFacts: parseStringArray(state?.knownFactsJson),
+          misbeliefs: parseStringArray(state?.misbeliefsJson),
+          arc: {
+            currentGoal: state?.currentGoal?.trim() || character.outerGoal?.trim() || null,
+            outerGoal: character.outerGoal?.trim() || null,
+            innerNeed: character.innerNeed?.trim() || null,
+            emotion: state?.emotion?.trim() || null,
+            stressLevel: state?.stressLevel ?? null,
+            secretExposure: state?.secretExposure?.trim() || null,
+          },
+          summary: state?.summary?.trim() || null,
+          snapshotId: snapshot?.id ?? null,
+          sourceChapterId: snapshot?.sourceChapterId ?? null,
+        };
+      }),
+    };
   }
 
   async getChapterSnapshot(novelId: string, chapterId: string) {
@@ -315,6 +389,8 @@ export class StateService {
           secretExposure: item.secretExposure?.trim() || null,
           knownFactsJson: stringifyStringArray(item.knownFacts),
           misbeliefsJson: stringifyStringArray(item.misbeliefs),
+          injuriesJson: stringifyStringArray(item.injuries),
+          possessionsJson: stringifyStringArray(item.possessions),
           summary: item.summary?.trim() || null,
         };
       })

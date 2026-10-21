@@ -5,6 +5,7 @@ import {
 } from "@ai-novel/shared/types/novelDirector";
 import type { CreativeCarryoverContract } from "@ai-novel/shared/types/creativeCarryoverContract";
 import type { NovelBasicFormState } from "../../novelBasicInfo.shared";
+import { normalizeEstimatedChapterCount } from "../estimatedChapterCountInput.ts";
 import type { AutoDirectorCreateStageKey } from "../directorCreateStages";
 import type {DirectorVersion} from "@ai-novel/shared/types/director/version";
 
@@ -61,6 +62,18 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isRecoverableStage(value: unknown): value is RecoverableStage {
   return typeof value === "string" && (RECOVERABLE_STAGES as readonly string[]).includes(value);
+}
+
+function sanitizeDraftBasicForm(form: Partial<NovelBasicFormState>): Partial<NovelBasicFormState> {
+  if (form.estimatedChapterCountSource !== "user") {
+    return { ...form, estimatedChapterCountSource: "default" };
+  }
+  const estimatedChapterCount = normalizeEstimatedChapterCount(form.estimatedChapterCount);
+  if (estimatedChapterCount !== undefined) {
+    return { ...form, estimatedChapterCount, estimatedChapterCountSource: "user" };
+  }
+  const { estimatedChapterCount: _discarded, ...rest } = form;
+  return { ...rest, estimatedChapterCountSource: "default" };
 }
 
 function draftStorageKey(scopeKey: string): string {
@@ -146,7 +159,7 @@ export function loadAutoDirectorCreateDraft(
       version: DRAFT_VERSION,
       scopeKey,
       idea: value.idea,
-      basicForm: value.basicForm as Partial<NovelBasicFormState>,
+      basicForm: sanitizeDraftBasicForm(value.basicForm as Partial<NovelBasicFormState>),
       activeStage: value.activeStage,
       completedStages: Array.from(new Set(value.completedStages.filter(isRecoverableStage))),
       runMode: value.runMode as DirectorRunMode,

@@ -2,6 +2,7 @@ import type { LLMProvider } from "@ai-novel/shared/types/llm";
 import { normalizeCommercialTags } from "@ai-novel/shared/types/novelFraming";
 import type { DirectorRunMode, DirectorWorldSetupMode } from "@ai-novel/shared/types/novelDirector";
 import type { NovelBasicFormState } from "../novelBasicInfo.shared";
+import { normalizeEstimatedChapterCount } from "../autoDirector/estimatedChapterCountInput.ts";
 
 export interface DirectorRunModeOption {
   value: DirectorRunMode;
@@ -80,7 +81,9 @@ export function buildAutoDirectorRequestPayload(
     aiFreedom: basicForm.aiFreedom,
     postGenerationStyleReviewEnabled: basicForm.postGenerationStyleReviewEnabled,
     defaultChapterLength: basicForm.defaultChapterLength,
-    estimatedChapterCount: basicForm.estimatedChapterCountSource === "default" ? undefined : basicForm.estimatedChapterCount,
+    estimatedChapterCount: basicForm.estimatedChapterCountSource === "default"
+      ? undefined
+      : normalizeEstimatedChapterCount(basicForm.estimatedChapterCount),
     projectStatus: basicForm.projectStatus,
     storylineStatus: basicForm.storylineStatus,
     outlineStatus: basicForm.outlineStatus,

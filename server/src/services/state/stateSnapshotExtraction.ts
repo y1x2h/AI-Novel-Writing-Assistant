@@ -19,6 +19,8 @@ interface CharacterStateOutput {
   secretExposure?: string;
   knownFacts?: string[];
   misbeliefs?: string[];
+  injuries?: string[];
+  possessions?: string[];
   summary?: string;
 }
 

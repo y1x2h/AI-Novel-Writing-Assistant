@@ -31,8 +31,6 @@ import { listNovelWorldSyncRecords } from "./novelWorldSyncRecords";
 import { NovelWorldSyncService } from "./NovelWorldSyncService";
 import { normalizeStoryWorldSlice } from "../storyWorldSlice/storyWorldSlicePersistence";
 
-const NOVEL_THEME_WORLD_GENERATION_MAX_TOKENS = 4_800;
-
 function buildGeneratedOpeningWorldSlice(input: {
   novelId: string;
   worldId: string;
@@ -509,7 +507,8 @@ export class NovelWorldInstanceService {
         provider: input.provider,
         model: input.model,
         temperature: input.temperature ?? 0.5,
-        maxTokens: NOVEL_THEME_WORLD_GENERATION_MAX_TOKENS,
+        // 不设固定输出上限：强制思考模型（如 GLM 5.3+）的思考内容会计入输出预算，
+        // 固定的小上限会被思考吃满、导致正文返回为空、结构化输出失败；预算交给模型与路由决定。
         timeoutMs,
         entrypoint: "novel-world-generate",
       },

@@ -5,6 +5,7 @@ import type {
   StyleExtractionSourceProcessingMode,
   StyleFeatureDecision,
 } from "@ai-novel/shared/types/styleEngine";
+import { buildStyleExtractionPresets } from "@ai-novel/shared/types/styleEngine";
 import { prisma } from "../../db/prisma";
 import { runWithLlmUsageTracking } from "../../llm/usageTracking";
 import { AppError } from "../../middleware/errorHandler";
@@ -16,6 +17,7 @@ import {
   type StyleExtractionTaskSourceType,
 } from "./StyleExtractionSourceInput";
 import { StyleProfileService } from "./StyleProfileService";
+import { StyleFeatureVerificationService } from "./verification";
 
 type PresetKey = "imitate" | "balanced" | "transfer";
 
@@ -142,6 +144,8 @@ export class StyleExtractionTaskService {
   private processing = false;
 
   private readonly styleProfileService = new StyleProfileService();
+
+  private readonly featureVerificationService = new StyleFeatureVerificationService();
 
   private logTaskEvent(
     event: string,
@@ -540,6 +544,28 @@ export class StyleExtractionTaskService {
       await prisma.styleExtractionTask.update({
         where: { id: task.id },
         data: {
+          progress: 0.4,
+          heartbeatAt: new Date(),
+          currentStage: "verifying_features",
+          currentItemKey: task.id,
+          currentItemLabel: task.name,
+        },
+      });
+      const verifiedDraft = await this.verifyExtractionFeatures({
+        taskId: task.id,
+        name: task.name,
+        provider: task.provider as LLMProvider,
+        model: task.model ?? undefined,
+        draft,
+        sourceText: extractionInputText,
+        timeoutMs: styleExtractionTimeoutMs,
+        signal: controller.signal,
+      });
+
+      await this.ensureNotCancelled(task.id);
+      await prisma.styleExtractionTask.update({
+        where: { id: task.id },
+        data: {
           progress: 0.58,
           summary: draft.summary,
           heartbeatAt: new Date(),
@@ -550,7 +576,7 @@ export class StyleExtractionTaskService {
       });
 
       const presetKey = (task.presetKey as PresetKey) || "balanced";
-      const decisions = buildExtractionDecisions(draft, presetKey);
+      const decisions = buildExtractionDecisions(verifiedDraft, presetKey);
 
       await this.ensureNotCancelled(task.id);
       await prisma.styleExtractionTask.update({
@@ -569,7 +595,7 @@ export class StyleExtractionTaskService {
         name: task.name,
         sourceText: task.sourceText,
         category: task.category ?? undefined,
-        draft,
+        draft: verifiedDraft,
         presetKey,
         decisions,
         sourceType: taskSource.sourceType,
@@ -653,6 +679,63 @@ export class StyleExtractionTaskService {
       if (this.activeControllers.get(task.id) === controller) {
         this.activeControllers.delete(task.id);
       }
+    }
+  }
+
+  /**
+   * 特征验证是质量增强而不是任务前置条件：验证失败时保留原始特征继续建写法，
+   * 只有用户主动取消才向上抛出。
+   */
+  private async verifyExtractionFeatures(input: {
+    taskId: string;
+    name: string;
+    provider?: LLMProvider;
+    model?: string;
+    draft: StyleExtractionDraft;
+    sourceText: string;
+    timeoutMs: number;
+    signal: AbortSignal;
+  }): Promise<StyleExtractionDraft> {
+    if (input.draft.features.length === 0) {
+      return input.draft;
+    }
+    const startedAt = Date.now();
+    try {
+      const { verifications, sampleCount } = await this.featureVerificationService.verifyFeatures({
+        name: input.name,
+        sourceText: input.sourceText,
+        features: input.draft.features,
+        provider: input.provider,
+        model: input.model,
+        timeoutMs: input.timeoutMs,
+        signal: input.signal,
+      });
+      const features = input.draft.features.map((feature) => ({
+        ...feature,
+        verification: verifications.get(feature.id) ?? null,
+      }));
+      const verifiedCount = features.filter((feature) => feature.verification).length;
+      this.logTaskEvent("features_verified", {
+        taskId: input.taskId,
+        latencyMs: Date.now() - startedAt,
+        sampleCount,
+        featureCount: features.length,
+        verifiedCount,
+      });
+      if (verifiedCount === 0) {
+        return input.draft;
+      }
+      return { ...input.draft, features, presets: buildStyleExtractionPresets(features) };
+    } catch (error) {
+      if (await this.isCancellationRequested(input.taskId)) {
+        throw error;
+      }
+      this.logTaskEvent("feature_verification_failed", {
+        taskId: input.taskId,
+        latencyMs: Date.now() - startedAt,
+        errorMessage: normalizeTaskError(error),
+      }, "warn");
+      return input.draft;
     }
   }
 

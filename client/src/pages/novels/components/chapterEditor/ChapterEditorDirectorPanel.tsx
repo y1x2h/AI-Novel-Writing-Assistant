@@ -3,6 +3,7 @@ import type { ChapterEditorDiffChange } from "@ai-novel/shared/types/chapterEdit
 import { Button } from "@/components/ui/button";
 import type { ChapterEditorSessionState } from "./chapterEditorTypes";
 import { ChapterEditorActions, type ChapterEditorActionsProps } from "./assistant";
+import { CHAPTER_EDITOR_SCENE_INTENT_LABELS } from "./document";
 
 interface ChapterEditorDirectorPanelProps extends ChapterEditorActionsProps {
   workspace: ChapterEditorWorkspaceResponse | null;
@@ -58,11 +59,16 @@ export default function ChapterEditorDirectorPanel(props: ChapterEditorDirectorP
           <>
             <div className="rounded-xl bg-muted/10 p-4">
               <div className="text-sm font-medium text-foreground">
-                {session.mode === "continuation" ? "AI 续写方向" : "AI 理解到的修改目标"}
+                {session.mode === "continuation" ? "AI 续写方向" : session.mode === "scene" ? "AI 生成的场景方向" : "AI 理解到的修改目标"}
               </div>
               {session.mode === "continuation" ? (
                 <div className="mt-3 text-sm leading-6 text-muted-foreground">
                   光标处将插入一段“{session.continuationOperation === "continue" ? "自然续写" : session.requestLabel?.replace(/^正在生成|方案$/g, "") || "续写"}”。你可以先比较候选，再决定是否写回正文。
+                </div>
+              ) : session.mode === "scene" ? (
+                <div className="mt-3 space-y-2 text-sm leading-6 text-muted-foreground">
+                  <div>场景意图：{session.sceneIntent ? CHAPTER_EDITOR_SCENE_INTENT_LABELS[session.sceneIntent] : "即兴"}</div>
+                  {session.sceneGoal ? <div>场景目标：{session.sceneGoal}</div> : null}
                 </div>
               ) : (
                 <div className="mt-3 space-y-2 text-sm leading-6 text-muted-foreground">

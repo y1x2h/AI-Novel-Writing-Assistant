@@ -239,18 +239,27 @@ export class NovelExportService {
     };
   }
 
-  async exportAsKnowledgeDocument(novelId: string) {
+  async exportAsKnowledgeDocument(
+    novelId: string,
+    options: { purpose?: "diagnosis" | "reference" } = {},
+  ) {
+    const purpose = options.purpose === "reference" ? "reference" : "diagnosis";
     const novel = await this.getTxtNovelRecord(novelId);
     const hasChapterContent = novel.narrativeForm === "short_story"
       ? Boolean(novel.shortStoryContent?.trim())
       : novel.chapters.some((chapter) => (chapter.content ?? "").trim().length > 0);
     if (!hasChapterContent) {
-      throw new AppError("当前小说还没有可诊断的章节正文。", 400);
+      throw new AppError(
+        purpose === "reference"
+          ? "当前小说还没有可拆书的章节正文。"
+          : "当前小说还没有可诊断的章节正文。",
+        400,
+      );
     }
 
     return this.knowledgeService.createDocument({
-      title: `${novel.title}（诊断稿）`,
-      fileName: `${safeFileNamePart(novel.title)}-diagnosis-${buildExportTimestamp()}.txt`,
+      title: purpose === "reference" ? `${novel.title}（正文导出）` : `${novel.title}（诊断稿）`,
+      fileName: `${safeFileNamePart(novel.title)}-${purpose === "reference" ? "source" : "diagnosis"}-${buildExportTimestamp()}.txt`,
       content: buildTxtContent(novel),
     });
   }

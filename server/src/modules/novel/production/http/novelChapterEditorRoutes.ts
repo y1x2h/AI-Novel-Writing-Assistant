@@ -12,10 +12,12 @@ interface RegisterNovelChapterEditorRoutesInput {
     | "previewChapterAiRevision"
     | "previewChapterCursorContinuation"
     | "previewChapterRewrite"
+    | "previewChapterSceneDirected"
   >;
   chapterParamsSchema: z.ZodType<{ id: string; chapterId: string }>;
   rewritePreviewSchema: z.ZodTypeAny;
   aiRevisionPreviewSchema: z.ZodTypeAny;
+  sceneDirectedPreviewSchema: z.ZodTypeAny;
   cursorContinuationPreviewSchema: z.ZodTypeAny;
   forwardBusinessError: (error: unknown, next: (err?: unknown) => void) => boolean;
 }
@@ -27,6 +29,7 @@ export function registerNovelChapterEditorRoutes(input: RegisterNovelChapterEdit
     chapterParamsSchema,
     rewritePreviewSchema,
     aiRevisionPreviewSchema,
+    sceneDirectedPreviewSchema,
     cursorContinuationPreviewSchema,
     forwardBusinessError,
   } = input;
@@ -151,6 +154,42 @@ export function registerNovelChapterEditorRoutes(input: RegisterNovelChapterEdit
             "小说不存在。",
             "章节不存在。",
             "当前章节正文为空，无法发起局部改写。",
+            "选区范围无效，请重新选择后再试。",
+            "选中文本不能为空。",
+            "选中文本已发生变化，请重新选择后再试。",
+            "AI 未返回足够的候选版本，请重试。",
+          ].includes(error.message)
+        ) {
+          next(new AppError(error.message, 400));
+          return;
+        }
+        next(error);
+      }
+    },
+  );
+
+  router.post(
+    "/:id/chapters/:chapterId/editor/scene-directed-preview",
+    validate({ params: chapterParamsSchema, body: sceneDirectedPreviewSchema }),
+    async (req, res, next) => {
+      try {
+        const { id, chapterId } = req.params as z.infer<typeof chapterParamsSchema>;
+        const data = await novelService.previewChapterSceneDirected(id, chapterId, req.body as any);
+        res.status(200).json({
+          success: true,
+          data,
+          message: "Chapter editor scene directed preview generated.",
+        } satisfies ApiResponse<typeof data>);
+      } catch (error) {
+        if (forwardBusinessError(error, next)) {
+          return;
+        }
+        if (
+          error instanceof Error
+          && [
+            "小说不存在。",
+            "章节不存在。",
+            "当前章节正文为空，无法生成场景。请先写下至少一段正文。",
             "选区范围无效，请重新选择后再试。",
             "选中文本不能为空。",
             "选中文本已发生变化，请重新选择后再试。",

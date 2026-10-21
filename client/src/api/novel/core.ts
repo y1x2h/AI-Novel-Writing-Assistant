@@ -228,8 +228,14 @@ export async function downloadNovelExport(
   };
 }
 
-export async function exportNovelAsKnowledgeDocument(id: string) {
-  const { data } = await apiClient.post<ApiResponse<KnowledgeDocumentDetail>>(`/novels/${id}/export-as-document`, {});
+export async function exportNovelAsKnowledgeDocument(
+  id: string,
+  options?: { purpose?: "diagnosis" | "reference" },
+) {
+  const { data } = await apiClient.post<ApiResponse<KnowledgeDocumentDetail>>(
+    `/novels/${id}/export-as-document`,
+    options?.purpose ? { purpose: options.purpose } : {},
+  );
   return data;
 }
 

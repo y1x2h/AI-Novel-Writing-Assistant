@@ -4,3 +4,10 @@ export function parseEstimatedChapterCountInput(value: string): number | null {
     ? parsedValue
     : null;
 }
+
+export function normalizeEstimatedChapterCount(value: unknown): number | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  return parseEstimatedChapterCountInput(String(value)) ?? undefined;
+}

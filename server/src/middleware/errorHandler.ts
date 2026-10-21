@@ -68,6 +68,14 @@ function formatValidationPath(path: PropertyKey[]): string {
     .join(" / ");
 }
 
+function isMissingValueIssue(issueRecord: Record<string, unknown>): boolean {
+  if (Object.prototype.hasOwnProperty.call(issueRecord, "input")) {
+    return issueRecord.input === undefined;
+  }
+  // zod v4 起 issue 上不再暴露 input，只能从原始 message 判断是否真的缺值。
+  return typeof issueRecord.message === "string" && /received undefined$/.test(issueRecord.message);
+}
+
 function formatZodIssueMessage(issue: ZodIssue): string {
   const issueRecord = issue as ZodIssue & Record<string, unknown>;
   const code = String(issue.code);
@@ -75,7 +83,7 @@ function formatZodIssueMessage(issue: ZodIssue): string {
 
   switch (code) {
     case "invalid_type":
-      if (issueRecord.input === undefined) {
+      if (isMissingValueIssue(issueRecord)) {
         return "不能为空。";
       }
       if (issueRecord.expected === "string") {

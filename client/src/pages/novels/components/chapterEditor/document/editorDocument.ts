@@ -1,5 +1,5 @@
 import type { Descendant, Value } from "platejs";
-import type { ChapterEditorCursorOperation, ChapterEditorOperation } from "@ai-novel/shared/types/novel";
+import type { ChapterEditorCursorOperation, ChapterEditorOperation, ChapterEditorSceneIntent } from "@ai-novel/shared/types/novel";
 import { chapterParagraphs, insertChapterContinuation as insertChapterContinuationAtOffset, normalizeChapterText, replaceChapterSelection } from "@ai-novel/shared/types/chapterEditor/document";
 import type {
   ChapterEditorRequestBuilderInput,
@@ -23,6 +23,24 @@ export const CHAPTER_EDITOR_CURSOR_OPERATION_LABELS: Record<ChapterEditorCursorO
   inner_thought: "增加心理描写",
   conflict: "推进冲突",
 };
+
+export const CHAPTER_EDITOR_SCENE_INTENT_LABELS: Record<ChapterEditorSceneIntent, string> = {
+  flashback: "闪回",
+  fight: "打斗",
+  trap: "陷阱",
+  tension_beat: "张力节拍",
+  exposition: "说明",
+  improvise: "即兴",
+};
+
+export const CHAPTER_EDITOR_SCENE_INTENT_ORDER: ChapterEditorSceneIntent[] = [
+  "flashback",
+  "fight",
+  "trap",
+  "tension_beat",
+  "exposition",
+  "improvise",
+];
 
 export function normalizeEditorText(text: string): string {
   return normalizeChapterText(text);

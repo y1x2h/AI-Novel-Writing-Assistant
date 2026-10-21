@@ -61,6 +61,30 @@ test("parseStructuredLlmRawContentDetailed unwraps singleton array wrappers for 
   assert.equal(result.repairAttempts, 0);
 });
 
+test("normalizeOversizedValues clips oversized text and arrays to schema limits", () => {
+  const schema = z.object({
+    sourceTraits: z.array(z.string().trim().min(1).max(200)).min(1).max(2),
+    conversionPlan: z.string().trim().min(1).max(400),
+  });
+  const oversized = {
+    sourceTraits: ["钩子强", "节奏快", "人设鲜明"],
+    conversionPlan: "转".repeat(450),
+  };
+
+  const first = schema.safeParse(oversized);
+  assert.equal(first.success, false);
+
+  const normalized = structuredInvoke.normalizeOversizedValues(oversized, first.error, schema);
+  assert.ok(normalized);
+  assert.equal(normalized.data.sourceTraits.length, 2);
+  assert.equal(normalized.data.conversionPlan.length, 400);
+  assert.ok(normalized.data.conversionPlan.endsWith("…"));
+  assert.deepEqual(normalized.trimmedPaths.sort(), [
+    "conversionPlan",
+    "sourceTraits",
+  ]);
+});
+
 test("parseStructuredLlmRawContentDetailed preserves planner goal aliases after singleton unwrap", async () => {
   const result = await structuredInvoke.parseStructuredLlmRawContentDetailed({
     rawContent: JSON.stringify([{

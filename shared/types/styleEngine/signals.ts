@@ -5,22 +5,43 @@ const terms = z.array(z.string().min(1).max(24)).max(32);
 export const styleSignalPolicySchema = z.object({
   revision: z.literal("style-signals-v1"),
   transitionTerms: terms.default(["值得注意的是", "不可否认", "毋庸置疑", "总而言之", "综上所述", "在这个过程中", "从某种意义上说"]),
-  softenerTerms: terms.default(["似乎", "仿佛", "某种", "一种", "难以言喻", "莫名", "隐隐"]),
+  softenerTerms: terms.default(["似乎", "仿佛", "好像", "某种", "一种", "难以言喻", "莫名", "隐隐"]),
   actionAdverbTerms: terms.default(["缓缓", "微微", "轻轻", "不禁", "下意识", "忍不住", "悄然"]),
+  degreeAdverbTerms: terms.default(["非常", "十分", "极其", "特别", "格外", "异常", "无比", "相当"]),
+  punctuationTerms: terms.default(["！", "？", "…", "、"]),
+  dialogueTagTerms: terms.default(["说道", "问道", "笑道", "喊道", "嚷道", "答道", "吼道"]),
+  fillerTerms: terms.default(["说到底", "说白了", "反正", "毕竟", "话又说回来"]),
   minSentenceCharacters: z.number().int().min(1).max(100).default(12),
   longSentenceCharacters: z.number().int().min(12).max(2000).default(80),
   commaCount: z.number().int().min(1).max(100).default(4),
   clusterCount: z.number().int().min(2).max(20).default(3),
+  attributiveMinCharacters: z.number().int().min(4).max(20).default(7),
+  particleCount: z.number().int().min(2).max(12).default(3),
+  punctuationCount: z.number().int().min(2).max(16).default(4),
+  fillerCount: z.number().int().min(2).max(8).default(2),
+  dialogueMinSentences: z.number().int().min(2).max(40).default(4),
+  dialogueTagRatio: z.number().min(0.2).max(1).default(0.5),
   transitionRepeatCount: z.number().int().min(2).max(20).default(2),
   maxPerRule: z.number().int().min(1).max(2).default(2),
-  maxFindings: z.number().int().min(1).max(8).default(8),
+  maxFindings: z.number().int().min(1).max(12).default(12),
   excerptCharacters: z.number().int().min(24).max(240).default(160),
 });
 export type StyleSignalPolicy = z.infer<typeof styleSignalPolicySchema>;
 export const createStyleSignalPolicy = (): StyleSignalPolicy => styleSignalPolicySchema.parse({ revision: "style-signals-v1" });
 
 export const styleSignalFindingSchema = z.object({
-  ruleId: z.enum(["template.transition", "rhythm.comma-density", "surface.repeated-softeners", "surface.action-adverb-stack"]),
+  ruleId: z.enum([
+    "template.transition",
+    "rhythm.comma-density",
+    "surface.repeated-softeners",
+    "surface.action-adverb-stack",
+    "syntax.attributive-stack",
+    "syntax.particle-overload",
+    "surface.degree-adverb-stack",
+    "surface.punctuation-density",
+    "surface.filler-stack",
+    "surface.dialogue-tag-density",
+  ]),
   excerpt: z.string().min(1).max(480),
   from: z.number().int().nonnegative(),
   to: z.number().int().nonnegative(),
@@ -35,6 +56,6 @@ export const styleSignalScanSchema = z.object({
   policy: styleSignalPolicySchema,
   sourceContentHash: z.string(),
   coordinateSystem: z.literal("utf16-crlf-normalized"),
-  findings: z.array(styleSignalFindingSchema).max(8),
+  findings: z.array(styleSignalFindingSchema).max(12),
 });
 export type StyleSignalScan = z.infer<typeof styleSignalScanSchema>;

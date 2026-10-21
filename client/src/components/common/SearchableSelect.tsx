@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 export interface SearchableSelectOption {
   value: string;
   label?: string;
+  tag?: string;
   keywords?: string[];
   disabled?: boolean;
 }
@@ -58,6 +59,7 @@ export default function SearchableSelect({
       const haystack = [
         option.label ?? option.value,
         option.value,
+        option.tag ?? "",
         ...(option.keywords ?? []),
       ].map(normalizeText);
       return haystack.some((item) => item.includes(normalizedQuery));
@@ -182,6 +184,11 @@ export default function SearchableSelect({
                     <span className="min-w-0 flex-1 whitespace-normal break-words text-left leading-5 [overflow-wrap:anywhere]">
                       {option.label ?? option.value}
                     </span>
+                    {option.tag ? (
+                      <span className="mt-0.5 shrink-0 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium leading-4 text-muted-foreground">
+                        {option.tag}
+                      </span>
+                    ) : null}
                     {isSelected ? <Check className="mt-0.5 h-4 w-4 shrink-0" /> : null}
                   </button>
                 );

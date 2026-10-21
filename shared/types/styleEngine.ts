@@ -139,6 +139,25 @@ export function isStyleCompatibilityField(
 export type StyleExtractionFeatureGroup = "narrative" | "language" | "dialogue" | "rhythm" | "fingerprint";
 export type StyleFeatureDecision = "keep" | "weaken" | "remove";
 
+export interface StyleExtractionFeatureVerification {
+  crossSource: {
+    passed: boolean;
+    sampleIndexes: number[];
+    evidence: string;
+  };
+  predictive: {
+    passed: boolean;
+    reason: string;
+  };
+  exclusive: {
+    passed: boolean;
+    reason: string;
+  };
+  reason: string;
+  verifiedAt: string;
+  sourceHash: string;
+}
+
 export interface StyleExtractionFeature {
   id: string;
   group: StyleExtractionFeatureGroup;
@@ -151,6 +170,7 @@ export interface StyleExtractionFeature {
   fingerprintRisk: number;
   keepRulePatch: StyleRulePatch;
   weakenRulePatch?: StyleRulePatch;
+  verification?: StyleExtractionFeatureVerification | null;
 }
 
 export interface StyleProfileFeature extends StyleExtractionFeature {
@@ -434,7 +454,40 @@ export function buildStyleRuleSetFromFeatures(
   return next;
 }
 
+/**
+ * 验证结论只在通过项上收紧决策：空泛特征一律剥离，偶发特征不作为硬规则，
+ * 通用特征在迁移预设下仍然保留（迁移正是要通用规则）。
+ */
+export function applyExtractionVerificationDecision(
+  decision: StyleFeatureDecision,
+  verification: StyleExtractionFeatureVerification | null | undefined,
+  presetKey: StyleExtractionPreset["key"],
+): StyleFeatureDecision {
+  if (!verification || decision === "remove") {
+    return decision;
+  }
+  if (!verification.predictive.passed) {
+    return "remove";
+  }
+  if (!verification.crossSource.passed) {
+    return "weaken";
+  }
+  if (!verification.exclusive.passed && presetKey !== "transfer" && decision === "keep") {
+    return "weaken";
+  }
+  return decision;
+}
+
 export function decideStyleFeatureDecision(
+  feature: Pick<StyleExtractionFeature, "importance" | "imitationValue" | "transferability" | "fingerprintRisk">
+    & { verification?: StyleExtractionFeatureVerification | null },
+  presetKey: StyleExtractionPreset["key"],
+): StyleFeatureDecision {
+  const decision = decideStyleFeatureDecisionByScores(feature, presetKey);
+  return applyExtractionVerificationDecision(decision, feature.verification, presetKey);
+}
+
+function decideStyleFeatureDecisionByScores(
   feature: Pick<StyleExtractionFeature, "importance" | "imitationValue" | "transferability" | "fingerprintRisk">,
   presetKey: StyleExtractionPreset["key"],
 ): StyleFeatureDecision {

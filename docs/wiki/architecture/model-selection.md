@@ -35,7 +35,12 @@
 - 当前使用模型不能隐藏。已有模型路由引用隐藏项时，该路由仍应显示并继续运行，直到用户主动切换。
 - 厂商级思考深度是普通请求的默认值。DeepSeek V4 使用低、高、最大三档，空值按高处理；关闭时不得继续发送深度参数。
 - 结构化任务的输出稳定性高于厂商级思考偏好。能力档案要求关闭思考时，运行时必须覆盖用户默认值，避免推理内容破坏结构化结果。
+- GLM-5.3 及以上型号始终启用思考，属于模型固有能力，不接受「关闭思考」。运行时对这类型号固定按 `thinking.type = enabled` 发送，不能沿用厂商级或结构化任务的关闭偏好。判断依据是模型版本号（`glm-5.3+`），不是厂商、地址或用户设置。
 - 顶部保存的 temperature 是用户偏好，不是绕过模型参数约束的最终请求值。正式调用必须先经过模型能力兼容层；例如 Kimi K3 的 temperature 固定为 `1.0`，即使经由自定义中转厂商调用、当前选择仍保存其他值，请求也必须按模型身份收敛到允许值。
+- structured_outline 链（卷节奏板、章节列表、章节任务单）属于规划类长输出，provider/model 与输出预算必须由 `planner` 任务类型路由决定。运行合同冻结的模型快照只代表导演运行的整体选择，不得作为这些规划步骤的显式 provider/model 覆盖；这些步骤也不得写死 maxTokens 覆盖路由预算，否则路由上配置的长输出上限会被短输出厂商的固有限制（如 DeepSeek 8192）夹断。
+- 路由到短输出厂商是允许的，但调用方必须让单次输出落在该厂商上限内。章节列表按 `MAX_CHAPTERS_PER_CHAPTER_LIST_CALL` 分批，就是因为 `planner` 可以被配置到 DeepSeek 这类 8192 上限的厂商；拆批规则见 [卷级规划工作流](../../workflows/volume-planning.md) 的 Bounded Chapter List Slices。
+- 强制思考型号（GLM 5.3+）不得被显式模型覆盖绑定到「重型规划类结构化任务」。这类任务单次输出规模大、需要长推理，而且调用方给了较紧的输出上限；强制思考型号会持续输出思考内容，思考占满输出预算后不再产出正文，最终结构化结果为空。当前受此护栏保护的任务是 `novel.world.generate_from_theme`、`novel.volume.strategy`、`novel.volume.skeleton` 与 `novel.volume.chapter_list`：当显式覆盖的模型命中强制思考型号时，运行时忽略该覆盖、改用该任务类型路由配置的模型，并让实况日志如实显示实际厂商与模型。护栏名单写在 `server/src/llm/reasoning.ts`，只描述模型能力边界，不判断用户意图；其余任务（标题、拆书、题材树等）仍尊重用户选择。
+- 护栏回落必须成组切换凭据，不能只换模型。「显式模型覆盖」通常由上一次按所选模型完成的解析带入，除模型名外还夹带该厂商的 API Key、接入地址、鉴权方式与请求协议。护栏忽略该覆盖时必须一并清空这些字段，让路由厂商自己的密钥与地址生效，否则会出现「路由厂商的密钥 + 原厂商的接入地址」混搭，上游直接返回 401。清理发生在 `server/src/llm/factory.ts` 的 `resolveLLMClientOptions` 内；结构化调用链 `server/src/llm/structuredInvoke.ts` 必须把解析后的 provider、密钥与地址作为一个整体向下一层传递（`resolveAttemptTarget` 返回 `resolved.apiKey`，不是调用方传入的原始密钥），不得让它们来自不同的解析结果。
 
 ## 示例
 
@@ -59,10 +64,16 @@
 - 自定义厂商下拉只剩当前模型：先检查 `APIKey.availableModels` 是否为空，再检查设置状态组装是否错误地只使用 `currentModel`；不要让 `GET /api/settings/api-keys` 为恢复目录而重新请求远程 `/models`。
 - 隐藏模型仍出现在普通候选：检查厂商的 `hiddenModels` 是否正确解析，并确认该模型是否被当前选择或已有路由保护。
 - DeepSeek 思考深度未生效：先确认使用的是 Flash/Pro（含 `deepseek-flash`、`deepseek-pro` 及旧的 V4 名称）和 OpenAI 兼容协议，再检查结构化任务是否按能力档案强制关闭了思考。
+- GLM-5.3 及以上型号返回 400 / code 1210：不要按错误提示去调整思考深度（`low`、`high` 同样被拒），先确认请求里的 `thinking.type` 是否被写成了 `disabled`。结构化任务的「关闭思考」能力声明必须对这类型号返回不支持，否则上游会发出关闭参数。
 - 自定义厂商返回 401/403：先核对鉴权方式是否与接口文档一致，再分别检查模型目录、连接测试和正式生成是否使用同一 `authMode`；不要只在刷新模型接口临时改请求头。
 - 模型目录地址出现 `/models/models`：检查地址归一函数是否把用户填写的完整目录地址再次拼接，不要为单个厂商增加硬编码例外。
 - Kimi K3 返回 temperature 参数错误：先确认实际模型名进入 Kimi 能力兼容层（包括自定义中转厂商），再检查最终客户端配置是否在构造请求前把 temperature 收敛为 `1.0`；不要要求用户反复调整顶部偏好来规避固定参数约束。
 - 本地模型生成世界观在约 2 分钟时中断：先看「模型与厂商」里的单次生成最长等待是否仍是 2 分钟，再确认失败的是按主题生成或骨架生成。正文生成没有这项上限。页面若先报网络失败，检查这两次生成请求的页面等待是否仍长于服务端上限。
+- 规划阶段报 `[STRUCTURED_OUTPUT:incomplete_json]`：先看该步日志里的 provider/model 是否被运行模型快照写成短输出厂商（如 `deepseek-flash`），再确认生成调用是否传入写死的 maxTokens 覆盖了路由预算。规划类长输出应回到 `planner` 任务类型路由，不要靠继续放大调用方 budget 规避厂商固有限制。
+- 章节列表步骤长时间无输出或反复超时：先确认 `planner` 路由指向的厂商是否适合该步骤的体量。长输出能力弱的厂商（如 `glm-5.3-flash`）在该草稿体量下会长时间不出内容或返回空内容，表现为任务停在 running、`rawChars=0`。此时优先把路由换成响应稳定的厂商，并确认调用方已按该厂商输出上限拆批，而不是继续等待或放大超时。
+- 「内容规划」按主题生成世界观反复失败、实况日志显示输入输出 Token 均未返回：先看该次调用的 provider/model 是否被导演运行快照覆盖成强制思考型号（`glm-5.3-flash`）。这类型号在该任务上只会输出思考、正文长时间为空（实测流式 240 秒正文仍为 0 字符，放大 `max_tokens` 也无效），不是超时设置或 token 预算问题。确认护栏 `shouldFallBackToRouteModel` 是否生效、该次调用的 `promptId` 是否在保护名单内，以及 `planner` 路由是否指向响应稳定的厂商；不要通过加大世界观生成等待时间或调小思考深度来规避。
+- 卷战略/卷骨架报 `[STRUCTURED_OUTPUT:transport_error] 模型没有返回可用内容`：先比对每次调用的 `completionTokens` 是否恰好等于该步骤的输出上限（卷战略下限 1800），多次重试数值完全一致说明思考吃满了预算、正文为空。这不是 Prompt 或 JSON 格式问题，也不要用「放大输出上限」或「减少重试」处理；应确认 `novel.volume.strategy` / `novel.volume.skeleton` 已在护栏名单内，且 `planner` 路由指向响应稳定的厂商。
+- 护栏回落之后报 401「令牌已过期或验证不正确」：先核对该次调用日志里的 provider、baseURL 与密钥是否属于同一厂商。provider 已被护栏切到路由厂商、baseURL 却仍是原厂商地址，说明回落只清了模型覆盖、保留了原厂商凭据。检查 `resolveLLMClientOptions` 是否在回落分支内同时清空 model/apiKey/baseURL/authMode/requestProtocol，以及 `resolveAttemptTarget` 是否返回解析后的 `resolved.apiKey`。不要通过换密钥、改厂商地址或关闭护栏来绕过。
 
 ## 本地推理开关的协议边界
 
@@ -80,6 +91,9 @@ Ollama 的 OpenAI 兼容接口 `/v1/chat/completions` 在关闭思考时发送 `
 - `server/src/routes/settings.ts`
 - `server/src/llm/modelCatalog.ts`
 - `server/src/llm/capabilities.ts`
+- `server/src/llm/factory.ts`
+- `server/src/llm/reasoning.ts`
+- `server/src/llm/structuredInvoke.ts`
 - `client/src/components/layout/LLMSelectionBootstrap.tsx`
 - `client/src/components/common/LLMSelector.tsx`
 - `client/src/store/llmStore.ts`

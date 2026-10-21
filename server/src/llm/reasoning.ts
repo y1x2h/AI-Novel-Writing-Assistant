@@ -144,6 +144,54 @@ export function isGlmThinkingModeProvider(
   return Boolean(normalizedBaseURL && GLM_HOST_PATTERN.test(normalizedBaseURL));
 }
 
+// GLM-5.3 起模型始终启用思考，关闭思考会返回 400（code 1210）。
+// 该错误提示虽然写着「请使用 low、high 或 max」，但实测 low/high 同样被拒，只有 enabled 或不传可用。
+export function isGlmAlwaysThinkingModel(model?: string): boolean {
+  const normalizedModel = normalizeOptionalText(model)?.toLowerCase().split("/").at(-1);
+  const version = normalizedModel?.match(/^glm-(\d+)(?:\.(\d+))?/);
+  if (!version) {
+    return false;
+  }
+  const major = Number(version[1] ?? 0);
+  const minor = Number(version[2] ?? 0);
+  return major > 5 || (major === 5 && minor >= 3);
+}
+
+export function supportsGlmReasoningToggle(
+  provider: LLMProvider,
+  baseURL?: string,
+  model?: string,
+): boolean {
+  return isGlmThinkingModeProvider(provider, baseURL, model) && !isGlmAlwaysThinkingModel(model);
+}
+
+/**
+ * 这些规划类结构化任务单次输出规模大、需要长推理，且调用方给定了较紧的输出上限。强制思考模型
+ * （GLM 5.3+）在它们上面会持续输出思考内容，思考占满输出预算后不再产出正文（例如卷战略预算为
+ * 1800，实测每次恰好用满 1800 个输出 token 却返回空正文），最终结构化输出空返回。
+ * 因此这类任务不允许被显式模型覆盖绑定到强制思考模型，必须使用该任务类型路由配置的模型。
+ */
+const ROUTE_BOUND_STRUCTURED_PLANNING_PROMPTS = new Set<string>([
+  "novel.world.generate_from_theme",
+  "novel.volume.strategy",
+  "novel.volume.skeleton",
+  "novel.volume.chapter_list",
+]);
+
+export function shouldFallBackToRouteModel(input: {
+  taskType: string | undefined;
+  promptId: string | undefined;
+  model: string | undefined;
+}): boolean {
+  if (input.taskType !== "planner") {
+    return false;
+  }
+  if (!input.promptId || !ROUTE_BOUND_STRUCTURED_PLANNING_PROMPTS.has(input.promptId)) {
+    return false;
+  }
+  return isGlmAlwaysThinkingModel(input.model);
+}
+
 export function resolveProviderReasoningBehavior(input: {
   provider: LLMProvider;
   baseURL: string;
@@ -163,12 +211,14 @@ export function resolveProviderReasoningBehavior(input: {
     };
   }
   if (isGlmThinkingModeProvider(input.provider, input.baseURL, input.model)) {
+    // 始终思考的 GLM 型号无法关闭思考，发出 disabled 会直接 400，因此固定为 enabled。
+    const reasoningEnabled = input.reasoningEnabled || isGlmAlwaysThinkingModel(input.model);
     return {
-      reasoningEnabled: input.reasoningEnabled,
+      reasoningEnabled,
       reasoningEffort: null,
       modelKwargs: {
         thinking: {
-          type: input.reasoningEnabled ? "enabled" : "disabled",
+          type: reasoningEnabled ? "enabled" : "disabled",
         },
       },
       includeRawResponse: false,

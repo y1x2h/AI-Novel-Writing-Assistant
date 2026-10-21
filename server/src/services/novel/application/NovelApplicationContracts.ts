@@ -70,10 +70,12 @@ export interface NovelApplicationServices {
   analyzeStorylineImpact: NovelApplicationMethod;
   previewChapterRewrite: NovelApplicationMethod;
   previewChapterAiRevision: NovelApplicationMethod;
+  previewChapterSceneDirected: NovelApplicationMethod;
   previewChapterCursorContinuation: NovelApplicationMethod;
   getChapterEditorWorkspace: NovelApplicationMethod;
   getNovelState: NovelApplicationMethod;
   getLatestStateSnapshot: NovelApplicationMethod;
+  getNovelCharacterStates: NovelApplicationMethod;
   getChapterStateSnapshot: NovelApplicationMethod;
   rebuildNovelState: NovelApplicationMethod;
   generateBookPlan: NovelApplicationMethod;
@@ -189,10 +191,12 @@ export const novelApplicationServiceMethodNames = [
   "analyzeStorylineImpact",
   "previewChapterRewrite",
   "previewChapterAiRevision",
+  "previewChapterSceneDirected",
   "previewChapterCursorContinuation",
   "getChapterEditorWorkspace",
   "getNovelState",
   "getLatestStateSnapshot",
+  "getNovelCharacterStates",
   "getChapterStateSnapshot",
   "rebuildNovelState",
   "generateBookPlan",

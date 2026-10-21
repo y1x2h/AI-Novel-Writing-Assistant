@@ -47,6 +47,11 @@ import { DirectorTaskSnapshotService } from "../projections/DirectorTaskSnapshot
 import { NovelDirectorService } from "../NovelDirectorService";
 import { novelDirectorIdeaInspirationService } from "../idea";
 import { novelDirectorIdeaConstellationService } from "../idea/NovelDirectorIdeaConstellationService";
+import { novelSpecClarificationService } from "../clarification/NovelSpecClarificationService";
+import type {
+  NovelSpecClarificationRequest,
+  NovelSpecClarificationResponse,
+} from "@ai-novel/shared/types/novelSpecClarification";
 import { directorPersistedCandidateSchema } from "../runtime/novelDirectorSchemas";
 import { NovelWorkflowService } from "../../workflow/NovelWorkflowService";
 
@@ -233,6 +238,11 @@ const confirmSchema = projectContextSchema.extend({
   autoApproval: autoApprovalSchema,
 }).merge(llmOptionsSchema);
 
+const specClarificationSchema = z.object({
+  idea: z.string().trim().min(1),
+  candidate: directorPersistedCandidateSchema,
+}).merge(llmOptionsSchema);
+
 const takeoverSchema = z.object({
   novelId: z.string().trim().min(1),
   startPhase: z.enum(takeoverStartPhaseValues).optional(),
@@ -386,6 +396,17 @@ router.post("/idea-constellation/compose", validate({ body: ideaConstellationCom
       req.body as DirectorIdeaConstellationComposeRequest,
     ) as DirectorIdeaConstellationComposeResponse;
     res.status(200).json(accepted(data, "Director idea constellation composed."));
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/spec-clarification", validate({ body: specClarificationSchema }), async (req, res, next) => {
+  try {
+    const data = await novelSpecClarificationService.generate(
+      req.body as NovelSpecClarificationRequest,
+    ) as NovelSpecClarificationResponse;
+    res.status(200).json(accepted(data, "Director spec clarification generated."));
   } catch (error) {
     next(error);
   }

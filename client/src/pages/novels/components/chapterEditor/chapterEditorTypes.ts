@@ -7,6 +7,7 @@ import type {
   ChapterEditorCursorContinuationRequest,
   ChapterEditorCursorOperation,
   ChapterEditorRevisionScope,
+  ChapterEditorSceneIntent,
   ChapterEditorWorkspaceResponse,
 } from "@ai-novel/shared/types/novel";
 
@@ -22,8 +23,10 @@ export interface ChapterEditorSessionState extends Partial<ChapterEditorAiRevisi
   customInstruction?: string;
   viewMode: "inline" | "block";
   errorMessage?: string;
-  mode: "revision" | "continuation";
+  mode: "revision" | "continuation" | "scene";
   continuationOperation?: ChapterEditorCursorOperation;
+  sceneIntent?: ChapterEditorSceneIntent;
+  sceneGoal?: string;
   diagnosticCard?: ChapterEditorDiagnosticCard;
 }
 

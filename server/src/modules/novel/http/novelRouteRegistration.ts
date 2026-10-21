@@ -50,6 +50,7 @@ import {
   replanSchema,
   reviewSchema,
   rewritePreviewSchema,
+  sceneDirectedPreviewSchema,
   storylineDiffQuerySchema,
   storylineDraftSchema,
   storylineImpactSchema,
@@ -111,6 +112,7 @@ export function registerNovelHttpRoutes(router: Router, services: NovelHttpServi
     chapterParamsSchema,
     rewritePreviewSchema,
     aiRevisionPreviewSchema,
+    sceneDirectedPreviewSchema,
     cursorContinuationPreviewSchema,
     forwardBusinessError,
   });

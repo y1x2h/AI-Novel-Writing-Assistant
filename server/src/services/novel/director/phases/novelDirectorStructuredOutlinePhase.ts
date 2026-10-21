@@ -260,8 +260,6 @@ export async function runDirectorStructuredOutlinePhase(input: {
         volumeId: targetVolume.id,
         callbacks,
         run: async ({ updateStatus, signal }) => dependencies.volumeService.generateVolumes(novelId, {
-          provider: request.provider,
-          model: request.model,
           temperature: request.temperature,
           scope: "beat_sheet",
           guidance: fastStartGuidance,
@@ -309,8 +307,6 @@ export async function runDirectorStructuredOutlinePhase(input: {
         volumeId: targetVolume.id,
         callbacks,
         run: async ({ updateStatus, signal }) => dependencies.volumeService.generateVolumes(novelId, {
-          provider: request.provider,
-          model: request.model,
           temperature: request.temperature,
           scope: "chapter_list",
           guidance: fastStartGuidance,
@@ -396,8 +392,6 @@ export async function runDirectorStructuredOutlinePhase(input: {
         volumeId: targetVolumeId,
         callbacks,
         run: async ({ signal }) => dependencies.volumeService.generateVolumes(novelId, {
-          provider: request.provider,
-          model: request.model,
           temperature: request.temperature,
           scope: "chapter_detail",
           targetVolumeId,

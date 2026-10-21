@@ -28,6 +28,16 @@
 - 旧角色已有人工编辑内容时，自动应用角色阵容只能补空字段，不覆盖用户已填写的人物档案和硬事实。
 - 审计继续作为后置检测和修复输入，但不能成为角色事实的主要来源。
 - 导演 V2 的当前位置应读取章前有效正文位置投影，按角色继承来源章与证据；角色档案位置只作缺少正文记录时的基础参考。当前位置允许有证据的合理移动，不能因切换视角、回忆或未出场而重置。参见[角色位置连续性](../workflows/character-location-continuity.md)。
+- 除身份、阵营、境界、位置外，角色的可行动状态硬事实还包括`injuries`（伤势）和`possessions`（持有物）。`CharacterState` 表保存 `injuriesJson / possessionsJson`，两列可空，由章节状态快照抽取写入；PostgreSQL 与桌面 SQLite 必须同时具备对应迁移，否则旧库在状态提交时会缺列。
+- 角色当前状态查询是**确定性只读**能力，不做 AI 推断：只读取最新一条 `StoryStateSnapshot` 与 `Character` 档案，二者都缺失时才返回空态。它只作为写作与审校的共同事实来源，不替代 `state.snapshot.extract` 的抽取，也不新增 AI 调用。
+
+## 角色当前状态查询
+
+`StateService.getNovelCharacterStates(novelId)` 汇总每个角色的当前位置、可用性、伤势、持有物、已知信息、误信与弧线状态，经 `GET /novels/:id/character-states` 暴露，供写作与审校共用同一份事实，减少跨环节的角色状态分歧。实现约束：
+
+- 只读最新快照，不再触发模型；快照缺失时返回空列表和空快照标识，不报错、不补跑抽取。
+- 字段来源唯一：位置与可用性来自 `Character` 档案的硬事实投影，伤势、持有物、已知信息、误信、弧线来自快照的 `characterStates`。
+- 数组字段（伤势、持有物、已知信息）统一经字符串数组归一化，容忍历史快照里缺失或非数组的脏值，不因单条脏数据让整个查询失败。
 
 ## 排查路径
 
@@ -54,4 +64,8 @@
 - `server/src/services/novel/runtime/GenerationContextAssembler.ts`
 - `server/src/prompting/prompts/novel/chapterLayeredContext.ts`
 - `server/src/prompting/prompts/novel/chapterWriter.prompts.ts`
+- `server/src/services/state/StateService.ts`
+- `server/src/prompting/prompts/state/state.prompts.ts`（`state.snapshot.extract`，伤势与持有物随 v5 抽取）
+- `server/src/modules/novel/planning/http/novelPlanningRoutes.ts`
+- `shared/types/characterStateQuery.ts`
 - `server/src/modules/timeline/`

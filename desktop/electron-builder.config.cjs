@@ -9,15 +9,41 @@ function firstNonEmpty(...values) {
   return "";
 }
 
+function resolveTargetPlatform(argv) {
+  const hasFlag = (...flags) => flags.some((flag) => argv.includes(flag));
+  if (hasFlag("--win", "--windows", "-w")) {
+    return "win";
+  }
+  if (hasFlag("--mac", "--macos", "-m")) {
+    return "mac";
+  }
+  if (hasFlag("--linux", "-l")) {
+    return "linux";
+  }
+  if (process.platform === "win32") {
+    return "win";
+  }
+  if (process.platform === "darwin") {
+    return "mac";
+  }
+  return "linux";
+}
+
 const releaseChannel = firstNonEmpty(process.env.AI_NOVEL_RELEASE_CHANNEL, "beta").toLowerCase();
 const isBetaRelease = releaseChannel === "beta";
 const githubOwner = firstNonEmpty(process.env.AI_NOVEL_GITHUB_OWNER, "ExplosiveCoderflome");
 const githubRepo = firstNonEmpty(process.env.AI_NOVEL_GITHUB_REPO, "AI-Novel-Writing-Assistant");
+const targetPlatform = resolveTargetPlatform(process.argv.slice(2));
 const windowsSigningLink = firstNonEmpty(
   process.env.CSC_LINK,
   process.env.WIN_CSC_LINK,
   process.env.AI_NOVEL_WINDOWS_CSC_LINK,
   process.env.AI_NOVEL_WINDOWS_CSC_FILE,
+);
+const macSigningLink = firstNonEmpty(
+  process.env.MAC_CSC_LINK,
+  process.env.AI_NOVEL_MAC_CSC_LINK,
+  process.env.AI_NOVEL_MAC_CSC_FILE,
 );
 const allowUnsignedRelease =
   firstNonEmpty(
@@ -25,9 +51,11 @@ const allowUnsignedRelease =
     process.env.AI_NOVEL_ALLOW_UNSIGNED_WINDOWS_RELEASE,
   ).toLowerCase() === "true";
 const hasWindowsSigningMaterial = Boolean(windowsSigningLink);
+const hasMacSigningMaterial = Boolean(macSigningLink);
 const builderIconPath = path.join("builder", "app-icon.ico");
+const builderMacIconPath = path.join("builder", "app-icon.icns");
 
-if (!isBetaRelease && !hasWindowsSigningMaterial && !allowUnsignedRelease) {
+if (targetPlatform === "win" && !isBetaRelease && !hasWindowsSigningMaterial && !allowUnsignedRelease) {
   throw new Error(
     "Public Windows desktop releases require signing material. Provide CSC_LINK/WIN_CSC_LINK, or explicitly opt in to an unsigned release.",
   );
@@ -50,6 +78,10 @@ module.exports = {
     {
       from: "builder/app-icon.ico",
       to: "icons/app-icon.ico",
+    },
+    {
+      from: "builder/app-icon.png",
+      to: "icons/app-icon.png",
     },
     {
       from: "build/resources/app-update.yml",
@@ -111,5 +143,39 @@ module.exports = {
   },
   portable: {
     artifactName: "${productName}-${version}-portable-${arch}.${ext}",
+  },
+  mac: {
+    icon: builderMacIconPath,
+    category: "public.app-category.productivity",
+    target: [
+      {
+        target: "dmg",
+        arch: ["arm64"],
+      },
+      {
+        target: "zip",
+        arch: ["arm64"],
+      },
+    ],
+    // Without signing material, Apple Silicon builds still need an ad-hoc signature to launch.
+    identity: hasMacSigningMaterial ? undefined : "-",
+    hardenedRuntime: hasMacSigningMaterial,
+    gatekeeperAssess: false,
+    notarize: false,
+  },
+  dmg: {
+    artifactName: "${productName}-${version}-${arch}.${ext}",
+    contents: [
+      {
+        x: 140,
+        y: 200,
+      },
+      {
+        x: 400,
+        y: 200,
+        type: "link",
+        path: "/Applications",
+      },
+    ],
   },
 };

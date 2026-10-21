@@ -39,12 +39,15 @@ Wiki 不记录单次提交改了什么，也不替代 release notes。它只记�
 - [拆书工作流](./workflows/book-analysis-workflow.md)
 - [图片生成确认与统一运行时](./workflows/image-generation-confirmation-runtime.md)
 - [Creative Hub 边界](./workflows/creative-hub-boundary.md)
+- [小说域合规预检](./workflows/novel-compliance-precheck.md)
+- [桌面端跨平台打包（Windows / macOS）](./workflows/desktop-cross-platform-packaging.md)
 
 ### Prompts
 
 - [Prompt Registry 与结构化输出](./prompts/prompt-registry-and-structured-output.md)
 - [结构化 AI 决策与确定性归一化边界](./prompts/structured-decision-authority.md)
 - [平台写法配置与正文 Prompt 可编辑合同](./prompts/platform-writing-profiles.md)
+- [反 AI 规则目录](./prompts/anti-ai-rule-catalog.md)
 
 ### RAG
 
@@ -58,6 +61,7 @@ Wiki 不记录单次提交改了什么，也不替代 release notes。它只记�
 - [模型流并发与超时生命周期](./debugging/llm-stream-lifecycle.md)
 - [服务端质量门禁与验证范围](./debugging/server-quality-gate.md)
 - [本地数据与版本控制边界](./debugging/local-data-and-version-control.md)
+- [结构化输出通过、业务层却校验失败（含 zod v4 错误文案陷阱）](./debugging/structured-output-length-and-zod-v4-messages.md)
 
 ### Product
 

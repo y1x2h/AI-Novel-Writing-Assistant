@@ -622,6 +622,22 @@ function AutoDirectorCreatePage() {
     }
   };
 
+  const generateBlock = useMemo(() => {
+    if (!controller.idea.trim()) {
+      return {
+        hint: "还缺一句开书想法：回到第一步填写后，就能生成整书方向。",
+        action: () => setActiveStage("idea"),
+      };
+    }
+    if (showCarryoverPanel && !activeCarryoverContract?.adopted) {
+      return {
+        hint: "这本新书照着参考小说创作，先查看并采用承接方案，才能生成整书方向。",
+        action: () => setCarryoverDialogOpen(true),
+      };
+    }
+    return null;
+  }, [activeCarryoverContract, controller.idea, showCarryoverPanel]);
+
   const startGenerate = () => {
     if (showCarryoverPanel && !activeCarryoverContract?.adopted) {
       setCarryoverDialogOpen(true);
@@ -780,6 +796,8 @@ function AutoDirectorCreatePage() {
           onBasicFormChange={controller.onBasicFormChange}
           canGenerate={controller.canGenerate}
           isGenerating={controller.generateMutation.isPending}
+          blockedHint={generateBlock?.hint ?? null}
+          onBlockedAction={generateBlock?.action}
           onBack={() => setActiveStage("world_style")}
           onGenerate={startGenerate}
           issuePolicy={controller.issuePolicy}

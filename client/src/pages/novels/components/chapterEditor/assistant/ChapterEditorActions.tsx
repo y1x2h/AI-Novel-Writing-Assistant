@@ -1,7 +1,8 @@
-import type { ChapterEditorCursorOperation, ChapterEditorDiagnosticCard, ChapterEditorOperation, ChapterEditorRevisionScope } from "@ai-novel/shared/types/novel";
+import type { ChapterEditorCursorOperation, ChapterEditorDiagnosticCard, ChapterEditorOperation, ChapterEditorRevisionScope, ChapterEditorSceneIntent } from "@ai-novel/shared/types/novel";
 import { Button } from "@/components/ui/button";
 import CursorAIToolbar from "../CursorAIToolbar";
 import SelectionAIToolbar from "../SelectionAIToolbar";
+import { CHAPTER_EDITOR_SCENE_INTENT_LABELS, CHAPTER_EDITOR_SCENE_INTENT_ORDER } from "../document";
 
 export type ChapterEditorActionContext = "diagnostic" | "selection" | "cursor" | "chapter";
 
@@ -14,12 +15,17 @@ export interface ChapterEditorActionsProps {
   revisionInstruction: string;
   canRunSelectionRevision: boolean;
   isGenerating: boolean;
+  sceneIntent: ChapterEditorSceneIntent;
+  sceneGoal: string;
   onInstructionChange: (next: string) => void;
   onScopeChange: (scope: ChapterEditorRevisionScope) => void;
   onRunSelectedDiagnostic: () => void;
   onRunFreeform: () => void;
   onRunCursorOperation: (operation: ChapterEditorCursorOperation) => void;
   onRunSelectionOperation: (operation: ChapterEditorOperation) => void;
+  onSceneIntentChange: (intent: ChapterEditorSceneIntent) => void;
+  onSceneGoalChange: (next: string) => void;
+  onRunSceneDirected: () => void;
 }
 
 export default function ChapterEditorActions(props: ChapterEditorActionsProps) {
@@ -60,6 +66,41 @@ export default function ChapterEditorActions(props: ChapterEditorActionsProps) {
               : <Button size="sm" disabled={isGenerating || !props.revisionInstruction.trim() || (props.revisionScope === "selection" && !props.canRunSelectionRevision)} onClick={props.onRunFreeform}>按要求修改</Button>}
         </div>
       </div>
+      {context === "selection" || context === "chapter" ? (
+        <div className="space-y-3 border-t border-border/50 pt-4">
+          <div className="text-sm font-medium">按场景意图写一段</div>
+          <div className="flex flex-wrap gap-2">
+            {CHAPTER_EDITOR_SCENE_INTENT_ORDER.map((intent) => (
+              <Button
+                key={intent}
+                size="sm"
+                variant={props.sceneIntent === intent ? "secondary" : "outline"}
+                disabled={isGenerating}
+                onClick={() => props.onSceneIntentChange(intent)}
+              >
+                {CHAPTER_EDITOR_SCENE_INTENT_LABELS[intent]}
+              </Button>
+            ))}
+          </div>
+          <textarea
+            aria-label="场景目标"
+            maxLength={800}
+            className="min-h-[80px] w-full resize-y rounded-xl border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring/30"
+            placeholder="例如：主角在雨夜潜入旧宅，撞见旧识，被迫提前摊牌。"
+            value={props.sceneGoal}
+            onChange={(event) => props.onSceneGoalChange(event.target.value)}
+          />
+          <div className="flex justify-end">
+            <Button
+              size="sm"
+              disabled={isGenerating || (props.revisionScope === "selection" && !props.canRunSelectionRevision)}
+              onClick={props.onRunSceneDirected}
+            >
+              生成场景
+            </Button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -47,6 +47,8 @@ export interface PendingState {
   updateCharacter: boolean;
   deleteCharacter: boolean;
   createDiagnosis: boolean;
+  importSourceDocument: boolean;
+  importSourceNovel: boolean;
 }
 
 export interface BookAnalysisQueryState {
@@ -114,6 +116,8 @@ export interface BookAnalysisWorkspace {
   setLlmConfig: (config: LLMConfigState) => void;
   selectDocument: (documentId: string) => void;
   selectVersion: (versionId: string) => void;
+  importSourceDocument: (file: File) => Promise<void>;
+  importSourceNovel: (novelId: string) => Promise<void>;
   openAnalysis: (analysisId: string, documentId: string) => void;
   createAnalysis: () => Promise<void>;
   createDiagnosisAnalysis: () => Promise<void>;

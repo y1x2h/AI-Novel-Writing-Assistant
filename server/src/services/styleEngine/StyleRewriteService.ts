@@ -2,11 +2,30 @@ import type { LLMProvider } from "@ai-novel/shared/types/llm";
 import { runStructuredPrompt } from "../../prompting/core/promptRunner";
 import { isStyleIssueRewritable, type StyleRewriteGuard, type StyleDetectionReport } from "@ai-novel/shared/types/styleEngine";
 import { styleRewritePrompt } from "../../prompting/prompts/style/style.prompts";
+import { styleRewriteConservationPrompt } from "../../prompting/prompts/style/styleRewriteConservation.prompts";
 import { buildWriterStyleContractText } from "./styleContractText";
 import { StyleRuntimeResolver } from "./StyleRuntimeResolver";
 import { buildAntiAiRuleDirectiveText, listPreviewAntiAiRules } from "./antiAiPreviewRules";
 import { StyleDetectionService } from "./StyleDetectionService";
 import { guardStylePatches } from "./rewrite";
+
+interface ConservationVerdict {
+  status: "preserved" | "changed" | "uncertain";
+  reason?: string;
+}
+
+/** Literal anchors prove nothing about facts; only the AI conservation review can pass or block it. */
+function upgradeGuardWithConservation(guard: StyleRewriteGuard, verdict: ConservationVerdict): StyleRewriteGuard {
+  const conservation = verdict.status === "preserved"
+    ? { status: "passed" as const, reason: "改写只改变表达，数值、专名与事件先后保持不变。" }
+    : verdict.status === "changed"
+      ? { status: "blocked" as const, reason: `改写增删了原文信息：${verdict.reason?.trim() || "信息守恒核对未通过"}。` }
+      : { status: "not_checked" as const, reason: "改写信息守恒核对未完成，请结合本书人物与设定核对预览。" };
+  return {
+    ...guard,
+    checks: guard.checks.map(check => (check.code === "semantic_facts" ? { ...check, ...conservation } : check)),
+  };
+}
 
 interface RewriteInput {
   content: string;
@@ -72,6 +91,45 @@ export class StyleRewriteService {
       allowedIssueIds: issues.map(item => item.issueId),
       styleIssueIds: issues.map(item => item.issueId),
     });
-    return { content: protectedResult.content, report, rewriteGuard: protectedResult.guard };
+    if (protectedResult.content === input.content) {
+      return { content: input.content, report, rewriteGuard: protectedResult.guard };
+    }
+
+    const verdict = await this.reviewInformationConservation({
+      original: input.content,
+      changes: protectedResult.baseline.changes,
+      provider: input.provider,
+      model: input.model,
+    });
+    return {
+      content: verdict.status === "changed" ? input.content : protectedResult.content,
+      report,
+      rewriteGuard: upgradeGuardWithConservation(protectedResult.guard, verdict),
+    };
+  }
+
+  /** Review failures only downgrade the check to not_checked; they never hide the preview. */
+  private async reviewInformationConservation(input: {
+    original: string;
+    changes: Array<{ original: string; replacement: string }>;
+    provider?: LLMProvider;
+    model?: string;
+  }): Promise<ConservationVerdict> {
+    try {
+      const result = await runStructuredPrompt({
+        asset: styleRewriteConservationPrompt,
+        promptInput: { originalContent: input.original, changes: input.changes },
+        options: {
+          provider: input.provider ?? "deepseek",
+          model: input.model,
+          temperature: 0.1,
+        },
+      });
+      if (result.output.status === "preserved") return { status: "preserved" };
+      if (result.output.status === "changed") return { status: "changed", reason: result.output.reason };
+      return { status: "uncertain" };
+    } catch {
+      return { status: "uncertain" };
+    }
   }
 }

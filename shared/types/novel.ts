@@ -483,6 +483,39 @@ export interface ChapterEditorRewritePreviewResponse {
   activeCandidateId: string | null;
 }
 
+export const CHAPTER_EDITOR_SCENE_INTENTS = [
+  "flashback",
+  "fight",
+  "trap",
+  "tension_beat",
+  "exposition",
+  "improvise",
+] as const;
+
+export type ChapterEditorSceneIntent = (typeof CHAPTER_EDITOR_SCENE_INTENTS)[number];
+
+export interface ChapterEditorSceneDirectedRequest {
+  intent: ChapterEditorSceneIntent;
+  sceneGoal: string;
+  scope: "selection" | "chapter";
+  contentSnapshot: string;
+  targetRange?: ChapterEditorTargetRange;
+  context?: ChapterEditorContextWindow;
+  constraints: ChapterEditorRewriteConstraints;
+  provider?: import("./llm").LLMProvider;
+  model?: string;
+  temperature?: number;
+}
+
+export interface ChapterEditorSceneDirectedResponse {
+  sessionId: string;
+  intent: ChapterEditorSceneIntent;
+  targetRange: ChapterEditorTargetRange;
+  macroAlignmentNote: string | null;
+  candidates: ChapterEditorCandidate[];
+  activeCandidateId: string | null;
+}
+
 export interface ChapterEditorCursorContinuationRequest {
   operation: ChapterEditorCursorOperation;
   contentSnapshot: string;

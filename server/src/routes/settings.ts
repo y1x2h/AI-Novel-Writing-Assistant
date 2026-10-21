@@ -170,6 +170,7 @@ type BuiltInProviderStatus = {
   currentBaseURL: string;
   currentAuthMode: ProviderAuthMode;
   models: string[];
+  freeModels: string[];
   imageModels: string[];
   defaultModel: string;
   defaultImageModel: string | null;
@@ -196,6 +197,7 @@ type CustomProviderStatus = {
   currentBaseURL: string;
   currentAuthMode: ProviderAuthMode;
   models: string[];
+  freeModels: string[];
   imageModels: string[];
   defaultModel: string;
   defaultImageModel: null;
@@ -279,6 +281,7 @@ function buildBuiltInProviderStatus(
     currentBaseURL,
     currentAuthMode: "bearer",
     models,
+    freeModels: PROVIDERS[provider].freeModels ?? [],
     imageModels: Array.from(new Set([...getImageModelOptions(provider), currentImageModel ?? ""].filter(Boolean))),
     defaultModel: PROVIDERS[provider].defaultModel,
     defaultImageModel: getDefaultImageModel(provider) ?? null,
@@ -331,6 +334,7 @@ function buildCustomProviderStatus(item: {
     currentBaseURL,
     currentAuthMode,
     models,
+    freeModels: [],
     imageModels: imageModel ? [imageModel] : [],
     defaultModel: currentModel,
     defaultImageModel: null,

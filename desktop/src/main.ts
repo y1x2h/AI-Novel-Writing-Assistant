@@ -39,6 +39,7 @@ let mainWindow: BrowserWindow | null = null;
 let splashWindow: BrowserWindow | null = null;
 let stopServer: (() => Promise<void>) | null = null;
 let updaterController: DesktopUpdaterController | null = null;
+let activeServerPort: number | null = null;
 let rendererReady = false;
 let appShellReady = false;
 let serverHealthy = false;
@@ -371,6 +372,7 @@ async function bootstrapDesktopApp(): Promise<void> {
   }
 
   const port = await resolveDesktopServerPort({ isPackaged: app.isPackaged });
+  activeServerPort = port;
   mainWindow = createMainWindow(port);
   mainWindow.on("closed", () => {
     mainWindow = null;
@@ -398,6 +400,27 @@ function focusExistingWindow(): void {
   }
   targetWindow.show();
   targetWindow.focus();
+}
+
+function reopenMainWindow(): void {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    focusExistingWindow();
+    return;
+  }
+
+  if (!activeServerPort) {
+    return;
+  }
+
+  mainWindowShown = false;
+  mainWindow = createMainWindow(activeServerPort);
+  mainWindow.on("closed", () => {
+    mainWindow = null;
+    mainWindowShown = false;
+  });
+  mainWindow.webContents.once("did-finish-load", () => {
+    showMainWindowIfReady();
+  });
 }
 
 async function showBootstrapFailureDialog(error: unknown): Promise<void> {
@@ -608,6 +631,14 @@ if (!app.requestSingleInstanceLock()) {
 
 app.on("second-instance", () => {
   focusExistingWindow();
+});
+
+app.on("activate", () => {
+  if (process.platform !== "darwin" || !app.isReady()) {
+    return;
+  }
+
+  reopenMainWindow();
 });
 
 app.on("window-all-closed", () => {

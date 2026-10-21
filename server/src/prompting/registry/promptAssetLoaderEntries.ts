@@ -26,6 +26,14 @@ export const promptAssetLoaderEntries: PromptAssetLoaderEntry[] = [
     load: () => require("../prompts/novel/writingPlatformRecommendation.prompts").writingPlatformRecommendationPrompt as UnknownPromptAsset,
   },
   {
+    key: "novel.compliance.precheck@v1",
+    load: () => require("../prompts/novel/compliancePrecheck.prompts").novelCompliancePrecheckPrompt as UnknownPromptAsset,
+  },
+  {
+    key: "director.spec.clarify@v1",
+    load: () => require("../prompts/novel/specClarification.prompts").directorSpecClarificationPrompt as UnknownPromptAsset,
+  },
+  {
     key: "creation.intent.interpret@v2",
     load: () => require("../prompts/creation/creationIntent.prompts").creationIntentInterpretPrompt as UnknownPromptAsset,
   },
@@ -330,11 +338,11 @@ export const promptAssetLoaderEntries: PromptAssetLoaderEntry[] = [
     load: () => require("../prompts/novel/volume/beatSheet.prompts").volumeBeatSheetPrompt as UnknownPromptAsset,
   },
   {
-    key: "novel.volume.chapter_list@v9",
+    key: "novel.volume.chapter_list@v10",
     load: () => require("../prompts/novel/volume/chapterList.prompts").createVolumeChapterListPrompt(1) as UnknownPromptAsset,
   },
   {
-    key: "novel.volume.chapter_list@v10",
+    key: "novel.volume.chapter_list@v11",
     load: () => require("../prompts/novel/volume/chapterList.prompts").createVolumeChapterListPrompt({targetChapterCount:1,characterIds:[]}) as UnknownPromptAsset,
   },
   {
@@ -450,6 +458,10 @@ export const promptAssetLoaderEntries: PromptAssetLoaderEntry[] = [
     load: () => require("../prompts/novel/chapterEditor/rewriteCandidates.prompts").chapterEditorRewriteCandidatesPrompt as UnknownPromptAsset,
   },
   {
+    key: "novel.chapter_editor.scene_directed@v1",
+    load: () => require("../prompts/novel/chapterEditor/sceneDirected.prompts").chapterEditorSceneDirectedPrompt as UnknownPromptAsset,
+  },
+  {
     key: "novel.chapter_editor.continue_preview@v1",
     load: () => require("../prompts/novel/chapterEditor/continuePreview.prompts").chapterEditorContinuationPreviewPrompt as UnknownPromptAsset,
   },
@@ -526,7 +538,7 @@ export const promptAssetLoaderEntries: PromptAssetLoaderEntry[] = [
     load: () => require("../prompts/payoff/payoffLedgerSync.prompts").payoffLedgerSyncPrompt as UnknownPromptAsset,
   },
   {
-    key: "state.snapshot.extract@v4",
+    key: "state.snapshot.extract@v5",
     load: () => require("../prompts/state/state.prompts").stateSnapshotPrompt as UnknownPromptAsset,
   },
   {
@@ -546,7 +558,7 @@ export const promptAssetLoaderEntries: PromptAssetLoaderEntry[] = [
     load: () => require("../prompts/storyWorldSlice/storyWorldSlice.prompts").storyWorldSlicePrompt as UnknownPromptAsset,
   },
   {
-    key: "style.detection@v10",
+    key: "style.detection@v12",
     load: () => require("../prompts/style/style.prompts").styleDetectionPrompt as UnknownPromptAsset,
   },
   {
@@ -558,8 +570,16 @@ export const promptAssetLoaderEntries: PromptAssetLoaderEntry[] = [
     load: () => require("../prompts/style/style.prompts").styleGenerationPrompt as UnknownPromptAsset,
   },
   {
-    key: "style.rewrite@v4",
+    key: "style.rewrite@v5",
     load: () => require("../prompts/style/style.prompts").styleRewritePrompt as UnknownPromptAsset,
+  },
+  {
+    key: "style.rewrite.conservation@v1",
+    load: () => require("../prompts/style/styleRewriteConservation.prompts").styleRewriteConservationPrompt as UnknownPromptAsset,
+  },
+  {
+    key: "style.profile.verify_features@v1",
+    load: () => require("../prompts/style/styleProfileVerification.prompts").styleProfileFeatureVerificationPrompt as UnknownPromptAsset,
   },
   {
     key: "style.anti_ai_rule.draft@v1",

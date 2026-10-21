@@ -1,10 +1,10 @@
 {
   "name": "@ai-novel/desktop",
-  "version": "0.5.17",
+  "version": "0.5.21",
   "private": true,
   "license": "AGPL-3.0-only",
   "author": "Biz Studio",
-  "description": "Windows desktop runtime for Biz Novel Studio",
+  "description": "Desktop runtime for Biz Novel Studio (Windows and macOS)",
   "productName": "Biz Novel Studio",
   "main": "dist/main.js",
   "files": [

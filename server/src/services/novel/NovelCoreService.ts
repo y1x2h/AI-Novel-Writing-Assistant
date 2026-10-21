@@ -209,6 +209,10 @@ export class NovelCoreService {
     return this.reviewService.getLatestStateSnapshot(novelId);
   }
 
+  async getNovelCharacterStates(novelId: string) {
+    return this.reviewService.getNovelCharacterStates(novelId);
+  }
+
   async getChapterStateSnapshot(novelId: string, chapterId: string) {
     return this.reviewService.getChapterStateSnapshot(novelId, chapterId);
   }
