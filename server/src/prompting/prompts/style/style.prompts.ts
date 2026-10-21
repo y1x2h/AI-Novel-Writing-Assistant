@@ -124,7 +124,7 @@ export const styleDetectionPrompt: PromptAsset<
   z.infer<typeof styleDetectionPayloadSchema>
 > = {
   id: "style.detection",
-  version: "v12",
+  version: "v13",
   taskType: "planner",
   mode: "structured",
   language: "zh",
@@ -171,6 +171,7 @@ export const styleDetectionPrompt: PromptAsset<
       "3. issueCategory 必须判断问题更接近“style_expression”还是“story_structure”。只有当问题已经越过表达层、开始干扰剧情结构或场景推进时，才可标成 story_structure。",
       "4. 必须通读全文做召回，不要只抓开头、结尾或最显眼的 1-3 处问题；如果 AI 味集中出现在多个相邻段落，要合并为可修复的高价值 violation。",
       "5. 模板词仅是检查线索。须结合聚集、信息增量与作品写法判断，不得因单词命中强制判违规。",
+      "6. 对白密度：核对对白字数占比是否严重失衡——通篇叙述、几乎没有对白，或对白淹没了场景与动作；以及是否出现连续多段对白之间没有动作、环境或心理穿插，只靠台词来回推进却没有信息增量的「话疗」。判断时要结合本章在整卷中的位置与写法要求，只有确实削弱可读性、节奏或人物真实感时才计入 violation，并给出去向具体的修改方向。",
       "",
       "riskScore 规则：",
       "1. riskScore 为 0-100 的整数。",

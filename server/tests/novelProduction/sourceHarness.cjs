@@ -64,7 +64,9 @@ function createPipelineHarness({
     "../chapterPatchRepairService": { ChapterPatchRepairFailedError: class extends Error {} },
     "./selection/ChapterRepairCandidateSelection": selectionModule,
     "./repair/ChapterRepairEligibility": loadRuntimeSource("repair/ChapterRepairEligibility.ts", {}),
-    "./proseQuality": loadRuntimeSource("proseQuality/ProseQualityDetector.ts", {}),
+    "./proseQuality": loadRuntimeSource("proseQuality/ProseQualityDetector.ts", {
+      "@ai-novel/shared/types/styleEngine": require("../../../shared/dist/types/styleEngine.js"),
+    }),
     "./artifactSync/ChapterArtifactSyncResult": {
       ChapterArtifactSyncBoundaryError: class extends Error {
         constructor(result) { super(result.reason); this.result = result; }

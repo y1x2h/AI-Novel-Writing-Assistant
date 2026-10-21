@@ -2,6 +2,7 @@ import type {
   RuntimeAuditIssue,
   RuntimeAuditReport,
 } from "@ai-novel/shared/types/chapterRuntime";
+import { createStyleSignalPolicy, type StyleSignalPolicy } from "@ai-novel/shared/types/styleEngine";
 
 export type ProseQualityIssueCode =
   | "prose_negative_flip"
@@ -9,6 +10,8 @@ export type ProseQualityIssueCode =
   | "prose_period_stutter"
   | "prose_long_paragraph"
   | "prose_verbatim_repeat"
+  | "prose_dialogue_ratio"
+  | "prose_talk_loop"
   | "prose_truncation"
   | "prose_ai_self_reference"
   | "prose_placeholder_leak"
@@ -52,8 +55,9 @@ const PLACEHOLDER_PATTERN = /TODO|TBD|待补充|此处省略|省略若干|略写
 const ENGINEERING_TERM_STRONG_PATTERN = /细纲|情节点|卷纲|功能标签|目标情绪|字数目标|章首钩子|章尾钩子|任务描述|任务单|scene\s*card|prompt|schema|runtime\s*package|上下文包|系统提示词|修复指令/iu;
 const ENGINEERING_TERM_SOFT_PATTERN = /本章|下一章|读者|伏笔|前文|后文|剧情推进|人物弧光|爽点|节奏点|钩子/u;
 
-export function detectProseQuality(content: string): ProseQualityReport {
+export function detectProseQuality(content: string, policy?: StyleSignalPolicy): ProseQualityReport {
   const segments = buildTextSegments(content);
+  const effectivePolicy = policy ?? createStyleSignalPolicy();
   const findings: ProseQualityFinding[] = [];
   const counts = new Map<ProseQualityIssueCode, number>();
 
@@ -88,6 +92,8 @@ export function detectProseQuality(content: string): ProseQualityReport {
   }
 
   scanVerbatimRepeat(segments, addFinding);
+  scanDialogueBalance(content, effectivePolicy, addFinding);
+  scanTalkLoop(segments, effectivePolicy, addFinding);
   scanTruncation(content, segments, addFinding);
 
   return {
@@ -384,6 +390,109 @@ function scanTruncation(
     excerpt: formatExcerpt(lastSegment?.text ?? trimmed),
     fixSuggestion: "补齐结尾句、动作结果和章节收束，确认正文不是半句停在输出末尾。",
   });
+}
+
+/**
+ * 对白占比与「话疗」密度：只输出可机械度量的候选证据，不判定是否违规。
+ *
+ * 阈值来自写法信号策略（`StyleSignalPolicy`），因此不同写法可以声明不同的对白密度区间；
+ * 命中的结果最终只作为验收证据，是否计入由 AI 判断。
+ */
+function scanDialogueBalance(
+  content: string,
+  policy: StyleSignalPolicy,
+  addFinding: (finding: ProseQualityFinding) => void,
+): void {
+  const totalVisible = visibleLength(content);
+  if (totalVisible < policy.dialogueRatioMinCharacters) {
+    return;
+  }
+  const ratio = countDialogueCharacters(content) / totalVisible;
+  if (ratio >= policy.dialogueRatioMin && ratio <= policy.dialogueRatioMax) {
+    return;
+  }
+  const tooLow = ratio < policy.dialogueRatioMin;
+  addFinding({
+    code: "prose_dialogue_ratio",
+    severity: "low",
+    line: 1,
+    column: 1,
+    message: tooLow
+      ? `全篇对白占比约 ${formatRatio(ratio)}，叙述明显压倒对白，容易读成说明文。`
+      : `全篇对白占比约 ${formatRatio(ratio)}，对白淹没叙述，场景与动作支撑不足。`,
+    excerpt: formatExcerpt(content),
+    fixSuggestion: tooLow
+      ? "为关键冲突补入有信息增量的对白或人物反应，让立场与关系在互动中显现，而不是全靠叙述交代。"
+      : "在对白之间补入动作、场景或人物反应，让每轮对话都有停顿与身体感，而不是纯台词推进。",
+  });
+}
+
+function scanTalkLoop(
+  segments: TextSegment[],
+  policy: StyleSignalPolicy,
+  addFinding: (finding: ProseQualityFinding) => void,
+): void {
+  let runStart: TextSegment | null = null;
+  let runLength = 0;
+  const flush = () => {
+    if (runStart && runLength >= policy.talkLoopRounds) {
+      addFinding({
+        code: "prose_talk_loop",
+        severity: "medium",
+        line: runStart.line,
+        column: 1,
+        message: `连续 ${runLength} 段对白之间没有叙述穿插，容易滑向只靠台词推进的「话疗」。`,
+        excerpt: formatExcerpt(runStart.text),
+        fixSuggestion: "在连续对白中插入动作、环境变化或人物内心反应，让每轮对话都带来新的场景或信息增量。",
+      });
+    }
+    runStart = null;
+    runLength = 0;
+  };
+  for (const segment of segments) {
+    if (isDialogueParagraph(segment.text)) {
+      if (!runStart) {
+        runStart = segment;
+      }
+      runLength += 1;
+    } else {
+      flush();
+    }
+  }
+  flush();
+}
+
+const DIALOGUE_QUOTE_PATTERNS = [
+  /「([^」]*)」/gu,
+  /『([^』]*)』/gu,
+  /“([^”]*)”/gu,
+  /"([^"]*)"/gu,
+];
+
+function countDialogueCharacters(text: string): number {
+  let total = 0;
+  for (const pattern of DIALOGUE_QUOTE_PATTERNS) {
+    for (const match of text.matchAll(pattern)) {
+      total += visibleLength(match[1] ?? "");
+    }
+  }
+  return total;
+}
+
+/** 段落以引号起头，或过半可见字符落在引号内，即视为对白段。 */
+function isDialogueParagraph(text: string): boolean {
+  const visible = visibleLength(text);
+  if (visible === 0) {
+    return false;
+  }
+  if (/^["“「『]/u.test(text.trim())) {
+    return true;
+  }
+  return countDialogueCharacters(text) / visible >= 0.5;
+}
+
+function formatRatio(ratio: number): string {
+  return `${(ratio * 100).toFixed(1)}%`;
 }
 
 function splitSentences(text: string): string[] {

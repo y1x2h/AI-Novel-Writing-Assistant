@@ -5,6 +5,21 @@ const {
   buildProseQualityAuditReport,
   detectProseQuality,
 } = require("../dist/services/novel/runtime/proseQuality/ProseQualityDetector.js");
+const { createStyleSignalPolicy } = require("../../shared/dist/types/styleEngine.js");
+
+const dialogueHeavyChapter = Array.from({ length: 40 }, (_, index) => (
+  `「这是第${index + 1}段对白，我们要在这里把话说清楚，不要给彼此留任何余地。」`
+)).join("\n");
+
+const narrativeOnlyChapter = Array.from({ length: 30 }, (_, index) => (
+  `他在第${index + 1}条长街尽头停下脚步，风把城头的旗帜吹得猎猎作响，灯火顺着石阶一层层亮起来。`
+)).join("\n");
+
+const mixedChapter = Array.from({ length: 20 }, (_, index) => [
+  `「第${index + 1}次交锋，你打算怎么走？」他问。`,
+  `他把手按在刀柄上，屋檐的雨水第${index + 1}次顺着瓦沟落下来，砸在青石板上溅起细小的水花。`,
+  `远处更鼓敲过第${index + 1}响，巡夜的灯笼从巷口缓慢移过，又在转角处被墙影吞没。`,
+].join("\n")).join("\n");
 
 function codes(report) {
   return report.findings.map((finding) => finding.code);
@@ -58,6 +73,48 @@ test("detectProseQuality keeps common false positives out of blocking findings",
   assert.equal(codes(report).includes("prose_negative_flip"), false);
   assert.equal(codes(report).includes("prose_ai_self_reference"), false);
   assert.equal(report.hasBlockingFindings, false);
+});
+
+test("flags a dialogue-heavy chapter as dialogue density evidence without blocking", () => {
+  const report = detectProseQuality(dialogueHeavyChapter);
+
+  assert.ok(codes(report).includes("prose_dialogue_ratio"));
+  assert.ok(codes(report).includes("prose_talk_loop"));
+  assert.equal(report.hasBlockingFindings, false);
+  const ratioFinding = report.findings.find((finding) => finding.code === "prose_dialogue_ratio");
+  assert.match(ratioFinding.message, /对白淹没叙述/);
+  assert.equal(ratioFinding.severity, "low");
+});
+
+test("flags a narrative-only chapter as low dialogue ratio evidence", () => {
+  const report = detectProseQuality(narrativeOnlyChapter);
+
+  assert.ok(codes(report).includes("prose_dialogue_ratio"));
+  assert.equal(codes(report).includes("prose_talk_loop"), false);
+  assert.equal(report.hasBlockingFindings, false);
+  assert.match(
+    report.findings.find((finding) => finding.code === "prose_dialogue_ratio").message,
+    /叙述明显压倒对白/,
+  );
+});
+
+test("leaves chapters that interleave dialogue with action alone", () => {
+  const report = detectProseQuality(mixedChapter);
+
+  assert.equal(codes(report).includes("prose_dialogue_ratio"), false);
+  assert.equal(codes(report).includes("prose_talk_loop"), false);
+  assert.equal(report.hasBlockingFindings, false);
+});
+
+test("dialogue density thresholds follow the writing style signal policy", () => {
+  const shortDialogueRun = ["「你来了。」", "「嗯。」", "「坐吧。」", "「好。」"].join("\n");
+
+  assert.equal(codes(detectProseQuality(shortDialogueRun)).includes("prose_dialogue_ratio"), false);
+  assert.equal(codes(detectProseQuality(shortDialogueRun)).includes("prose_talk_loop"), false);
+
+  const strictPolicy = { ...createStyleSignalPolicy(), dialogueRatioMax: 0.1, talkLoopRounds: 3 };
+  assert.ok(codes(detectProseQuality(mixedChapter, strictPolicy)).includes("prose_dialogue_ratio"));
+  assert.ok(codes(detectProseQuality(shortDialogueRun, strictPolicy)).includes("prose_talk_loop"));
 });
 
 test("buildProseQualityAuditReport maps findings into mode_fit runtime audit issues", () => {

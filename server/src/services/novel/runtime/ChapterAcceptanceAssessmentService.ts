@@ -278,7 +278,7 @@ export class ChapterAcceptanceAssessmentService {
     await retryBudget.recordResult(scope, !assessment.riskTags.some(tag => tag === "acceptance_gate_unavailable" || tag === "style_review_unavailable"));
     const styleReviewReport = buildAcceptanceStyleReport(input.contextPackage, assessment);
     const controlledAssessment = applyAcceptanceStyleRepairPolicy(input.contextPackage, assessment);
-    const proseQuality = detectProseQuality(input.content);
+    const proseQuality = detectProseQuality(input.content, input.contextPackage.styleSignalPolicy);
     const proseIssues = proseQuality.findings.slice(0, 5).map((finding) => ({
       severity: finding.severity,
       category: "voice" as const,

@@ -190,6 +190,38 @@
 - 契约过滤与规则封顶：`server/src/services/styleEngine/StyleCompiler.ts`、`server/src/services/styleEngine/antiAiPreviewRules.ts`。
 - 默认模板初值：`server/src/services/styleEngine/defaults.ts`。
 
+## 对白密度检测（对话占比 / 话疗）
+
+### Background
+
+长篇阅读体验里有两类高频失衡：通篇叙述、几乎不出现对白（读起来像说明文），以及连续多段对白之间没有动作、场景或心理穿插，只靠台词来回推进（「话疗」）。章内 `repetition` 与既有反 AI 规则都不覆盖这两类问题，模型的语义检测也常常因为「文本本身没有明显违规」而漏掉。
+
+### Decision
+
+把它做成**可机械度量的确定性证据**，而不是新增一条关键词规则：对白字数占比可以用引号区间直接量出来，连续对白段落也能按段落结构数出来。阈值挂在写法信号策略上，所以不同写法可以声明不同的对白密度区间（例如冷白描允许更低的对白占比），复用「按写法调门限」的同一套解析机制，不新增第二套配置。
+
+### Current Rule
+
+- 度量位置：`detectProseQuality(content, policy)`，在既有正文表达检查里新增 `prose_dialogue_ratio`（全篇对白字数占比低于 `dialogueRatioMin` 或高于 `dialogueRatioMax`）与 `prose_talk_loop`（连续对白段落达到 `talkLoopRounds` 且中间没有叙述段）。
+- 阈值来源：`StyleSignalPolicy` 的 `dialogueRatioMin / dialogueRatioMax / talkLoopRounds / dialogueRatioMinCharacters`；未传策略时回退 `createStyleSignalPolicy()` 的全局默认。写法档案可通过 `LanguageRules.signalCalibration` 覆盖。
+- 保护性下限：正文可见字数低于 `dialogueRatioMinCharacters` 时不评估占比，避免片段、极短文本与测试夹具误报。
+- 严重度固定为 low（占比失衡）与 medium（话疗），**不进入** `hasBlockingFindings`，因此不会触发候选预检拦截，也不阻塞全局链；结果作为验收证据进入 `chapterAcceptance`，是否计入由 AI 判断。
+- 提示词侧：`style.detection`（`v13`）在「检测范围」补「对白密度」一条，要求结合本章位置与写法要求判断，只在确实削弱可读性或节奏时才计入 violation。
+
+### Failure Modes
+
+- **把对白占比写成硬判定**：低对白是合法写法选择，只有作为候选证据交给 AI 判断才成立。
+- **在短文本上评估占比**：没有 `dialogueRatioMinCharacters` 下限时，片段与夹具会被大量误报，并污染既有正文表达检查的结论。
+- **另起一套阈值配置**：对白密度阈值必须走 `StyleSignalPolicy`，否则手动检测与自动链路、不同写法之间会出现两套口径。
+- **让证据变成阻塞**：严重度一旦提到 high/critical，就会进入 `detectNewSevereProseFindings` 的预检拦截，把局部质量债务升级为全局失败。
+
+### Related Modules（对白密度）
+
+- 度量实现：`server/src/services/novel/runtime/proseQuality/ProseQualityDetector.ts`。
+- 阈值定义：`shared/types/styleEngine/signals.ts`（`StyleSignalPolicy`）。
+- 接入点：`server/src/services/novel/runtime/ChapterAcceptanceAssessmentService.ts`、`ChapterContentFinalizationService.ts`。
+- 提示词：`server/src/prompting/prompts/style/style.prompts.ts`（`style.detection@v13`）。
+
 ## Failure Modes
 
 - **把可编辑基线规则做成硬编码黑名单**：会让用户无法调整规则库，也违反 AI-First 原则。规则必须是数据。
@@ -210,6 +242,7 @@
 - 禁改清单：`server/src/services/styleEngine/fragments/StyleFragmentRuleService.ts`、`shared/types/styleEngine/fragmentRules.ts`、`client/src/components/styleReview/StyleProtectedFragmentEditor.tsx`。
 - 改动台账：`server/src/services/styleEngine/ledger/StyleRewriteLedgerService.ts`、`ledger/buildLedgerEntries.ts`、`shared/types/styleEngine/ledger.ts`、`client/src/components/styleReview/StyleRewriteLedgerList.tsx`。
 - 按写法调门限：`server/src/services/styleEngine/signals/StyleSignalPolicyResolver.ts`、`shared/types/styleEngine/signals.ts`、`server/src/services/styleEngine/StyleDetectionService.ts`。
+- 对白密度：`server/src/services/novel/runtime/proseQuality/ProseQualityDetector.ts`、`server/src/services/novel/runtime/acceptance/styleReview.ts`。
 - 力度选择 UI：`client/src/components/styleReview/index.tsx`、`client/src/pages/writingFormula/components/WritingFormulaCleanPanel.tsx`、`client/src/pages/antiAiRules/components/AntiAiRuleEffectTestCard.tsx`。
 
 ## Source Documents
