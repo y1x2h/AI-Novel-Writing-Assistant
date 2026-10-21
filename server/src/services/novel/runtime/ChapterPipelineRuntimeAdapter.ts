@@ -14,6 +14,7 @@ import type { ChapterStreamGenerationOrchestrator } from "./ChapterStreamGenerat
 import type { ChapterLifecycleService } from "./lifecycle";
 import { chapterGenerationFeed } from "../production/observation";
 import { ChapterPipelineFinalizationStore, ChapterArtifactSyncBoundaryError } from "./artifactSync";
+import { chapterRepairCircuitBreaker } from "./repair/ChapterRepairCircuitBreaker";
 
 export interface ChapterPipelineRuntimeAdapterDeps {
   finalizationStore?: Pick<ChapterPipelineFinalizationStore, "load" | "save">;
@@ -141,6 +142,7 @@ export class ChapterPipelineRuntimeAdapter {
             this.markChapterGenerationState(targetChapterId, generationState),
           markChapterNeedsRepair: (targetChapterId) =>
             this.deps.streamOrchestrator.markChapterStatus(targetChapterId, "needs_repair"),
+          repairCircuitBreaker: chapterRepairCircuitBreaker,
         },
         novelId,
         chapterId,

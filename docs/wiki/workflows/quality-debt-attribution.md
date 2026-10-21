@@ -25,8 +25,11 @@ interface QualityDebtAttribution {
   planMisaligned: boolean;                    // 义务不可达（根因 D）
   lengthVsContentDrift: boolean;              // 签名漂移（根因 E）
   missingObligationKinds: string[];           // 首次失败缺失的义务种类
+  repeatedUnresolvedCodes: string[];          // 触发修复熔断的 code 集合（与上一轮未解决记录完全一致）
 }
 ```
+
+`firstFailureIssueCodes` / `secondFailureIssueCodes` / `repeatedUnresolvedCodes` 都只统计可修复 code；`acceptance_gate_unavailable`、`style_review_unavailable` 这类不可补丁化 code 只作为风险标签，不进入归因与熔断签名。
 
 ## 质量债务来源路由规则
 

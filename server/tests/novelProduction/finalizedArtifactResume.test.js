@@ -16,6 +16,7 @@ test('V2 adapter resumes finalized assets before context assembly, generation or
   const {ChapterPipelineRuntimeAdapter} = loadRuntimeSource('ChapterPipelineRuntimeAdapter.ts', {
     './ChapterArtifactSyncService': {}, './chapterRuntimePipeline': runtime, './chapterEmptyContentError': {},
     './artifactSync': {ChapterPipelineFinalizationStore: class {}},
+    './repair/ChapterRepairCircuitBreaker': {chapterRepairCircuitBreaker: {}},
     '../production/observation': {chapterGenerationFeed: {}},
   });
   const adapter = new ChapterPipelineRuntimeAdapter({

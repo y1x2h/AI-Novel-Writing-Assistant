@@ -22,7 +22,7 @@ export const chapterPatchRepairPrompt: PromptAsset<
   ChapterPatchRepairPlan
 > = {
   id: "novel.review.patch",
-  version: "v11",
+  version: "v12",
   taskType: "repair",
   mode: "structured",
   language: "zh",
@@ -88,6 +88,7 @@ export const chapterPatchRepairPrompt: PromptAsset<
         "13. 不要用一个短句作为锚点插入整场新戏。若缺口必须新增完整场景、跨越当前章结尾或大幅扩写才能兑现，返回 requiresFullRewrite=true 并说明原因，不能把整章重写伪装为局部补丁。",
         "14. 修复前核对问题证据和当前正文。若正文已兑现合同，不得为了提高评分新增条件、道具或追兵；summary 说明保留原文的依据，返回空 patches。若确有信息边界问题，替换必须消除指定歧义，不能只改标点而保留原缺口。",
         "15. 若提供 styleProtection，每条补丁必须引用其 allowedIssueIds 中的真实问题编号。只报告的写法问题不得借其他编号改动。纯表达补丁保留数字、时间、专名、否定、人物行为与因果。",
+        "16. 问题清单中的 anchoredFindings 给出每条问题的行号与原文摘录。patch 的 targetExcerpt 优先取该摘录所在的完整句段，并确保 replacement 真正消除该摘录暴露的问题；若某条摘录在当前正文已不存在，说明该问题已经消除，不得为了凑改动而输出无关补丁。",
         ...STYLE_REWRITE_DISCIPLINE,
         "【替换正文的表达约束】",
         "以下约束只用于 replacement；targetExcerpt 必须保留原文，不能为满足表达约束修改定位片段。",
