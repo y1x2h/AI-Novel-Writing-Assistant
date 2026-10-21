@@ -6,6 +6,7 @@ import {
   type ChapterAcceptanceAssessmentResult,
 } from "./ChapterAcceptanceAssessmentService";
 import type { ChapterRuntimeRequestInput } from "./chapterRuntimeSchema";
+import { loadCrossChapterStructureEvidence } from "./structureSimilarity";
 import { hashContent, rememberCacheValue } from "./chapterRuntimePackageBuilders";
 
 type AssessmentService = Pick<ChapterAcceptanceAssessmentService, "assess">
@@ -50,6 +51,13 @@ export class ChapterQualityGateService {
 
   async runAcceptanceGate(input: RunChapterQualityGatesInput): Promise<ChapterAcceptanceAssessmentResult> {
     const startedAt = Date.now();
+    const crossChapterStructure = await loadCrossChapterStructureEvidence({
+      novelId: input.novelId,
+      chapterId: input.chapterId,
+      chapterOrder: input.contextPackage.chapter.order,
+      currentSceneCards: input.contextPackage.chapter.sceneCards,
+      currentTargetWordCount: input.contextPackage.chapter.targetWordCount ?? null,
+    });
     const assessmentInput: ChapterAcceptanceAssessmentInput = {
       novelId: input.novelId, chapterId: input.chapterId,
       novelTitle: input.contextPackage.bookContract?.title ?? input.contextPackage.chapter.title,
@@ -60,6 +68,7 @@ export class ChapterQualityGateService {
       repairReviewBaseline: input.repairReviewBaseline,
       styleRewriteBaseline: input.styleRewriteBaseline,
       content: input.content, contextPackage: input.contextPackage,
+      crossChapterStructure,
       provider: input.request.provider, model: input.request.model, temperature: input.request.temperature,
       persist: input.persistAssessment !== false,
     };

@@ -5,6 +5,7 @@ import type {
   RuntimeStyleDetectionReport,
 } from "@ai-novel/shared/types/chapterRuntime";
 import type { LLMProvider } from "@ai-novel/shared/types/llm";
+import type { CrossChapterStructureEvidence } from "@ai-novel/shared/types/novel/crossChapterStructure";
 import { resolveChapterReviewRetryPolicy } from "@ai-novel/shared/types/directorIssue";
 import { directorIssuePolicyService } from "../director/issues/DirectorIssuePolicyService";
 import { prisma } from "../../../db/prisma";
@@ -36,6 +37,8 @@ export interface ChapterAcceptanceAssessmentInput {
   styleRewriteBaseline?: ChapterAcceptancePromptInput["styleRewriteBaseline"];
   content: string;
   contextPackage: GenerationContextPackage;
+  /** 跨章结构候选证据；读取失败或没有候选中时为 null。 */
+  crossChapterStructure?: CrossChapterStructureEvidence | null;
   provider?: LLMProvider;
   model?: string;
   temperature?: number;
@@ -366,6 +369,7 @@ export class ChapterAcceptanceAssessmentService {
         repairReviewBaseline: input.repairReviewBaseline,
         styleRewriteBaseline: input.styleRewriteBaseline,
         styleSignals: buildAcceptanceStyleSignals(input.contextPackage, input.content),
+        crossChapterStructure: input.crossChapterStructure ?? null,
       },
       contextBlocks: applyAcceptanceStyleContext(input.contextPackage, resolvedContext.blocks),
       options: {
