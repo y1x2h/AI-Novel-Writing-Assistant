@@ -612,6 +612,13 @@ export {
   styleFragmentRuleSchema,
 } from "./styleEngine/fragmentRules.js";
 export type { StyleFragmentRule } from "./styleEngine/fragmentRules.js";
+export {
+  STYLE_REWRITE_LEDGER_DEFAULT_LIMIT,
+  STYLE_REWRITE_LEDGER_MAX_LIMIT,
+  styleRewriteLedgerEntrySchema,
+  styleRewriteLedgerSchema,
+} from "./styleEngine/ledger.js";
+export type { StyleRewriteLedger, StyleRewriteLedgerEntry } from "./styleEngine/ledger.js";
 
 export interface StyleDetectionViolation {
   ruleId: string;

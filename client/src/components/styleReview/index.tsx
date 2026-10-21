@@ -2,6 +2,7 @@ import { isStyleIssueRewritable, type StyleDetectionReport, type StyleRewriteGua
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export { StyleProtectedFragmentEditor } from "./StyleProtectedFragmentEditor";
+export { StyleRewriteLedgerList } from "./StyleRewriteLedgerList";
 
 const layerLabels = { surface: "句子表达", discourse: "段落衔接", narrative: "叙事建议" };
 

@@ -13,6 +13,7 @@ import type {
   StyleFeatureDecision,
   StyleFragmentRule,
   StyleProfileFeature,
+  StyleRewriteLedger,
   StyleProfile,
   StyleRecommendationResult,
   StyleTemplate,
@@ -327,6 +328,11 @@ export async function rewriteStyleIssues(payload: {
   scope?: StyleRewriteScope;
 }) {
   const { data } = await apiClient.post<ApiResponse<{ content: string; report?: StyleDetectionReport; rewriteGuard?: StyleRewriteGuard }>>("/style-detection/rewrite", payload);
+  return data;
+}
+
+export async function getStyleRewriteLedger(params: { novelId: string; chapterId?: string; limit?: number }) {
+  const { data } = await apiClient.get<ApiResponse<StyleRewriteLedger[]>>("/style-rewrite-ledger", { params });
   return data;
 }
 

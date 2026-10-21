@@ -84,6 +84,8 @@ export const queryKeys = {
     effectiveAntiAiRules: (params: string) => ["style-engine", "anti-ai-rules", "effective", params] as const,
     bindings: (params: string) => ["style-engine", "bindings", params] as const,
     styleFragmentRules: (novelId: string) => ["style-engine", "style-fragment-rules", novelId] as const,
+    styleRewriteLedger: (novelId: string, chapterId?: string) =>
+      ["style-engine", "style-rewrite-ledger", novelId, chapterId ?? "all"] as const,
   },
   genres: {
     all: ["genres"] as const,

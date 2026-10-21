@@ -132,6 +132,30 @@
 - **把清单当成「必须出现」的正向要求**：清单是保护性约束，不是内容清单。未过滤就渲染会让正文多出原文没有的片段。
 - **把禁用片段升级成全局阻塞**：与删除超限一样，只能保留原稿 + 记录，不能中断自动导演链。
 
+## 改动台账（rewrite ledger）
+
+### Background
+
+改写是「模型产出补丁 + 护栏裁决 + 信息守恒复核」三段式，任何一段都可能否决整次改写。用户只看到最终正文，看不到某一条规则其实被拦下了，也看不到改写被回滚；出问题时无法复盘。
+
+### Decision
+
+把每次局部修订的结果归档成 `StyleRewriteLedger`，只写入和只读查询，**不参与任何决策**。理由：审计需求与质量门是两件事，台账一旦能影响流程，就会变成新的隐式质量门，与「局部质量债务不阻塞全局」的原则冲突。
+
+### Current Rule
+
+- 模型：`StyleRewriteLedger { id, novelId, chapterId?, sourceHash, candidateHash, policyRevision, entriesJson, createdAt }`，`chapterId` 是可空字符串而非外键，章节删除不会连带删台账。
+- 写入点唯一：`StyleRewriteService.rewrite` 落地之后。没有 `novelId` 或没有补丁时不写，因此预览型调用不会污染台账。
+- 条目由 `buildLedgerEntries` 从**已产出的结构化结果**翻译而来：`issueId / ruleName / targetExcerpt / replacement / checkStatus`。`checkStatus` 只反映最终是否采纳：`accepted` 已采用、`blocked` 保留原稿、`needs_review` 删减超限需人工复核。
+- 写入失败必须降级为告警，不得影响本次改写结果，也不得中断章节链路。
+- 展示侧是只读列表，不提供重试、回滚或继续操作；恢复动作仍在正文工作台。
+
+### Failure Modes
+
+- **让台账参与决策**：一旦「有台账记录」被当成通过条件，审计数据就变成了第二个质量门。
+- **在护栏之前写入**：会把被否决的补丁记成已采用，台账反而会误导复盘。
+- **写入失败即抛出**：把审计能力变成正文链路的单点故障。
+
 ## Failure Modes
 
 - **把可编辑基线规则做成硬编码黑名单**：会让用户无法调整规则库，也违反 AI-First 原则。规则必须是数据。
@@ -149,7 +173,8 @@
 - 规则生效策略：`server/src/services/styleEngine/AntiAiPolicyResolver.ts`。
 - 统计学校准：`server/src/services/styleEngine/calibration/`（`calibrationMetrics.ts`、`calibrationBaseline.ts`、`runCalibration.ts`、`corpus/`）。
 - 改写护栏与力度阈值：`server/src/services/styleEngine/rewrite/index.ts`、`StyleRewriteService.ts`。
-- 禁改清单：`server/src/services/styleEngine/StyleFragmentRuleService.ts`、`shared/types/styleEngine/fragmentRules.ts`、`client/src/components/styleReview/StyleProtectedFragmentEditor.tsx`。
+- 禁改清单：`server/src/services/styleEngine/fragments/StyleFragmentRuleService.ts`、`shared/types/styleEngine/fragmentRules.ts`、`client/src/components/styleReview/StyleProtectedFragmentEditor.tsx`。
+- 改动台账：`server/src/services/styleEngine/ledger/StyleRewriteLedgerService.ts`、`ledger/buildLedgerEntries.ts`、`shared/types/styleEngine/ledger.ts`、`client/src/components/styleReview/StyleRewriteLedgerList.tsx`。
 - 力度选择 UI：`client/src/components/styleReview/index.tsx`、`client/src/pages/writingFormula/components/WritingFormulaCleanPanel.tsx`、`client/src/pages/antiAiRules/components/AntiAiRuleEffectTestCard.tsx`。
 
 ## Source Documents

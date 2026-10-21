@@ -1,5 +1,5 @@
 import { isStyleIssueRewritable, type StyleDetectionReport, type StyleProfile, type StyleRewriteGuard, type StyleRewriteScope } from "@ai-novel/shared/types/styleEngine";
-import { StyleProtectedFragmentEditor, StyleRiskReport, StyleRewriteProtection, StyleRewriteScopeSelect } from "@/components/styleReview";
+import { StyleProtectedFragmentEditor, StyleRiskReport, StyleRewriteLedgerList, StyleRewriteProtection, StyleRewriteScopeSelect } from "@/components/styleReview";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -108,6 +108,8 @@ export default function WritingFormulaCleanPanel(props: WritingFormulaCleanPanel
           />
 
           <StyleProtectedFragmentEditor novelId={novelId} />
+
+          <StyleRewriteLedgerList novelId={novelId} />
 
           {detectionReport ? (
             <StyleRiskReport report={detectionReport} />

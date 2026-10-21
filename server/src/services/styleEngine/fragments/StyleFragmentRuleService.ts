@@ -6,7 +6,7 @@ import {
   normalizeStyleFragment,
   type StyleFragmentRule,
 } from "@ai-novel/shared/types/styleEngine";
-import { prisma } from "../../db/prisma";
+import { prisma } from "../../../db/prisma";
 
 /** 目前只有「禁改」一种用途；历史数据的 kind 仍在过滤条件里，方便后续区分其他片段类型。 */
 const PROTECTED_KIND = "protected";

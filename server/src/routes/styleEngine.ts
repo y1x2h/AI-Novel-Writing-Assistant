@@ -9,7 +9,8 @@ import { AntiAiPolicyResolver } from "../services/styleEngine/AntiAiPolicyResolv
 import { AntiAiRuleService } from "../services/styleEngine/AntiAiRuleService";
 import { StyleBindingService } from "../services/styleEngine/StyleBindingService";
 import { StyleDetectionService } from "../services/styleEngine/StyleDetectionService";
-import { StyleFragmentRuleService } from "../services/styleEngine/StyleFragmentRuleService";
+import { StyleFragmentRuleService } from "../services/styleEngine/fragments/StyleFragmentRuleService";
+import { StyleRewriteLedgerService } from "../services/styleEngine/ledger/StyleRewriteLedgerService";
 import { StyleGenerationService } from "../services/styleEngine/StyleGenerationService";
 import { StyleProfileService } from "../services/styleEngine/StyleProfileService";
 import { styleRecommendationService } from "../services/styleEngine/StyleRecommendationService";
@@ -24,6 +25,7 @@ const styleDetectionService = new StyleDetectionService();
 const styleRewriteService = new StyleRewriteService();
 const styleGenerationService = new StyleGenerationService();
 const styleFragmentRuleService = new StyleFragmentRuleService();
+const styleRewriteLedgerService = new StyleRewriteLedgerService();
 
 const idSchema = z.object({ id: z.string().trim().min(1) });
 const bindingIdSchema = z.object({ id: z.string().trim().min(1) });
@@ -200,6 +202,12 @@ const styleFragmentRuleCreateSchema = z.object({
   fragment: z.string().trim().min(2).max(80),
   note: z.string().trim().max(200).optional(),
   enabled: z.boolean().optional(),
+});
+
+const styleRewriteLedgerQuerySchema = z.object({
+  novelId: z.string().trim().min(1),
+  chapterId: z.string().trim().min(1).optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional(),
 });
 
 const styleFragmentRuleUpdateSchema = z.object({
@@ -533,6 +541,20 @@ router.delete("/style-fragment-rules/:id", validate({ params: idSchema }), async
       success: true,
       message: "禁改片段已删除。",
     } satisfies ApiResponse<null>);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/style-rewrite-ledger", validate({ query: styleRewriteLedgerQuerySchema }), async (req, res, next) => {
+  try {
+    const { novelId, chapterId, limit } = styleRewriteLedgerQuerySchema.parse(req.query);
+    const data = await styleRewriteLedgerService.list({ novelId, chapterId, limit });
+    res.status(200).json({
+      success: true,
+      data,
+      message: "获取改动台账成功。",
+    } satisfies ApiResponse<typeof data>);
   } catch (error) {
     next(error);
   }

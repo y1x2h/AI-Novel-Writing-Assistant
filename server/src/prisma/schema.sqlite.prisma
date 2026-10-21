@@ -440,6 +440,7 @@ model Novel {
   factEntries        NovelFactEntry[]
   complianceReports  NovelComplianceReport[]
   styleFragmentRules StyleFragmentRule[]
+  styleRewriteLedgers StyleRewriteLedger[]
   intentVersions     NovelIntentVersion[]
   shortStoryPlan     ShortStoryPlan?
   shortStorySegments ShortStorySegment[]
@@ -1796,6 +1797,21 @@ model StyleFragmentRule {
   updatedAt DateTime @updatedAt
 
   @@index([novelId, kind, enabled])
+}
+
+model StyleRewriteLedger {
+  id             String   @id @default(cuid())
+  novelId        String
+  chapterId      String?
+  sourceHash     String
+  candidateHash  String
+  policyRevision String
+  entriesJson    String
+  novel          Novel    @relation(fields: [novelId], references: [id], onDelete: Cascade)
+  createdAt      DateTime @default(now())
+
+  @@index([novelId, createdAt])
+  @@index([chapterId])
 }
 
 model TitleLibrary {
