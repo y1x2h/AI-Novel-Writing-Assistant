@@ -9,6 +9,7 @@ import {
   ChapterPatchRepairService,
   type PatchRepairMode,
 } from "../../chapterPatchRepairService";
+import { extractRepairAnchors } from "./repairIssueAnchors";
 
 export interface ChapterRepairExecutionOptions {
   provider?: LLMProvider;
@@ -101,6 +102,8 @@ function resolveIssueCodes(runtimePackage: ChapterRuntimePackage | null | undefi
  *
  * Root A 修复：在 ReviewIssue 列表之外，额外透传：
  *  - missingObligations：本章未兑现的义务（kind/summary/evidence），修复器可据此定向补写
+ *  - anchoredFindings：审计层问题的行号与原文摘录，修复器可精确定位、确认问题仍在后再改，
+ *    避免自由改写没改到被锚定的文本、复检再次命中同一 code
  *  - blockingIssueCodes：审计层给出的精确 code（如 OBLIGATION_UNMET / LENGTH_OVER_HARD_MAX），
  *    避免修复器只看压扁文本猜问题类型
  */
@@ -111,8 +114,10 @@ function buildRepairIssuesPayload(
   const missingObligations = runtimePackage?.obligationCoverage?.missing ?? [];
   const blockingIssueCodes = resolveIssueCodes(runtimePackage);
   const repairDirectives = runtimePackage?.meta?.repairDirectives ?? [];
+  const anchoredFindings = extractRepairAnchors(runtimePackage);
 
-  if (missingObligations.length === 0 && blockingIssueCodes.length === 0 && repairDirectives.length === 0) {
+  if (missingObligations.length === 0 && blockingIssueCodes.length === 0
+    && repairDirectives.length === 0 && anchoredFindings.length === 0) {
     return JSON.stringify(issues);
   }
 
@@ -124,6 +129,7 @@ function buildRepairIssuesPayload(
         summary: o.summary,
         ...(o.evidence ? { evidence: o.evidence } : {}),
       })),
+      anchoredFindings,
       blockingIssueCodes,
       repairDirectives,
     },

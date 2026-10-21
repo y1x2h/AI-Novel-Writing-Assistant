@@ -172,7 +172,7 @@ export const chapterReviewPrompt: PromptAsset<
 
 export const chapterRepairPrompt: PromptAsset<ChapterRepairPromptInput, string, string> = {
   id: "novel.review.repair",
-  version: "v4",
+  version: "v5",
   taskType: "repair",
   mode: "text",
   language: "zh",
@@ -220,6 +220,7 @@ export const chapterRepairPrompt: PromptAsset<ChapterRepairPromptInput, string, 
       "2a. 同时保留 reader_experience 中已经兑现的读者价值，并定向补齐 promisedReward、主角主动性、关键转折、净变化或旧钩子承接缺口。",
       "3. 保留原章已经有效的推进、情绪、细节与角色状态，不要把有用内容一起洗掉。",
       "4. 若多个问题冲突，优先修复影响主线推进、逻辑连贯和阅读节奏的问题。",
+      "5. 问题清单中的 anchoredFindings 给出每条问题的行号与原文摘录。先从当前正文定位该摘录，确认问题确实存在后，改动必须落在该摘录所在的句段上。若某条摘录在当前正文已不存在，说明该问题已经消除，不得凭空编造问题，也不得只改标点充数。",
       "",
       "【具体要求】",
       "1. 修复后章节必须仍然是自然可读的完整正文，而不是拼补痕迹明显的修改稿。",

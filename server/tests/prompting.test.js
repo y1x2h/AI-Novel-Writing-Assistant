@@ -689,7 +689,7 @@ test("novel main-chain prompt assets declare explicit non-zero context budgets",
     ["novel.volume.rebalance.adjacent@v1", NOVEL_PROMPT_BUDGETS.volumeRebalance],
     [promptKey(chapterWriterPrompt), NOVEL_PROMPT_BUDGETS.chapterWriter],
     ["novel.review.chapter@v3", NOVEL_PROMPT_BUDGETS.chapterReview],
-    ["novel.review.repair@v4", NOVEL_PROMPT_BUDGETS.chapterRepair],
+    ["novel.review.repair@v5", NOVEL_PROMPT_BUDGETS.chapterRepair],
     ["audit.chapter.full@v2", NOVEL_PROMPT_BUDGETS.chapterReview],
   ]);
 
