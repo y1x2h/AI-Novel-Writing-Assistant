@@ -598,8 +598,8 @@ export interface CompiledStylePromptBlocks {
   appliedRuleIds: string[];
 }
 
-export { styleRiskLayerSchema, styleRewriteGuardSchema, isStyleIssueRewritable } from "./styleEngine/diagnostics.js";
-export type { StyleRiskLayer, StyleRewriteGuard, StyleRewriteBaseline } from "./styleEngine/diagnostics.js";
+export { styleRiskLayerSchema, styleRewriteEscalationSchema, styleRewriteGuardSchema, styleRewriteScopeSchema, isStyleIssueRewritable } from "./styleEngine/diagnostics.js";
+export type { StyleRiskLayer, StyleRewriteGuard, StyleRewriteBaseline, StyleRewriteScope, StyleRewriteEscalation } from "./styleEngine/diagnostics.js";
 export { styleSignalPolicySchema, styleSignalScanSchema, createStyleSignalPolicy } from "./styleEngine/signals.js";
 export type { StyleSignalPolicy, StyleSignalFinding, StyleSignalScan } from "./styleEngine/signals.js";
 

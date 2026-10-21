@@ -7,6 +7,7 @@ import type {
   StyleBinding,
   StyleDetectionReport,
   StyleRewriteGuard,
+  StyleRewriteScope,
   StyleExtractionDraft,
   StyleExtractionSourceProcessingMode,
   StyleFeatureDecision,
@@ -322,6 +323,7 @@ export async function rewriteStyleIssues(payload: {
   provider?: string;
   model?: string;
   temperature?: number;
+  scope?: StyleRewriteScope;
 }) {
   const { data } = await apiClient.post<ApiResponse<{ content: string; report?: StyleDetectionReport; rewriteGuard?: StyleRewriteGuard }>>("/style-detection/rewrite", payload);
   return data;

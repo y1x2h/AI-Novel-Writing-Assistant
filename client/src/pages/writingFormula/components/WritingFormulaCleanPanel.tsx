@@ -1,5 +1,5 @@
-import { isStyleIssueRewritable, type StyleDetectionReport, type StyleProfile, type StyleRewriteGuard } from "@ai-novel/shared/types/styleEngine";
-import { StyleRiskReport, StyleRewriteProtection } from "@/components/styleReview";
+import { isStyleIssueRewritable, type StyleDetectionReport, type StyleProfile, type StyleRewriteGuard, type StyleRewriteScope } from "@ai-novel/shared/types/styleEngine";
+import { StyleRiskReport, StyleRewriteProtection, StyleRewriteScopeSelect } from "@/components/styleReview";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -11,6 +11,8 @@ interface WritingFormulaCleanPanelProps {
   rewritePending: boolean;
   rewritePreview: string;
   rewriteGuard?: StyleRewriteGuard;
+  rewriteScope: StyleRewriteScope;
+  onRewriteScopeChange: (scope: StyleRewriteScope) => void;
   onDetectInputChange: (value: string) => void;
   onDetect: () => void;
   onRewrite: () => void;
@@ -24,6 +26,8 @@ export default function WritingFormulaCleanPanel(props: WritingFormulaCleanPanel
     detectionPending,
     rewritePending,
     rewritePreview,
+    rewriteScope,
+    onRewriteScopeChange,
     onDetectInputChange,
     onDetect,
     onRewrite,
@@ -94,6 +98,12 @@ export default function WritingFormulaCleanPanel(props: WritingFormulaCleanPanel
               生成局部修订预览
             </Button>
           </div>
+
+          <StyleRewriteScopeSelect
+            value={rewriteScope}
+            onChange={onRewriteScopeChange}
+            disabled={rewritePending || detectionPending}
+          />
 
           {detectionReport ? (
             <StyleRiskReport report={detectionReport} />

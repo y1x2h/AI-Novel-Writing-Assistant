@@ -4,6 +4,7 @@ import type {
   StyleBinding,
   StyleProfile,
   StyleProfileFeature,
+  StyleRewriteScope,
 } from "@ai-novel/shared/types/styleEngine";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import OpenInCreativeHubButton from "@/components/creativeHub/OpenInCreativeHubButton";
@@ -93,6 +94,7 @@ export default function WritingFormulaPage() {
   const [testWriteOutput, setTestWriteOutput] = useState("");
   const [detectInput, setDetectInput] = useState("");
   const [rewritePreview, setRewritePreview] = useState("");
+  const [rewriteScope, setRewriteScope] = useState<StyleRewriteScope>("free");
 
   const activeMode = normalizeWritingFormulaMode(searchParams.get("mode"));
   const incomingProfileId = searchParams.get("profileId") ?? "";
@@ -473,6 +475,7 @@ export default function WritingFormulaPage() {
         provider: llm.provider,
         model: llm.model,
         temperature: 0.5,
+        scope: rewriteScope,
       });
       return { ...response, sourceContent, sourceScope: reviewScope };
     },
@@ -672,6 +675,8 @@ export default function WritingFormulaPage() {
               rewritePending={rewriteMutation.isPending}
               rewritePreview={currentRewrite ? rewritePreview : ""}
               rewriteGuard={currentRewrite?.rewriteGuard}
+              rewriteScope={rewriteScope}
+              onRewriteScopeChange={setRewriteScope}
               onDetectInputChange={setDetectInput}
               onDetect={() => detectionMutation.mutate()}
               onRewrite={() => rewriteMutation.mutate()}

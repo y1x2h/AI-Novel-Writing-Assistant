@@ -53,6 +53,35 @@
 - 「的」字过载 → `risk / medium / autoRewrite: false`。一个分句里三个以上「的」读起来拖沓，但修法是把修饰结构动词化、拆成短句，需要判断内容。
 - 程度副词与模糊词堆叠 → `forbidden / medium / autoRewrite: true`。「非常……仿佛……好像」同句叠用几乎没有正当用法，删掉多余程度词就成立。
 
+## 改写力度分级（轻改 / 中改 / 重写）
+
+### Background
+
+零基础用户不会说「请在不删除剧情信息的前提下做句内改写」。他们只会说「帮我改轻一点」或「这段彻底重写」。同时，检测报告上的 `autoRewrite` 只回答了「这条规则能不能自动改」，没有回答「一次改写最多能动多少内容」，导致修复链路在有剧情功能的段落上删多了。
+
+### Decision
+
+- 改写力度是用户可见的三档旋钮：`in_place`（轻改）、`sentence`（中改）、`free`（重写），由 `styleRewriteScopeSchema` 承载。
+- 每一档在 `STYLE_REWRITE_SCOPE_POLICY`（`server/src/services/styleEngine/rewrite/index.ts`）里对应两个确定性阈值：整选区最大删除比例 `maxDeletionRatio`，以及单个补丁至少保留的原片段字数比例 `perPatchMinRetention`。
+  - `in_place`：删除 ≤5%，单补丁至少保留 90% → 只做词级、短语级等量替换，删掉整句立即触线。
+  - `sentence`：删除 ≤15%，单补丁至少保留 50% → 允许整句重写，但不允许把整句删除。
+  - `free`：删除 ≤35%，不设单补丁保留下限 → 允许段落级重写。
+- 这是「结构化配置 → 阈值映射」，不是关键词判断：力度是用户在检测面板显式选择的枚举值，删除幅度由代码兜底，语义是否等价仍由 `style.rewrite.conservation` 的 AI 判定。
+- 触线结果是 `deletion_budget` 检查 `blocked`：**保留原稿**，并在 `guard.escalations` 里逐补丁给出 `[需复核]` 原因。它属于局部质量债务，不阻塞全局自动导演链。
+
+### Current Rule
+
+- guard 契约新增三个字段：`scope`、`deletionRatio`、`escalations`（见 `shared/types/styleEngine/diagnostics.ts`）。三个字段都是**可选**的，兼容已经落库的旧 `rewriteGuard` 记录。
+- 提示词 `style.rewrite` 必须同步渲染所选力度的约束文本（`STYLE_REWRITE_SCOPE_GUIDANCE`）。力度只改 prompt 与 guard 阈值，不改补丁协议本身。
+- 默认力度是 `free`，与升级前的行为等价；未传 `scope` 时按 `free` 处理。
+- 档位默认值属于保守初值，后续由统计学校准给出依据后再调整。
+
+### Failure Modes
+
+- **把力度做成新的自动判断分支**：力度必须是用户显式选择或调用方显式传入的枚举，不能由代码「猜」用户想要多重。
+- **只改 guard 不改 prompt**：模型不知道上限，会持续产出越界补丁，表现为反复 blocked、任务空转。两侧必须同时更新。
+- **把删除超限升级成全局失败**：删除超限是章节局部质量问题，只能保留原稿 + 标 `[需复核]`，不能中断自动导演链。
+
 ## Failure Modes
 
 - **把可编辑基线规则做成硬编码黑名单**：会让用户无法调整规则库，也违反 AI-First 原则。规则必须是数据。
@@ -68,6 +97,8 @@
 - 合同渲染与自检：`server/src/services/styleEngine/StyleCompiler.ts`、`styleContractText.ts`。
 - 检测与改写 prompt：`server/src/prompting/prompts/style/style.prompts.ts`、`style.promptSchemas.ts`。
 - 规则生效策略：`server/src/services/styleEngine/AntiAiPolicyResolver.ts`。
+- 改写护栏与力度阈值：`server/src/services/styleEngine/rewrite/index.ts`、`StyleRewriteService.ts`。
+- 力度选择 UI：`client/src/components/styleReview/index.tsx`、`client/src/pages/writingFormula/components/WritingFormulaCleanPanel.tsx`、`client/src/pages/antiAiRules/components/AntiAiRuleEffectTestCard.tsx`。
 
 ## Source Documents
 

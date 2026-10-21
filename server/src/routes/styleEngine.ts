@@ -1,5 +1,6 @@
 import { Router } from "express";
 import type { ApiResponse } from "@ai-novel/shared/types/api";
+import { styleRewriteScopeSchema } from "@ai-novel/shared/types/styleEngine";
 import { z } from "zod";
 import { llmProviderSchema } from "../llm/providerSchema";
 import { authMiddleware } from "../middleware/auth";
@@ -181,6 +182,7 @@ const rewriteSchema = z.object({
   provider: llmProviderSchema.optional(),
   model: z.string().trim().optional(),
   temperature: z.number().min(0).max(2).optional(),
+  scope: styleRewriteScopeSchema.optional(),
 });
 
 const novelRecommendationParamsSchema = z.object({

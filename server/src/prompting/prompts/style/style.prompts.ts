@@ -1,5 +1,6 @@
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { chapterPatchRepairPlanSchema, type ChapterPatchRepairPlan } from "@ai-novel/shared/types/chapterPatchRepair";
+import type { StyleRewriteScope } from "@ai-novel/shared/types/styleEngine";
 import { STYLE_DIAGNOSTIC_RULES, STYLE_REWRITE_DISCIPLINE, renderStyleSignalEvidence } from "./diagnostics";
 import { z } from "zod";
 import type { PromptAsset } from "../../core/promptTypes";
@@ -44,7 +45,30 @@ export interface StyleRewritePromptInput {
   styleContractText: string;
   content: string;
   issuesBlock: string;
+  scope?: StyleRewriteScope;
 }
+
+/** 三档改写力度对应的提示约束，与 guardStylePatches 的确定性删除上限保持一致。 */
+const STYLE_REWRITE_SCOPE_GUIDANCE: Record<StyleRewriteScope, string[]> = {
+  in_place: [
+    "当前改写力度：原位（轻改）。",
+    "1. 只允许词级、短语级的等量替换，替换后片段字数与原文基本一致（±10% 以内）。",
+    "2. 严禁删除整句或整段；不得删掉任何承担信息功能的词句。",
+    "3. 如果某个问题必须整句重写或删句才能解决，跳过该问题，不要动它。",
+  ],
+  sentence: [
+    "当前改写力度：句内（中改）。",
+    "1. 允许整句重写，但不得跨句搬移、合并或拆分多个句子。",
+    "2. 整次改写的删除量不得超过原文的 15%，只能压缩表达冗余。",
+    "3. 不得删除承担剧情功能的信息句。",
+  ],
+  free: [
+    "当前改写力度：自由（重写）。",
+    "1. 允许段落级重写与句子合并、拆分。",
+    "2. 整次改写的删除量不得超过原文的 35%；接近下限时改用降 AI 重写，而不是继续删内容。",
+    "3. 仍不得改变事件事实、顺序、人物关系与核心剧情结果。",
+  ],
+};
 
 export interface StyleProfileExtractionPromptInput {
   name: string;
@@ -363,7 +387,7 @@ export const styleGenerationPrompt: PromptAsset<StyleGenerationPromptInput, stri
 
 export const styleRewritePrompt: PromptAsset<StyleRewritePromptInput, ChapterPatchRepairPlan> = {
   id: "style.rewrite",
-  version: "v5",
+  version: "v6",
   taskType: "repair",
   mode: "structured",
   language: "zh",
@@ -393,6 +417,9 @@ export const styleRewritePrompt: PromptAsset<StyleRewritePromptInput, ChapterPat
       "1. 改写前后的数值、时间、金额、数量、专名、否定、条件、人物关系与事件先后必须保持一致。",
       "2. 只允许减少表达冗余，不允许增加原文没有的信息；新人物、新地点、新物品、新数值、新动机、新线索以及原文没有的额外行动或警示都算新增信息。",
       "3. 替换内容必须在原文有依据；找不到依据时保留原句或删去概括，不得用新细节占位。",
+      "",
+      "改写力度约束（必须严格遵守，超出幅度会直接保留原稿）：",
+      ...STYLE_REWRITE_SCOPE_GUIDANCE[input.scope ?? "free"],
       "",
       "修正原则：",
       "1. 优先做最小必要改动，能局部修好就不要整体推翻。",

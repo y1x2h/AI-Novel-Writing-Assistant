@@ -1,6 +1,6 @@
 import type { LLMProvider } from "@ai-novel/shared/types/llm";
 import { runStructuredPrompt } from "../../prompting/core/promptRunner";
-import { isStyleIssueRewritable, type StyleRewriteGuard, type StyleDetectionReport } from "@ai-novel/shared/types/styleEngine";
+import { isStyleIssueRewritable, type StyleRewriteGuard, type StyleRewriteScope, type StyleDetectionReport } from "@ai-novel/shared/types/styleEngine";
 import { styleRewritePrompt } from "../../prompting/prompts/style/style.prompts";
 import { styleRewriteConservationPrompt } from "../../prompting/prompts/style/styleRewriteConservation.prompts";
 import { buildWriterStyleContractText } from "./styleContractText";
@@ -42,6 +42,8 @@ interface RewriteInput {
   provider?: LLMProvider;
   model?: string;
   temperature?: number;
+  /** 用户可见的改写力度：轻改 / 中改 / 重写，默认沿用自由档。 */
+  scope?: StyleRewriteScope;
 }
 
 export class StyleRewriteService {
@@ -78,6 +80,7 @@ export class StyleRewriteService {
         styleContractText,
         content: input.content,
         issuesBlock,
+        scope: input.scope,
       },
       options: {
         provider: input.provider ?? "deepseek",
@@ -90,6 +93,7 @@ export class StyleRewriteService {
       original: input.content, plan: result.output,
       allowedIssueIds: issues.map(item => item.issueId),
       styleIssueIds: issues.map(item => item.issueId),
+      scope: input.scope,
     });
     if (protectedResult.content === input.content) {
       return { content: input.content, report, rewriteGuard: protectedResult.guard };
