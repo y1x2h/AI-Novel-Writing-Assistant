@@ -5,7 +5,7 @@ test('dynamic examples and advanced templates retain tail hint placement',()=>{f
 
 test('updated production assets resolve through registry at their exact versions', () => {
   const { getRegisteredPromptAsset } = require('../dist/prompting/registry');
-  for (const [id, version] of [['novel.chapter.writer', 'v10'], ['novel.chapter.acceptance_assessment', 'v24'], ['novel.review.patch', 'v11'], ['novel.review.chapter', 'v3'], ['novel.review.repair', 'v4'], ['novel.chapter.artifact_delta.extract', 'v10'], ['novel.payoff_ledger.sync', 'v8'], ['style.detection', 'v11'], ['style.rewrite', 'v5'], ['style.rewrite.conservation', 'v1'], ['style.profile.verify_features', 'v1'], ['director.spec.clarify', 'v1'], ['novel.chapter_editor.scene_directed', 'v1']]) {
+  for (const [id, version] of [['novel.chapter.writer', 'v10'], ['novel.chapter.acceptance_assessment', 'v24'], ['novel.review.patch', 'v11'], ['novel.review.chapter', 'v3'], ['novel.review.repair', 'v4'], ['novel.chapter.artifact_delta.extract', 'v10'], ['novel.payoff_ledger.sync', 'v8'], ['style.detection', 'v12'], ['style.rewrite', 'v5'], ['style.rewrite.conservation', 'v1'], ['style.profile.verify_features', 'v1'], ['director.spec.clarify', 'v1'], ['novel.chapter_editor.scene_directed', 'v1']]) {
     const asset = getRegisteredPromptAsset(id, version);
     assert.ok(asset, `${id}@${version} must be registered`);
     assert.equal(asset.version, version);

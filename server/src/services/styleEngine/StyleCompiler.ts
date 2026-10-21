@@ -294,6 +294,8 @@ export class StyleCompiler {
         "- Check for Chinese AI fingerprints and delete them instead of rewording: pseudo-poetic tails (象征着, 诉说着, 仿佛在暗示, 充满了……的气息), essay connectives (此外, 值得注意的是, 总而言之, 由此可见), advertising hype words (彰显, 赋能, 助力, 淋漓尽致, 叹为观止).",
         "- Check for contrast shells (不是……而是…… / 不仅……更是……) and decorative punctuation stacking (colons, semicolons, dashes used for tone); keep at most one and prefer plain declarative sentences.",
         "- Check modifier length, 「的」 density and stacked degree words: keep modifiers before a noun under about six characters, use at most two 「的」 in a clause, and do not stack degree adverbs (非常, 十分, 极其, 特别) with vague words (仿佛, 好像, 似乎) in the same sentence.",
+        "- Check decorative punctuation stacking (！！！, 省略号, 顿号 used as tone), filler words (说到底, 说白了, 反正, 毕竟), formulaic micro-actions (深吸一口气, 眼中闪过一丝, 嘴角勾起) and metaphor overload with generic imagery (如……般, 宛如, 犹如).",
+        "- Check dialogue: keep tags varied and sparse, let characters answer sideways or with plain speech (including colloquial words), interleave action beats, and delete lines that explain setting, motive or backstory to the reader.",
         "- If AI flavor remains, revise before returning the final draft.",
       ],
     });

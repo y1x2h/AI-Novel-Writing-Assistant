@@ -132,13 +132,43 @@ test('degree adverbs stacking with vague words are reported without deciding a v
   assert.equal(result[0].hits, 3);
   assert.ok(result[0].matchedTerms.includes('非常') && result[0].matchedTerms.includes('好像'));
   assert.equal(rule('他非常紧张，什么也说不出来。', id).length, 0);
+  // Vague words alone belong to the softener signal, not to this one.
+  assert.equal(rule('他似乎仿佛好像见过。', id).length, 0);
 });
 test('new syntax signals stay inside the shared finding budget and schema', () => {
   const text = '他看着那个穿着灰色旧夹克的男人。他的书包的拉链的扣子坏了。他非常紧张，仿佛好像要说什么。';
   const result = scan(text);
   assert.deepEqual(styleSignalScanSchema.parse(result), result);
-  assert.ok(result.findings.length <= 8);
+  assert.ok(result.findings.length <= 12);
   for (const item of result.findings) {
     assert.ok(result.findings.filter(other => other.ruleId === item.ruleId).length <= 2);
   }
+});
+test('decorative punctuation stacking is counted per sentence unit and left alone when functional', () => {
+  const id = 'surface.punctuation-density';
+  assert.equal(rule('你到底想怎么样？', id).length, 0);
+  const stacked = rule('你怎么能这样？？！！我不管了。', id);
+  assert.equal(stacked.length, 1);
+  assert.equal(stacked[0].hits, 4);
+  assert.equal(rule('桌上摆着红、橙、黄、绿、蓝五种颜料。', id).length, 1);
+  assert.equal(rule('桌上摆着红、橙、黄三种颜料。', id).length, 0);
+  assert.equal(rule('他犹豫了很久。', id).length, 0);
+});
+test('filler words stacking is reported without deciding a violation', () => {
+  const id = 'surface.filler-stack';
+  const result = rule('反正结果都一样，毕竟他早就决定了。', id);
+  assert.equal(result.length, 1);
+  assert.deepEqual(result[0].matchedTerms.sort(), ['反正', '毕竟']);
+  assert.equal(rule('毕竟他早就决定了。', id).length, 0);
+});
+test('dialogue tag density compares tags against quoted dialogue sentences', () => {
+  const id = 'surface.dialogue-tag-density';
+  const tagged = '「你来了。」他说道。\n「嗯。」她说道。\n「坐吧。」他说道。\n「好。」她说道。\n「走吧。」他说道。';
+  const result = rule(tagged, id);
+  assert.equal(result.length, 1);
+  assert.deepEqual(result[0].matchedTerms, ['说道']);
+  const untagged = '「你来了。」他把杯子推过去。\n「嗯。」她坐下来。\n「坐吧。」他拉开椅子。\n「好。」她看着窗外。\n「走吧。」他先出门。';
+  assert.equal(rule(untagged, id).length, 0);
+  assert.equal(rule(tagged, id, { dialogueTagRatio: 1 }).length, 0);
+  assert.equal(rule('「你来了。」他说道。', id).length, 0);
 });

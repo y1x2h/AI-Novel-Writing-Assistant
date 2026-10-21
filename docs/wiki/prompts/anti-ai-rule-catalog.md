@@ -18,9 +18,11 @@
   2. 说明文连接词（此外 / 值得注意的是 / 总而言之 / 由此可见 / 不难看出）；
   3. 公关广告腔大词（彰显 / 赋能 / 助力 / 完美诠释 / 淋漓尽致 / 叹为观止）；
   4. 二分对照壳（不是……而是…… / 不仅……更是…… / 与其说……不如说……）；
-  5. 标点装饰性堆叠（把冒号、分号、破折号当语气用）；
-  6. 表层句法堆砌（名词前超过 6 个字的定语、一个分句里三个以上「的」、同一句叠用程度副词与「仿佛/好像/似乎」这类模糊词）。
-- 前 3 类判为 `forbidden`：它们在小说正文里几乎没有正当用法。第 4、5 类判为 `risk`：二分句式和标点在中文里本身合法，问题出在「密集与对仗」，所以只提示、不硬禁。第 6 类里，程度副词与模糊词叠用几乎没有正当用法（`forbidden / medium / autoRewrite: true`，删掉多余程度词即正确）；而长定语与多个「的」在中文里合法（`risk / medium / autoRewrite: false`），问题只在过长与密集，交给修复链路判断而不是自动改写。
+  5. 标点装饰性堆叠（把冒号、分号、破折号、感叹号、省略号、顿号当语气用）；
+  6. 表层句法堆砌（名词前超过 6 个字的定语、一个分句里三个以上「的」、同一句叠用程度副词与「仿佛/好像/似乎」这类模糊词、填充虚词）；
+  7. 对话与修辞（对话标签密度过高、解释性台词、套式微动作、比喻超量与「如……般」万能画面）。
+- 前 3 类判为 `forbidden`：它们在小说正文里几乎没有正当用法。第 4、5 类判为 `risk`：二分句式和标点在中文里本身合法，问题出在「密集与对仗」，所以只提示、不硬禁。第 6 类里，程度副词与模糊词叠用几乎没有正当用法（`forbidden / medium / autoRewrite: true`，删掉多余程度词即正确）；而长定语、多个「的」、填充虚词在中文里合法（`risk / medium / autoRewrite: false`），问题只在过长与密集，交给修复链路判断而不是自动改写。第 7 类全部是 `risk / medium / autoRewrite: false`：对话与修辞的修法需要判断内容与人物视角，机械替换会把正确表达改坏。
+- 标点类规则的边界必须写进 `promptInstruction`：质问里的问号、爆发峰值少量的感叹号、犹豫与打断的功能性省略号是正常写法，只清理无功能的堆叠。story-deslop 的标点原则与本节一致。
 - `detectPatterns` 只是给人和 AI 编辑看的线索，**不参与运行时匹配**；检测始终由 LLM 结合聚集度、信息增量与作品写法判断，不允许「命中单词即判违规」。
 - 自动改写（`autoRewrite`）只给「删掉即正确」的规则：伪诗意补语、说明文连接词。需要判断替换内容的（公关大词、二分句式、标点）一律为 `false`，避免自动改写把句子改坏。
 
@@ -34,7 +36,8 @@
 - 因为两条路径都没有条数上限，新增基线规则会直接增加正文 prompt 与检测 prompt 的长度。**补充规则时必须控制表述长度，并优先合并语义重叠的规则。**
 - 检测 prompt 的「检测范围」里显式列出中文 AI 指纹类别（`style.prompts.ts`），与规则目录配合；只加规则不改检测说明，检测召回会明显偏低。
 - 写作侧的自检清单（`StyleCompiler` 的 `selfCheck` 段）同步列出这些指纹，让模型在返回草稿前先自查。
-- 表层句法类指纹同时有确定性统计证据：`scanStyleSignals` 输出 `syntax.attributive-stack`（名词前修饰语长度）、`syntax.particle-overload`（一个句子里的「的」数量）、`surface.degree-adverb-stack`（程度副词与模糊词同句聚集）。这些信号只是候选证据，**不是** 上述规则的 `ruleId`，也不授予修文许可；检测仍然由 LLM 结合聚集度与信息增量判断。阈值与词表维护在 `shared/types/styleEngine/signals.ts`。
+- 表层句法类指纹同时有确定性统计证据：`scanStyleSignals` 输出 `syntax.attributive-stack`（名词前修饰语长度）、`syntax.particle-overload`（一个句子里的「的」数量）、`surface.degree-adverb-stack`（程度副词与模糊词同句聚集，且必须至少出现一个真正的程度副词）、`surface.filler-stack`（填充虚词同句聚集）、`surface.punctuation-density`（句子单元内装饰性标点数量）、`surface.dialogue-tag-density`（对话标签数 ÷ 带引号的对白句数，默认 ≥0.5）。这些信号只是候选证据，**不是** 上述规则的 `ruleId`，也不授予修文许可；检测仍然由 LLM 结合聚集度与信息增量判断。阈值与词表维护在 `shared/types/styleEngine/signals.ts`。
+- 统计信号的总量上限是 12 条、每条规则最多 2 条（`maxFindings` / `maxPerRule`）。新增信号排在既有信号之后 emit，避免挤占已有信号的配额；上限随信号种类增加而同步调整，否则后置信号会在 AI 味最重的文本里被饿死。
 
 ## Examples
 
@@ -42,7 +45,10 @@
 - 说明文连接词 → `forbidden / high / autoRewrite: true`。删除「此外」后直接写下一件事。
 - 公关大词 → `forbidden / medium / autoRewrite: false`。因为需要替换成具体动作或数量，交给修复链路判断。
 - 二分对照壳 → `risk / medium / autoRewrite: false`。同一段连续出现才算模板感，单次使用正常。
-- 标点装饰性堆叠 → `risk / low / autoRewrite: false`。只提示按语义使用标点。
+- 标点装饰性堆叠 → `risk / low / autoRewrite: false`。只提示按语义使用标点，并显式保留功能性的问号与少量感叹号。
+- 套式微动作 → `risk / medium / autoRewrite: false`。「深吸一口气」「眼中闪过一丝」「嘴角勾起一抹」需要换成角色当下真实的动作。
+- 比喻超量与套式修辞 → `risk / medium / autoRewrite: false`。比喻保持低频并贴合人物视角，删除「如……般」「宛如」「犹如」这类万能画面。
+- 解释性台词 → `risk / medium / autoRewrite: false`。把替读者解释设定、动机、前情的台词改成动作、冲突或信息缺口。
 - 长定语堆砌 → `risk / medium / autoRewrite: false`。「那个穿着灰色旧夹克的男人」在中文里合法，只有修饰语过长或连续堆砌才是问题，所以不自动改写。
 - 「的」字过载 → `risk / medium / autoRewrite: false`。一个分句里三个以上「的」读起来拖沓，但修法是把修饰结构动词化、拆成短句，需要判断内容。
 - 程度副词与模糊词堆叠 → `forbidden / medium / autoRewrite: true`。「非常……仿佛……好像」同句叠用几乎没有正当用法，删掉多余程度词就成立。

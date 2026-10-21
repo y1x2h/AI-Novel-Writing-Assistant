@@ -52,7 +52,8 @@ export function scanStyleSignals(content: string, policy: StyleSignalPolicy): St
     for (const at of found.slice(1)) emit("template.transition", at,
       Math.min(text.length, at + term.length + 48), [term], found.length, characters(term), 0, at);
   }
-  for (const span of spans(text)) {
+  const units = spans(text);
+  for (const span of units) {
     const sentence = text.slice(span.from, span.to);
     const count = characters(sentence);
     if (count < effective.minSentenceCharacters) continue;
@@ -66,12 +67,17 @@ export function scanStyleSignals(content: string, policy: StyleSignalPolicy): St
       // Degree adverbs and vague modifiers are counted together: the signal is their
       // stacking in one sentence, not either word list on its own.
       ["surface.degree-adverb-stack", [...effective.degreeAdverbTerms, ...effective.softenerTerms]],
+      ["surface.filler-stack", effective.fillerTerms],
     ] as const) {
       const matches = [...new Set(terms)].map(term => ({ term, count: positions(sentence, term).length })).filter(item => item.count > 0);
       const hits = matches.reduce((sum, item) => sum + item.count, 0);
-      if (hits >= effective.clusterCount) emit(ruleId, span.from, span.to, matches.map(item => item.term), hits, count, commas);
+      // Degree stacking needs at least one real degree adverb: vague words alone are
+      // already reported by the softener signal, and reporting them twice adds nothing.
+      if (ruleId === "surface.degree-adverb-stack"
+        && !matches.some(item => effective.degreeAdverbTerms.includes(item.term))) continue;
+      const threshold = ruleId === "surface.filler-stack" ? effective.fillerCount : effective.clusterCount;
+      if (hits >= threshold) emit(ruleId, span.from, span.to, matches.map(item => item.term), hits, count, commas);
     }
-    // A long attributive is measured as the text between the previous boundary and each "的".
     const modifiers: string[] = [];
     for (const at of positions(sentence, "的")) {
       let start = at;
@@ -85,6 +91,28 @@ export function scanStyleSignals(content: string, policy: StyleSignalPolicy): St
     }
     const particles = positions(sentence, "的").length;
     if (particles >= effective.particleCount) emit("syntax.particle-overload", span.from, span.to, [], particles, count, commas);
+  }
+  // Decorative marks are counted per sentence unit, delimiters included, so short
+  // exclamatory lines are measured too.
+  for (const span of units) {
+    const sentence = text.slice(span.from, span.to);
+    const marks = [...new Set(effective.punctuationTerms)]
+      .map(term => ({ term, count: positions(sentence, term).length })).filter(item => item.count > 0);
+    const markHits = marks.reduce((sum, item) => sum + item.count, 0);
+    if (markHits >= effective.punctuationCount) {
+      emit("surface.punctuation-density", span.from, span.to, marks.map(item => item.term),
+        markHits, characters(sentence), (sentence.match(/[,，]/gu) ?? []).length);
+    }
+  }
+  // Dialogue tags are a document-level ratio: tags divided by quoted dialogue sentences.
+  const dialogueUnits = units.filter(span => /[「」『』“”]/u.test(text.slice(span.from, span.to)));
+  const tagMatches = [...new Set(effective.dialogueTagTerms)]
+    .map(term => ({ term, count: positions(text, term).length })).filter(item => item.count > 0);
+  const tagHits = tagMatches.reduce((sum, item) => sum + item.count, 0);
+  if (dialogueUnits.length >= effective.dialogueMinSentences
+    && tagHits / dialogueUnits.length >= effective.dialogueTagRatio) {
+    emit("surface.dialogue-tag-density", dialogueUnits[0].from, dialogueUnits[0].to,
+      tagMatches.map(item => item.term), tagHits, dialogueUnits.length);
   }
   return { policy: effective, sourceContentHash: createHash("sha256").update(text).digest("hex"),
     coordinateSystem: "utf16-crlf-normalized", findings };
