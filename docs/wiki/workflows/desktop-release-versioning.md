@@ -28,6 +28,8 @@
 - 如果 GitHub Release tag 已存在，不能复用同一个版本重新上传；应继续 bump 到新的 `X.Y.Z`。
 - 如果发版前只更新 release notes 但没有 bump 桌面版本，自动更新链路会把新包识别成旧版本，必须先修正版本源再发布。
 - 如果 GitHub Actions 提示某个 action 仍在使用 Node 20，应优先升级该 action 的 major 版本，而不是重新加入强制运行时环境变量。
+- 本地执行 macOS 打包时必须显式传入 `--publish never`，例如 `node desktop/scripts/run-electron-builder.cjs --mac --arm64 --publish never`。只要 `electron-builder.config.cjs` 里配置了 `publish` provider，electron-builder 就会在产物生成后尝试创建 GitHubPublisher；缺少 `GH_TOKEN` 时会以发布错误收尾，表面上看起来像打包失败，实际安装包已经生成。
+- 本地打包产物的 `app-update.yml` 会写入发布 provider 的来源，默认是上游 owner/repo（`AI_NOVEL_GITHUB_OWNER` 默认 `ExplosiveCoderflome`）与 `beta` 通道。本地自用包如果不想让自动更新指向上游，需要在打包前显式设置 `AI_NOVEL_GITHUB_OWNER`、`AI_NOVEL_GITHUB_REPO` 与 `AI_NOVEL_RELEASE_CHANNEL`。
 
 ## Related Modules
 
