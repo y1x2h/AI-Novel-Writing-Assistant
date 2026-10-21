@@ -472,6 +472,7 @@ export default function WritingFormulaPage() {
       const response = await rewriteStyleIssues({
         content: sourceContent,
         styleProfileId: selectedProfileId,
+        novelId: bookStyleNovelId || undefined,
         provider: llm.provider,
         model: llm.model,
         temperature: 0.5,
@@ -669,6 +670,7 @@ export default function WritingFormulaPage() {
           <div className="h-full min-h-0 overflow-auto p-6 pt-4">
             <WritingFormulaCleanPanel
               selectedProfile={selectedProfile}
+              novelId={bookStyleNovelId}
               detectInput={detectInput}
               detectionReport={currentRewrite?.report ?? currentDetection ?? null}
               detectionPending={detectionMutation.isPending}

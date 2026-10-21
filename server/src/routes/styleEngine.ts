@@ -9,6 +9,7 @@ import { AntiAiPolicyResolver } from "../services/styleEngine/AntiAiPolicyResolv
 import { AntiAiRuleService } from "../services/styleEngine/AntiAiRuleService";
 import { StyleBindingService } from "../services/styleEngine/StyleBindingService";
 import { StyleDetectionService } from "../services/styleEngine/StyleDetectionService";
+import { StyleFragmentRuleService } from "../services/styleEngine/StyleFragmentRuleService";
 import { StyleGenerationService } from "../services/styleEngine/StyleGenerationService";
 import { StyleProfileService } from "../services/styleEngine/StyleProfileService";
 import { styleRecommendationService } from "../services/styleEngine/StyleRecommendationService";
@@ -22,6 +23,7 @@ const styleBindingService = new StyleBindingService();
 const styleDetectionService = new StyleDetectionService();
 const styleRewriteService = new StyleRewriteService();
 const styleGenerationService = new StyleGenerationService();
+const styleFragmentRuleService = new StyleFragmentRuleService();
 
 const idSchema = z.object({ id: z.string().trim().min(1) });
 const bindingIdSchema = z.object({ id: z.string().trim().min(1) });
@@ -188,6 +190,26 @@ const rewriteSchema = z.object({
 const novelRecommendationParamsSchema = z.object({
   id: z.string().trim().min(1),
 });
+
+const styleFragmentRuleQuerySchema = z.object({
+  novelId: z.string().trim().min(1),
+});
+
+const styleFragmentRuleCreateSchema = z.object({
+  novelId: z.string().trim().min(1),
+  fragment: z.string().trim().min(2).max(80),
+  note: z.string().trim().max(200).optional(),
+  enabled: z.boolean().optional(),
+});
+
+const styleFragmentRuleUpdateSchema = z.object({
+  fragment: z.string().trim().min(2).max(80).optional(),
+  note: z.string().trim().max(200).nullable().optional(),
+  enabled: z.boolean().optional(),
+}).refine(
+  (value) => Object.keys(value).length > 0,
+  { message: "至少提供一个更新字段。" },
+);
 
 const recommendationRequestSchema = z.object({
   provider: llmProviderSchema.optional(),
@@ -461,6 +483,60 @@ router.post("/style-profiles/from-extraction", validate({ body: fromExtractionSc
   }
 });
 */
+
+router.get("/style-fragment-rules", validate({ query: styleFragmentRuleQuerySchema }), async (req, res, next) => {
+  try {
+    const { novelId } = styleFragmentRuleQuerySchema.parse(req.query);
+    const data = await styleFragmentRuleService.list(novelId);
+    res.status(200).json({
+      success: true,
+      data,
+      message: "获取禁改片段成功。",
+    } satisfies ApiResponse<typeof data>);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/style-fragment-rules", validate({ body: styleFragmentRuleCreateSchema }), async (req, res, next) => {
+  try {
+    const data = await styleFragmentRuleService.create(req.body as z.infer<typeof styleFragmentRuleCreateSchema>);
+    res.status(201).json({
+      success: true,
+      data,
+      message: "禁改片段已保存。",
+    } satisfies ApiResponse<typeof data>);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.put("/style-fragment-rules/:id", validate({ params: idSchema, body: styleFragmentRuleUpdateSchema }), async (req, res, next) => {
+  try {
+    const { id } = req.params as z.infer<typeof idSchema>;
+    const data = await styleFragmentRuleService.update(id, req.body as z.infer<typeof styleFragmentRuleUpdateSchema>);
+    res.status(200).json({
+      success: true,
+      data,
+      message: "禁改片段已更新。",
+    } satisfies ApiResponse<typeof data>);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.delete("/style-fragment-rules/:id", validate({ params: idSchema }), async (req, res, next) => {
+  try {
+    const { id } = req.params as z.infer<typeof idSchema>;
+    await styleFragmentRuleService.remove(id);
+    res.status(200).json({
+      success: true,
+      message: "禁改片段已删除。",
+    } satisfies ApiResponse<null>);
+  } catch (error) {
+    next(error);
+  }
+});
 
 router.post("/style-recommendations/novels/:id", validate({
   params: novelRecommendationParamsSchema,

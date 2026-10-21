@@ -1,12 +1,13 @@
 import type { LLMProvider } from "@ai-novel/shared/types/llm";
 import { runStructuredPrompt } from "../../prompting/core/promptRunner";
-import { isStyleIssueRewritable, type StyleRewriteGuard, type StyleRewriteScope, type StyleDetectionReport } from "@ai-novel/shared/types/styleEngine";
+import { isStyleIssueRewritable, selectPresentFragments, type StyleRewriteGuard, type StyleRewriteScope, type StyleDetectionReport } from "@ai-novel/shared/types/styleEngine";
 import { styleRewritePrompt } from "../../prompting/prompts/style/style.prompts";
 import { styleRewriteConservationPrompt } from "../../prompting/prompts/style/styleRewriteConservation.prompts";
 import { buildWriterStyleContractText } from "./styleContractText";
 import { StyleRuntimeResolver } from "./StyleRuntimeResolver";
 import { buildAntiAiRuleDirectiveText, listPreviewAntiAiRules } from "./antiAiPreviewRules";
 import { StyleDetectionService } from "./StyleDetectionService";
+import { StyleFragmentRuleService } from "./StyleFragmentRuleService";
 import { guardStylePatches } from "./rewrite";
 
 interface ConservationVerdict {
@@ -49,6 +50,7 @@ interface RewriteInput {
 export class StyleRewriteService {
   private readonly resolver = new StyleRuntimeResolver();
   private readonly detector = new StyleDetectionService();
+  private readonly fragmentRules = new StyleFragmentRuleService();
 
   async rewrite(input: RewriteInput): Promise<{ content: string; report: StyleDetectionReport; rewriteGuard?: StyleRewriteGuard }> {
     // Request issues are hints, never an authorization receipt. Recheck the current
@@ -73,6 +75,10 @@ export class StyleRewriteService {
       buildWriterStyleContractText(resolved.context.compiledBlocks?.contract ?? null),
       buildAntiAiRuleDirectiveText(extraPreviewRules),
     ].filter(Boolean).join("\n\n");
+    // 只保护原文里真正出现的片段：把清单整份塞给模型会诱导它把没出现的片段写进正文。
+    const protectedFragments = input.novelId
+      ? selectPresentFragments(await this.fragmentRules.listProtectedFragments(input.novelId), input.content)
+      : [];
 
     const result = await runStructuredPrompt({
       asset: styleRewritePrompt,
@@ -81,6 +87,7 @@ export class StyleRewriteService {
         content: input.content,
         issuesBlock,
         scope: input.scope,
+        protectedFragments,
       },
       options: {
         provider: input.provider ?? "deepseek",
@@ -93,6 +100,7 @@ export class StyleRewriteService {
       original: input.content, plan: result.output,
       allowedIssueIds: issues.map(item => item.issueId),
       styleIssueIds: issues.map(item => item.issueId),
+      protectedFragments,
       scope: input.scope,
     });
     if (protectedResult.content === input.content) {

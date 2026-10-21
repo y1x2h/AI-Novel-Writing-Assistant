@@ -1,6 +1,8 @@
 import { isStyleIssueRewritable, type StyleDetectionReport, type StyleRewriteGuard, type StyleRewriteScope } from "@ai-novel/shared/types/styleEngine";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
+export { StyleProtectedFragmentEditor } from "./StyleProtectedFragmentEditor";
+
 const layerLabels = { surface: "句子表达", discourse: "段落衔接", narrative: "叙事建议" };
 
 const rewriteScopeOptions: Array<{ value: StyleRewriteScope; label: string; hint: string }> = [

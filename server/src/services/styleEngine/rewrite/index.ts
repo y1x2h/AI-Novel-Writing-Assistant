@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { applyChapterPatchRepairPlan, type ChapterPatchRepairPlan } from "@ai-novel/shared/types/chapterPatchRepair";
+import { normalizeStyleFragment } from "@ai-novel/shared/types/styleEngine";
 import type {
   StyleRewriteBaseline,
   StyleRewriteEscalation,
@@ -89,6 +90,7 @@ export function guardStylePatches(input: {
   allowedIssueIds: string[];
   styleIssueIds: string[];
   protectedTerms?: string[];
+  protectedFragments?: string[];
   scope?: StyleRewriteScope;
 }): { content: string; guard: StyleRewriteGuard; baseline: StyleRewriteBaseline } {
   const applied = applyChapterPatchRepairPlan(input.original, input.plan);
@@ -116,6 +118,12 @@ export function guardStylePatches(input: {
     policy: scopePolicy,
   });
   const deletionValid = escalations.length === 0;
+  // 禁改清单是作者声明的硬边界：原文里出现过的片段，改后必须一字不差地还在。
+  const fragmentBreaches = (input.protectedFragments ?? [])
+    .map(normalizeStyleFragment)
+    .filter(fragment => fragment.length > 0
+      && occurrences(input.original, fragment) > occurrences(applied.content, fragment));
+  const fragmentValid = fragmentBreaches.length === 0;
   const protectedValid = input.plan.patches.every(patch => {
     // Explicit non-style repair may correct an erroneous draft fact. AI reacceptance
     // must separately verify the correction against its issue and canonical context.
@@ -133,6 +141,7 @@ export function guardStylePatches(input: {
       { code: "edit_budget", status: budgetValid ? "passed" : "blocked", reason: budgetValid ? "修改范围与篇幅在保护范围内。" : "修改范围或新增篇幅过大，保留原稿。" },
       { code: "deletion_budget", status: deletionValid ? "passed" : "blocked", reason: deletionValid ? "删减幅度在当前改写力度的保护范围内。" : `${NEEDS_REVIEW_TAG}删减超出当前改写力度上限，保留原稿并标出需人工复核的补丁。` },
       { code: "protected_terms", status: protectedValid ? "passed" : "blocked", reason: protectedValid ? "表达补丁保留了明确保护的原文词项。" : "表达补丁改变了数字或受保护专名，保留原稿。" },
+      { code: "protected_fragment", status: fragmentValid ? "passed" : "blocked", reason: fragmentValid ? "禁改清单中的片段均原样保留。" : `禁改清单中的片段被改写或删除：${fragmentBreaches.slice(0, 3).join("、")}。保留原稿。` },
       { code: "semantic_facts", status: "not_checked", reason: "原文词项保护不代表人物行为与设定一致，语义由候选复验核对。" },
     ],
   };

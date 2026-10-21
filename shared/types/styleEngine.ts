@@ -602,6 +602,16 @@ export { styleRiskLayerSchema, styleRewriteEscalationSchema, styleRewriteGuardSc
 export type { StyleRiskLayer, StyleRewriteGuard, StyleRewriteBaseline, StyleRewriteScope, StyleRewriteEscalation } from "./styleEngine/diagnostics.js";
 export { styleSignalPolicySchema, styleSignalScanSchema, createStyleSignalPolicy } from "./styleEngine/signals.js";
 export type { StyleSignalPolicy, StyleSignalFinding, StyleSignalScan } from "./styleEngine/signals.js";
+export {
+  STYLE_FRAGMENT_MAX_CHARACTERS,
+  STYLE_FRAGMENT_MAX_COUNT,
+  STYLE_FRAGMENT_MIN_CHARACTERS,
+  dedupeStyleFragments,
+  normalizeStyleFragment,
+  selectPresentFragments,
+  styleFragmentRuleSchema,
+} from "./styleEngine/fragmentRules.js";
+export type { StyleFragmentRule } from "./styleEngine/fragmentRules.js";
 
 export interface StyleDetectionViolation {
   ruleId: string;

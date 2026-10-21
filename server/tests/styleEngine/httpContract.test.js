@@ -16,7 +16,7 @@ function fixture() {
     '../services/styleEngine/StyleRecommendationService': { styleRecommendationService: {} },
   };
   for (const name of ['AntiAiPolicyResolver', 'AntiAiRuleService', 'StyleBindingService', 'StyleDetectionService',
-    'StyleGenerationService', 'StyleProfileService', 'StyleRewriteService']) {
+    'StyleFragmentRuleService', 'StyleGenerationService', 'StyleProfileService', 'StyleRewriteService']) {
     imports[`../services/styleEngine/${name}`] = { [name]: class {
       async check(input) { requests.push(input); return { violations: [] }; }
       async rewrite(input) { requests.push(input); return { content: input.content, report: { violations: [] } }; }

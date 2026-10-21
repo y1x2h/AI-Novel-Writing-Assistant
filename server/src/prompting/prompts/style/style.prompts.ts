@@ -46,6 +46,8 @@ export interface StyleRewritePromptInput {
   content: string;
   issuesBlock: string;
   scope?: StyleRewriteScope;
+  /** 书级禁改片段，服务层已过滤为「确实出现在原文里」的那些。 */
+  protectedFragments?: string[];
 }
 
 /** 三档改写力度对应的提示约束，与 guardStylePatches 的确定性删除上限保持一致。 */
@@ -387,7 +389,7 @@ export const styleGenerationPrompt: PromptAsset<StyleGenerationPromptInput, stri
 
 export const styleRewritePrompt: PromptAsset<StyleRewritePromptInput, ChapterPatchRepairPlan> = {
   id: "style.rewrite",
-  version: "v6",
+  version: "v7",
   taskType: "repair",
   mode: "structured",
   language: "zh",
@@ -421,6 +423,15 @@ export const styleRewritePrompt: PromptAsset<StyleRewritePromptInput, ChapterPat
       "改写力度约束（必须严格遵守，超出幅度会直接保留原稿）：",
       ...STYLE_REWRITE_SCOPE_GUIDANCE[input.scope ?? "free"],
       "",
+      ...(input.protectedFragments?.length
+        ? [
+            "禁改清单（作者指定必须原样保留的片段）：",
+            "1. 以下片段必须在改写结果里逐字保留：不得增删字、不得改标点、不得换行拆分，也不得替换成同义说法。",
+            ...input.protectedFragments.map((fragment, index) => `${index + 1}. ${fragment}`),
+            "2. 如果某个问题必须改动清单内的片段才能修好，跳过该问题，不要动它。",
+            "",
+          ]
+        : []),
       "修正原则：",
       "1. 优先做最小必要改动，能局部修好就不要整体推翻。",
       "2. 如果问题是写法违规，优先修正句式、措辞、节奏和表达方式，而不是改剧情。",

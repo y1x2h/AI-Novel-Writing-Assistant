@@ -574,7 +574,7 @@ export const promptAssetLoaderEntries: PromptAssetLoaderEntry[] = [
     load: () => require("../prompts/style/style.prompts").styleGenerationPrompt as UnknownPromptAsset,
   },
   {
-    key: "style.rewrite@v6",
+    key: "style.rewrite@v7",
     load: () => require("../prompts/style/style.prompts").styleRewritePrompt as UnknownPromptAsset,
   },
   {

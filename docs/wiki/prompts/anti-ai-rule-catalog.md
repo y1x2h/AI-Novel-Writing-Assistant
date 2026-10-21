@@ -108,6 +108,30 @@
 - **只改 guard 不改 prompt**：模型不知道上限，会持续产出越界补丁，表现为反复 blocked、任务空转。两侧必须同时更新。
 - **把删除超限升级成全局失败**：删除超限是章节局部质量问题，只能保留原稿 + 标 `[需复核]`，不能中断自动导演链。
 
+## 禁改清单（protected fragments）
+
+### Background
+
+改写力度控制的是「能删多少」，但还有一类内容无论力度多大都不该被动：专名、设定名词、角色口头禅、签约时要求原样保留的表述。这些内容一旦被换词，正文语义就可能被打偏，而且很难在事后审计中复原。
+
+### Decision
+
+把「必须原样保留」做成书级声明数据（`StyleFragmentRule`），在 `style.rewrite` 与 guard 之间做**确定性**校验，而不是让模型自己判断。理由：AI 无法可靠记住任意自定义片段的原文形态，而「片段是否还在」是可机械验证的事实。
+
+### Current Rule
+
+- 数据落在 `StyleFragmentRule`：`novelId` + `kind`（当前只有 `protected`）+ `fragment` + `note` + `source` + `enabled`。默认空、按书隔离、不跨书继承。
+- `guardStylePatches` 新增 `protected_fragment` 检查：原文里出现过、改后消失（或数量减少）的片段即 blocked，并保留整份原稿。它只做存在性比对，不做任何风格判断。
+- 送入 prompt 前必须先过滤为「确实出现在本次原文里」的片段（`selectPresentFragments`）。整份清单直接塞给模型会诱导它把没出现的片段写进正文。
+- `style.rewrite` 渲染禁改清单时，必须同时声明「必须回到清单里的问题就跳过」。只给片段不给处理策略，模型会为了完成任务强行改写。
+- 命中即 blocked，属于章节局部质量债务：保留原稿、记录 guard 结论，不得升级为全局失败。
+
+### Failure Modes
+
+- **只做 prompt 提示、不加 guard 校验**：模型仍会偶尔改掉片段，且没有任何证据留下。
+- **把清单当成「必须出现」的正向要求**：清单是保护性约束，不是内容清单。未过滤就渲染会让正文多出原文没有的片段。
+- **把禁用片段升级成全局阻塞**：与删除超限一样，只能保留原稿 + 记录，不能中断自动导演链。
+
 ## Failure Modes
 
 - **把可编辑基线规则做成硬编码黑名单**：会让用户无法调整规则库，也违反 AI-First 原则。规则必须是数据。
@@ -125,6 +149,7 @@
 - 规则生效策略：`server/src/services/styleEngine/AntiAiPolicyResolver.ts`。
 - 统计学校准：`server/src/services/styleEngine/calibration/`（`calibrationMetrics.ts`、`calibrationBaseline.ts`、`runCalibration.ts`、`corpus/`）。
 - 改写护栏与力度阈值：`server/src/services/styleEngine/rewrite/index.ts`、`StyleRewriteService.ts`。
+- 禁改清单：`server/src/services/styleEngine/StyleFragmentRuleService.ts`、`shared/types/styleEngine/fragmentRules.ts`、`client/src/components/styleReview/StyleProtectedFragmentEditor.tsx`。
 - 力度选择 UI：`client/src/components/styleReview/index.tsx`、`client/src/pages/writingFormula/components/WritingFormulaCleanPanel.tsx`、`client/src/pages/antiAiRules/components/AntiAiRuleEffectTestCard.tsx`。
 
 ## Source Documents

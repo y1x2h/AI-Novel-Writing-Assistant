@@ -29,7 +29,7 @@ export const styleRewriteGuardSchema = z.object({
   deletionRatio: z.number().nonnegative().optional(),
   escalations: z.array(styleRewriteEscalationSchema).optional(),
   checks: z.array(z.object({
-    code: z.enum(["patch_scope", "edit_budget", "deletion_budget", "protected_terms", "semantic_facts"]),
+    code: z.enum(["patch_scope", "edit_budget", "deletion_budget", "protected_terms", "protected_fragment", "semantic_facts"]),
     status: z.enum(["passed", "blocked", "not_checked"]),
     reason: z.string(),
   })),

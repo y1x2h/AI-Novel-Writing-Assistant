@@ -439,6 +439,7 @@ model Novel {
   novelWorld         NovelWorld?
   factEntries        NovelFactEntry[]
   complianceReports  NovelComplianceReport[]
+  styleFragmentRules StyleFragmentRule[]
   intentVersions     NovelIntentVersion[]
   shortStoryPlan     ShortStoryPlan?
   shortStorySegments ShortStorySegment[]
@@ -1780,6 +1781,21 @@ model StyleBinding {
 
   @@index([targetType, targetId, enabled])
   @@index([styleProfileId])
+}
+
+model StyleFragmentRule {
+  id        String   @id @default(cuid())
+  novelId   String
+  kind      String   @default("protected")
+  fragment  String
+  note      String?
+  source    String   @default("manual")
+  enabled   Boolean  @default(true)
+  novel     Novel    @relation(fields: [novelId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([novelId, kind, enabled])
 }
 
 model TitleLibrary {
