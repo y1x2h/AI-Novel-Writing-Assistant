@@ -53,6 +53,175 @@
 - 「的」字过载 → `risk / medium / autoRewrite: false`。一个分句里三个以上「的」读起来拖沓，但修法是把修饰结构动词化、拆成短句，需要判断内容。
 - 程度副词与模糊词堆叠 → `forbidden / medium / autoRewrite: true`。「非常……仿佛……好像」同句叠用几乎没有正当用法，删掉多余程度词就成立。
 
+## 统计学校准（calibration）
+
+### Background
+
+反 AI 信号的阈值过去只有「工程初值」：改过词表或阈值后，没有任何机制能说明这会让检测变松还是变紧，也无法在回归时发现偏移。同时，规则在真人文本上会不会误触发，此前完全靠人工感觉。
+
+### Decision
+
+- 在 `server/src/services/styleEngine/calibration/` 下建立可复算的校准基线，语料以 `.txt` 提交进仓库，规模刻意保持小（当前 AI 语料 316 字、真人语料 179 字），保证任何人本地都能复现。
+- 基线只记录事实：每条规则的 `hits`、`perKilo`（AI 语料每千字命中条数）与 `falsePositiveRate`（命中里来自真人语料的比例，作为误报代理指标）。
+- 基线用 `signalRevision` 与信号策略 revision 绑定。改动 `shared/types/styleEngine/signals.ts` 的阈值、词表或新增信号后，必须同步提升 revision 并刷新基线，否则 `calibration.test.js` 直接失败。
+- AI 语料必须覆盖全部 10 条信号；检测到某条规则在 AI 语料里零命中时，测试提示补样本，避免基线在无声中失效。
+
+### Current Rule
+
+- 刷新方式：在 `server` 目录执行 `pnpm run calibrate:signals`，把输出的 entries 与 `sampleCharacters` 粘回 `calibrationBaseline.ts`。
+- 容差：`perKilo` 0.05、`falsePositiveRate` 0.02，`hits` 与 `sampleCharacters` 必须完全一致。
+- 校准只服务回归与解释，不参与运行时判定，也不产生任何规则路由。
+- 当前已知事实：`syntax.attributive-stack` 的 `falsePositiveRate` 为 0.5——真人语料里的 `巷子深处飘来煮面条的味道` 被误判为长定语。该信号的回溯没有在无边界词的短句中途停住，属于召回边界偏宽，已作为待收敛项保留在基线里，不在校准阶段顺手修改检测逻辑。
+
+### Failure Modes
+
+- **改了阈值不刷基线**：revision 不一致或数值漂移会让测试失败，这是期望行为，不要通过放宽容差绕过。
+- **把语料当判定样本**：语料只用于复算与回归，不能拿它当"AI 味标准答案"，更不能据此做关键词判定。
+- **扩大语料却不更新基线**：`sampleCharacters` 与 `hits` 是精确比对项，扩语料必须同一提交刷新基线。
+
+## 改写力度分级（轻改 / 中改 / 重写）
+
+### Background
+
+零基础用户不会说「请在不删除剧情信息的前提下做句内改写」。他们只会说「帮我改轻一点」或「这段彻底重写」。同时，检测报告上的 `autoRewrite` 只回答了「这条规则能不能自动改」，没有回答「一次改写最多能动多少内容」，导致修复链路在有剧情功能的段落上删多了。
+
+### Decision
+
+- 改写力度是用户可见的三档旋钮：`in_place`（轻改）、`sentence`（中改）、`free`（重写），由 `styleRewriteScopeSchema` 承载。
+- 每一档在 `STYLE_REWRITE_SCOPE_POLICY`（`server/src/services/styleEngine/rewrite/index.ts`）里对应两个确定性阈值：整选区最大删除比例 `maxDeletionRatio`，以及单个补丁至少保留的原片段字数比例 `perPatchMinRetention`。
+  - `in_place`：删除 ≤5%，单补丁至少保留 90% → 只做词级、短语级等量替换，删掉整句立即触线。
+  - `sentence`：删除 ≤15%，单补丁至少保留 50% → 允许整句重写，但不允许把整句删除。
+  - `free`：删除 ≤35%，不设单补丁保留下限 → 允许段落级重写。
+- 这是「结构化配置 → 阈值映射」，不是关键词判断：力度是用户在检测面板显式选择的枚举值，删除幅度由代码兜底，语义是否等价仍由 `style.rewrite.conservation` 的 AI 判定。
+- 触线结果是 `deletion_budget` 检查 `blocked`：**保留原稿**，并在 `guard.escalations` 里逐补丁给出 `[需复核]` 原因。它属于局部质量债务，不阻塞全局自动导演链。
+
+### Current Rule
+
+- guard 契约新增三个字段：`scope`、`deletionRatio`、`escalations`（见 `shared/types/styleEngine/diagnostics.ts`）。三个字段都是**可选**的，兼容已经落库的旧 `rewriteGuard` 记录。
+- 提示词 `style.rewrite` 必须同步渲染所选力度的约束文本（`STYLE_REWRITE_SCOPE_GUIDANCE`）。力度只改 prompt 与 guard 阈值，不改补丁协议本身。
+- 默认力度是 `free`，与升级前的行为等价；未传 `scope` 时按 `free` 处理。
+- 档位默认值属于保守初值，后续由统计学校准给出依据后再调整。
+
+### Failure Modes
+
+- **把力度做成新的自动判断分支**：力度必须是用户显式选择或调用方显式传入的枚举，不能由代码「猜」用户想要多重。
+- **只改 guard 不改 prompt**：模型不知道上限，会持续产出越界补丁，表现为反复 blocked、任务空转。两侧必须同时更新。
+- **把删除超限升级成全局失败**：删除超限是章节局部质量问题，只能保留原稿 + 标 `[需复核]`，不能中断自动导演链。
+
+## 禁改清单（protected fragments）
+
+### Background
+
+改写力度控制的是「能删多少」，但还有一类内容无论力度多大都不该被动：专名、设定名词、角色口头禅、签约时要求原样保留的表述。这些内容一旦被换词，正文语义就可能被打偏，而且很难在事后审计中复原。
+
+### Decision
+
+把「必须原样保留」做成书级声明数据（`StyleFragmentRule`），在 `style.rewrite` 与 guard 之间做**确定性**校验，而不是让模型自己判断。理由：AI 无法可靠记住任意自定义片段的原文形态，而「片段是否还在」是可机械验证的事实。
+
+### Current Rule
+
+- 数据落在 `StyleFragmentRule`：`novelId` + `kind`（当前只有 `protected`）+ `fragment` + `note` + `source` + `enabled`。默认空、按书隔离、不跨书继承。
+- `guardStylePatches` 新增 `protected_fragment` 检查：原文里出现过、改后消失（或数量减少）的片段即 blocked，并保留整份原稿。它只做存在性比对，不做任何风格判断。
+- 送入 prompt 前必须先过滤为「确实出现在本次原文里」的片段（`selectPresentFragments`）。整份清单直接塞给模型会诱导它把没出现的片段写进正文。
+- `style.rewrite` 渲染禁改清单时，必须同时声明「必须回到清单里的问题就跳过」。只给片段不给处理策略，模型会为了完成任务强行改写。
+- 命中即 blocked，属于章节局部质量债务：保留原稿、记录 guard 结论，不得升级为全局失败。
+
+### Failure Modes
+
+- **只做 prompt 提示、不加 guard 校验**：模型仍会偶尔改掉片段，且没有任何证据留下。
+- **把清单当成「必须出现」的正向要求**：清单是保护性约束，不是内容清单。未过滤就渲染会让正文多出原文没有的片段。
+- **把禁用片段升级成全局阻塞**：与删除超限一样，只能保留原稿 + 记录，不能中断自动导演链。
+
+## 改动台账（rewrite ledger）
+
+### Background
+
+改写是「模型产出补丁 + 护栏裁决 + 信息守恒复核」三段式，任何一段都可能否决整次改写。用户只看到最终正文，看不到某一条规则其实被拦下了，也看不到改写被回滚；出问题时无法复盘。
+
+### Decision
+
+把每次局部修订的结果归档成 `StyleRewriteLedger`，只写入和只读查询，**不参与任何决策**。理由：审计需求与质量门是两件事，台账一旦能影响流程，就会变成新的隐式质量门，与「局部质量债务不阻塞全局」的原则冲突。
+
+### Current Rule
+
+- 模型：`StyleRewriteLedger { id, novelId, chapterId?, sourceHash, candidateHash, policyRevision, entriesJson, createdAt }`，`chapterId` 是可空字符串而非外键，章节删除不会连带删台账。
+- 写入点唯一：`StyleRewriteService.rewrite` 落地之后。没有 `novelId` 或没有补丁时不写，因此预览型调用不会污染台账。
+- 条目由 `buildLedgerEntries` 从**已产出的结构化结果**翻译而来：`issueId / ruleName / targetExcerpt / replacement / checkStatus`。`checkStatus` 只反映最终是否采纳：`accepted` 已采用、`blocked` 保留原稿、`needs_review` 删减超限需人工复核。
+- 写入失败必须降级为告警，不得影响本次改写结果，也不得中断章节链路。
+- 展示侧是只读列表，不提供重试、回滚或继续操作；恢复动作仍在正文工作台。
+
+### Failure Modes
+
+- **让台账参与决策**：一旦「有台账记录」被当成通过条件，审计数据就变成了第二个质量门。
+- **在护栏之前写入**：会把被否决的补丁记成已采用，台账反而会误导复盘。
+- **写入失败即抛出**：把审计能力变成正文链路的单点故障。
+
+## 按写法调门限（signal calibration）
+
+### Background
+
+统计信号是一套全局候选证据（同词簇聚集、标点密度、口头语堆叠、对话标签比例等），但不同语体对「噪音」的容忍度完全不同：口语粗粝流天然带语气词和散标点，冷峻专业流几乎没有；如果用同一套阈值，「底层循环现实流」会被判 AI 味，「冷峻专业流」则长期漏报。
+
+### Decision
+
+把阈值做成**写法档案可声明的覆盖项**，而不是给每个语体写一段 if-else，也不是加一段提示词让模型自己想。理由：阈值是机器配置，只有确定性映射才可复现、可做缓存标识，也才符合「不做关键词路由」的约束。写法模板通过显式数值声明「本语体放宽/收紧哪几项」，解析时与全局默认基线合并。
+
+### Current Rule
+
+- 承载字段：`LanguageRules.signalCalibration`（可选）。只声明要改的项，未声明的回退全局默认；**不做数据库迁移**，因为它本身就落在写法档案的 `languageRules` JSON 里。
+- 解析入口唯一：`StyleSignalPolicyResolver.resolve(languageRules)`，内部用 `styleSignalPolicyOverrideSchema.safeParse`。解析失败（含任一字段越界）整份回退全局默认，避免半套阈值生效导致不可解释的检测结果。
+- 合并规则：`{ ...全局默认, ...已声明项 }`；显式传入的 `undefined` 不会清掉基线阈值。
+- 生效范围：`StyleDetectionService`（写法检测）与 `startPipelineJob` 推导的运行包 `styleSignalPolicy`（章节验收、风格复核、缓存标识）使用同一份策略，避免手动面板与自动链路两套阈值。
+- 该字段**不进入写法契约文本**：`StyleCompiler` 通过 `NON_CONTRACT_RULE_KEYS` 把它从 `hasStructuredRuleContent` 与 `renderObjectRules` 里过滤掉，否则阈值会被当成写作要求念给模型。
+- 默认模板只给保守初值（口语系放宽 `clusterCount` / `punctuationCount` / `fillerCount` / `transitionRepeatCount`，专业系收紧 `punctuationCount` / `dialogueTagRatio`），不做激进调参。
+- 反 AI 规则渲染同时设上限：契约渲染 40 条、单条 120 字，超出部分以「另有 N 条规则未展开但仍生效」收尾，避免规则越积越多把正文预算挤掉。
+
+### Failure Modes
+
+- **给每个语体写硬编码分支**：语体一旦新增就要改代码，且无法被写法档案覆盖，违反 AI-First 的「规则是数据」。
+- **在 `LanguageRules` 里用 `.partial()` 解析覆盖项**：zod 的 `.default()` 会回填，空对象也会解析成整份默认值，覆盖彻底失效；必须逐字段 `unwrap().optional()`。
+- **忘记过滤 `signalCalibration`**：阈值会以普通规则的形式出现在写法契约里，模型开始「遵守」数字。
+- **只改检测服务、不改运行包**：自动导演链仍用全局阈值，用户会看到手动检测和章节验收结论不一致。
+
+### Related Modules（按写法调门限）
+
+- 阈值定义与解析：`shared/types/styleEngine/signals.ts`、`server/src/services/styleEngine/signals/StyleSignalPolicyResolver.ts`。
+- 接入点：`server/src/services/styleEngine/StyleDetectionService.ts`、`server/src/services/novel/novelCorePipelineService.ts`。
+- 契约过滤与规则封顶：`server/src/services/styleEngine/StyleCompiler.ts`、`server/src/services/styleEngine/antiAiPreviewRules.ts`。
+- 默认模板初值：`server/src/services/styleEngine/defaults.ts`。
+
+## 对白密度检测（对话占比 / 话疗）
+
+### Background
+
+长篇阅读体验里有两类高频失衡：通篇叙述、几乎不出现对白（读起来像说明文），以及连续多段对白之间没有动作、场景或心理穿插，只靠台词来回推进（「话疗」）。章内 `repetition` 与既有反 AI 规则都不覆盖这两类问题，模型的语义检测也常常因为「文本本身没有明显违规」而漏掉。
+
+### Decision
+
+把它做成**可机械度量的确定性证据**，而不是新增一条关键词规则：对白字数占比可以用引号区间直接量出来，连续对白段落也能按段落结构数出来。阈值挂在写法信号策略上，所以不同写法可以声明不同的对白密度区间（例如冷白描允许更低的对白占比），复用「按写法调门限」的同一套解析机制，不新增第二套配置。
+
+### Current Rule
+
+- 度量位置：`detectProseQuality(content, policy)`，在既有正文表达检查里新增 `prose_dialogue_ratio`（全篇对白字数占比低于 `dialogueRatioMin` 或高于 `dialogueRatioMax`）与 `prose_talk_loop`（连续对白段落达到 `talkLoopRounds` 且中间没有叙述段）。
+- 阈值来源：`StyleSignalPolicy` 的 `dialogueRatioMin / dialogueRatioMax / talkLoopRounds / dialogueRatioMinCharacters`；未传策略时回退 `createStyleSignalPolicy()` 的全局默认。写法档案可通过 `LanguageRules.signalCalibration` 覆盖。
+- 保护性下限：正文可见字数低于 `dialogueRatioMinCharacters` 时不评估占比，避免片段、极短文本与测试夹具误报。
+- 严重度固定为 low（占比失衡）与 medium（话疗），**不进入** `hasBlockingFindings`，因此不会触发候选预检拦截，也不阻塞全局链；结果作为验收证据进入 `chapterAcceptance`，是否计入由 AI 判断。
+- 提示词侧：`style.detection`（`v13`）在「检测范围」补「对白密度」一条，要求结合本章位置与写法要求判断，只在确实削弱可读性或节奏时才计入 violation。
+
+### Failure Modes
+
+- **把对白占比写成硬判定**：低对白是合法写法选择，只有作为候选证据交给 AI 判断才成立。
+- **在短文本上评估占比**：没有 `dialogueRatioMinCharacters` 下限时，片段与夹具会被大量误报，并污染既有正文表达检查的结论。
+- **另起一套阈值配置**：对白密度阈值必须走 `StyleSignalPolicy`，否则手动检测与自动链路、不同写法之间会出现两套口径。
+- **让证据变成阻塞**：严重度一旦提到 high/critical，就会进入 `detectNewSevereProseFindings` 的预检拦截，把局部质量债务升级为全局失败。
+
+### Related Modules（对白密度）
+
+- 度量实现：`server/src/services/novel/runtime/proseQuality/ProseQualityDetector.ts`。
+- 阈值定义：`shared/types/styleEngine/signals.ts`（`StyleSignalPolicy`）。
+- 接入点：`server/src/services/novel/runtime/ChapterAcceptanceAssessmentService.ts`、`ChapterContentFinalizationService.ts`。
+- 提示词：`server/src/prompting/prompts/style/style.prompts.ts`（`style.detection@v13`）。
+
 ## Failure Modes
 
 - **把可编辑基线规则做成硬编码黑名单**：会让用户无法调整规则库，也违反 AI-First 原则。规则必须是数据。
@@ -68,6 +237,13 @@
 - 合同渲染与自检：`server/src/services/styleEngine/StyleCompiler.ts`、`styleContractText.ts`。
 - 检测与改写 prompt：`server/src/prompting/prompts/style/style.prompts.ts`、`style.promptSchemas.ts`。
 - 规则生效策略：`server/src/services/styleEngine/AntiAiPolicyResolver.ts`。
+- 统计学校准：`server/src/services/styleEngine/calibration/`（`calibrationMetrics.ts`、`calibrationBaseline.ts`、`runCalibration.ts`、`corpus/`）。
+- 改写护栏与力度阈值：`server/src/services/styleEngine/rewrite/index.ts`、`StyleRewriteService.ts`。
+- 禁改清单：`server/src/services/styleEngine/fragments/StyleFragmentRuleService.ts`、`shared/types/styleEngine/fragmentRules.ts`、`client/src/components/styleReview/StyleProtectedFragmentEditor.tsx`。
+- 改动台账：`server/src/services/styleEngine/ledger/StyleRewriteLedgerService.ts`、`ledger/buildLedgerEntries.ts`、`shared/types/styleEngine/ledger.ts`、`client/src/components/styleReview/StyleRewriteLedgerList.tsx`。
+- 按写法调门限：`server/src/services/styleEngine/signals/StyleSignalPolicyResolver.ts`、`shared/types/styleEngine/signals.ts`、`server/src/services/styleEngine/StyleDetectionService.ts`。
+- 对白密度：`server/src/services/novel/runtime/proseQuality/ProseQualityDetector.ts`、`server/src/services/novel/runtime/acceptance/styleReview.ts`。
+- 力度选择 UI：`client/src/components/styleReview/index.tsx`、`client/src/pages/writingFormula/components/WritingFormulaCleanPanel.tsx`、`client/src/pages/antiAiRules/components/AntiAiRuleEffectTestCard.tsx`。
 
 ## Source Documents
 

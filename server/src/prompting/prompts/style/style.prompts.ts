@@ -1,5 +1,6 @@
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { chapterPatchRepairPlanSchema, type ChapterPatchRepairPlan } from "@ai-novel/shared/types/chapterPatchRepair";
+import type { StyleRewriteScope } from "@ai-novel/shared/types/styleEngine";
 import { STYLE_DIAGNOSTIC_RULES, STYLE_REWRITE_DISCIPLINE, renderStyleSignalEvidence } from "./diagnostics";
 import { z } from "zod";
 import type { PromptAsset } from "../../core/promptTypes";
@@ -44,7 +45,32 @@ export interface StyleRewritePromptInput {
   styleContractText: string;
   content: string;
   issuesBlock: string;
+  scope?: StyleRewriteScope;
+  /** 书级禁改片段，服务层已过滤为「确实出现在原文里」的那些。 */
+  protectedFragments?: string[];
 }
+
+/** 三档改写力度对应的提示约束，与 guardStylePatches 的确定性删除上限保持一致。 */
+const STYLE_REWRITE_SCOPE_GUIDANCE: Record<StyleRewriteScope, string[]> = {
+  in_place: [
+    "当前改写力度：原位（轻改）。",
+    "1. 只允许词级、短语级的等量替换，替换后片段字数与原文基本一致（±10% 以内）。",
+    "2. 严禁删除整句或整段；不得删掉任何承担信息功能的词句。",
+    "3. 如果某个问题必须整句重写或删句才能解决，跳过该问题，不要动它。",
+  ],
+  sentence: [
+    "当前改写力度：句内（中改）。",
+    "1. 允许整句重写，但不得跨句搬移、合并或拆分多个句子。",
+    "2. 整次改写的删除量不得超过原文的 15%，只能压缩表达冗余。",
+    "3. 不得删除承担剧情功能的信息句。",
+  ],
+  free: [
+    "当前改写力度：自由（重写）。",
+    "1. 允许段落级重写与句子合并、拆分。",
+    "2. 整次改写的删除量不得超过原文的 35%；接近下限时改用降 AI 重写，而不是继续删内容。",
+    "3. 仍不得改变事件事实、顺序、人物关系与核心剧情结果。",
+  ],
+};
 
 export interface StyleProfileExtractionPromptInput {
   name: string;
@@ -98,7 +124,7 @@ export const styleDetectionPrompt: PromptAsset<
   z.infer<typeof styleDetectionPayloadSchema>
 > = {
   id: "style.detection",
-  version: "v12",
+  version: "v13",
   taskType: "planner",
   mode: "structured",
   language: "zh",
@@ -145,6 +171,7 @@ export const styleDetectionPrompt: PromptAsset<
       "3. issueCategory 必须判断问题更接近“style_expression”还是“story_structure”。只有当问题已经越过表达层、开始干扰剧情结构或场景推进时，才可标成 story_structure。",
       "4. 必须通读全文做召回，不要只抓开头、结尾或最显眼的 1-3 处问题；如果 AI 味集中出现在多个相邻段落，要合并为可修复的高价值 violation。",
       "5. 模板词仅是检查线索。须结合聚集、信息增量与作品写法判断，不得因单词命中强制判违规。",
+      "6. 对白密度：核对对白字数占比是否严重失衡——通篇叙述、几乎没有对白，或对白淹没了场景与动作；以及是否出现连续多段对白之间没有动作、环境或心理穿插，只靠台词来回推进却没有信息增量的「话疗」。判断时要结合本章在整卷中的位置与写法要求，只有确实削弱可读性、节奏或人物真实感时才计入 violation，并给出去向具体的修改方向。",
       "",
       "riskScore 规则：",
       "1. riskScore 为 0-100 的整数。",
@@ -363,7 +390,7 @@ export const styleGenerationPrompt: PromptAsset<StyleGenerationPromptInput, stri
 
 export const styleRewritePrompt: PromptAsset<StyleRewritePromptInput, ChapterPatchRepairPlan> = {
   id: "style.rewrite",
-  version: "v5",
+  version: "v7",
   taskType: "repair",
   mode: "structured",
   language: "zh",
@@ -394,6 +421,18 @@ export const styleRewritePrompt: PromptAsset<StyleRewritePromptInput, ChapterPat
       "2. 只允许减少表达冗余，不允许增加原文没有的信息；新人物、新地点、新物品、新数值、新动机、新线索以及原文没有的额外行动或警示都算新增信息。",
       "3. 替换内容必须在原文有依据；找不到依据时保留原句或删去概括，不得用新细节占位。",
       "",
+      "改写力度约束（必须严格遵守，超出幅度会直接保留原稿）：",
+      ...STYLE_REWRITE_SCOPE_GUIDANCE[input.scope ?? "free"],
+      "",
+      ...(input.protectedFragments?.length
+        ? [
+            "禁改清单（作者指定必须原样保留的片段）：",
+            "1. 以下片段必须在改写结果里逐字保留：不得增删字、不得改标点、不得换行拆分，也不得替换成同义说法。",
+            ...input.protectedFragments.map((fragment, index) => `${index + 1}. ${fragment}`),
+            "2. 如果某个问题必须改动清单内的片段才能修好，跳过该问题，不要动它。",
+            "",
+          ]
+        : []),
       "修正原则：",
       "1. 优先做最小必要改动，能局部修好就不要整体推翻。",
       "2. 如果问题是写法违规，优先修正句式、措辞、节奏和表达方式，而不是改剧情。",

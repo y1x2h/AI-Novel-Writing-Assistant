@@ -323,6 +323,38 @@ AI 返回紧凑的 `styleReview` 风险结论，程序从同次 `voice` 问题�
 
 分层诊断、候选信号和编辑保护的合同及评测边界见 [去 AI 味能力升级方案](../../plans/style-risk-review-v2-plan.md)。读取历史运行包时，新字段允许缺失，但缺失不能授权自动修文；工程预算和真实去味效果仍须语料校准。
 
+## 跨章结构相似度证据
+
+### Background
+
+长篇读者流失最常见的结构原因不是单章写坏，而是相邻章节反复使用同一套骨架（每章都是 醒来 → 冲突 → 内心独白 → 逆转）。章内重复由 `proseQuality/repetition` 覆盖，跨章结构在补这项能力前没有任何机械线索，验收模型只能靠通读正文自己发现。
+
+### Decision
+
+把它做成**候选证据**，并且在验收之外完成计算：签名与比对全部是可复算的确定性度量（场景转折骨架 + 读者体验合同要点），不调用 LLM、不授予 issue code。证据随验收输入一起进入唯一的 `acceptance` 调用，由验收模型决定是否构成问题。相似度本身不能当作违规判定——同构是合法的写法选择，只有连续多章同构、或与本章合同要求的差异冲突时才值得处理。
+
+### Current Rule
+
+- 计算位置：`server/src/services/novel/runtime/structureSimilarity/`。签名由 `sceneCards` 的场景转折顺序与读者体验合同（`keyTurn/primaryResistance/emotionalShift/netChange/endingHook`）生成，去空白标点后按字符二元 shingle 与顺序一致度比对。
+- 读取入口：`ChapterQualityGateService.runAcceptanceGate` 调用 `loadCrossChapterStructureEvidence`，按 `novelId + order` 读取最近 5 章。第 1 章、读取失败、章节不足或没有达到阈值（0.62）的候选时返回 `null`，只打 `[chapter-runtime]` 告警，不影响验收本身。
+- 缓存身份：证据是 `ChapterAcceptanceAssessmentInput` 的一部分，并进入验收缓存身份。改动窗口、阈值或数据源后，旧缓存必须视为 miss，不能让带证据的结论与不带证据的结论互相复用。
+- 提示词：`novel.chapter.acceptance_assessment@v25` 在机械候选线索之后渲染「跨章结构候选证据」，显式声明它只是提醒、不按命中扣分，并要求只有确实造成重复感或与本章合同冲突时才产出 `plot` 问题。
+- 降级：章节没有可用场景拆解时只比读者体验合同；两边都不可比时跳过该候选，不产生空证据段。
+- 非阻塞：证据只参与验收判断，不进入 `proseQuality` 的严重缺陷通道，也不触发全局重规划或人工暂停。
+
+### Failure Modes
+
+- **把相似度当违规**：同构章节可能是有意的节奏设计，判定权必须留给验收模型。
+- **没有候选也渲染证据段**：模型会为不存在的证据编造理由，也会让每次验收都多出一段无信息提示词。
+- **要求必须读到场景拆解**：未规划或拆解损坏的章节必须能降级到只比合同，否则能力在早期章节直接失效。
+- **证据不进入缓存身份**：历史缓存会让新证据永远不生效，形成「改了阈值却看不到变化」的假象。
+- **在验收之外新增第二次检测调用**：跨章证据必须搭在既有验收调用上，不能另开一次全章检测或修文循环。
+
+### 相关模块（跨章结构相似度）
+
+- `server/src/services/novel/runtime/structureSimilarity/`（含模块 README）、`../ChapterAcceptanceAssessmentService.ts`、`../../../prompting/prompts/novel/chapterAcceptance.prompts.ts`。
+- 场景拆解与读者体验合同：`shared/types/chapterLengthControl.ts`、`shared/types/novel/readerExperience.ts`、`docs/wiki/workflows/reader-experience-contract.md`。
+
 ## 补写与修文复验的边界
 
 补写必须区分整章目标与本次追加额度。原稿达到共享软下限时不强迫填满目标；低于软下限时，把已有非空白字符数从目标、软下限与软上限扣除，给模型追加区间及对应输出额度。返回的追加正文超出上限时保留原稿，不剪切、不重复调用，也不让超长候选扩大后续检查和资产整理的输入。剩余不足由正常 AI 审校记录；沿用任务选择的质量政策，不把单次补写拒绝当作全局重规划。

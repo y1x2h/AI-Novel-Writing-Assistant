@@ -21,6 +21,14 @@ export const styleSignalPolicySchema = z.object({
   fillerCount: z.number().int().min(2).max(8).default(2),
   dialogueMinSentences: z.number().int().min(2).max(40).default(4),
   dialogueTagRatio: z.number().min(0.2).max(1).default(0.5),
+  /** 对白字数占比下限；低于该值仅作为「叙述压倒对白」的候选证据，不硬判定。 */
+  dialogueRatioMin: z.number().min(0).max(0.5).default(0.05),
+  /** 对白字数占比上限；高于该值仅作为「对白淹没叙述」的候选证据，不硬判定。 */
+  dialogueRatioMax: z.number().min(0.2).max(1).default(0.8),
+  /** 连续对白段落轮次上限；超过则提示连续对白缺少叙述穿插。 */
+  talkLoopRounds: z.number().int().min(2).max(60).default(10),
+  /** 只有正文可见字数达到该值才评估对白占比，避免片段或极短文本误报。 */
+  dialogueRatioMinCharacters: z.number().int().min(200).max(8000).default(600),
   transitionRepeatCount: z.number().int().min(2).max(20).default(2),
   maxPerRule: z.number().int().min(1).max(2).default(2),
   maxFindings: z.number().int().min(1).max(12).default(12),
@@ -28,6 +36,24 @@ export const styleSignalPolicySchema = z.object({
 });
 export type StyleSignalPolicy = z.infer<typeof styleSignalPolicySchema>;
 export const createStyleSignalPolicy = (): StyleSignalPolicy => styleSignalPolicySchema.parse({ revision: "style-signals-v1" });
+
+type StyleSignalThresholdKey = Exclude<keyof StyleSignalPolicy, "revision">;
+
+/**
+ * 写法档案可选的阈值覆盖：只声明要改的项，未声明的回退到全局默认基线。
+ * 逐字段去掉默认值，否则解析空对象也会把整份全局默认填回来，覆盖就失去意义。
+ */
+export const styleSignalPolicyOverrideSchema = z.object(
+  Object.fromEntries(
+    (Object.keys(styleSignalPolicySchema.shape) as Array<keyof StyleSignalPolicy>)
+      .filter((key): key is StyleSignalThresholdKey => key !== "revision")
+      .map((key) => {
+        const field = styleSignalPolicySchema.shape[key] as z.ZodDefault<z.ZodTypeAny>;
+        return [key, field.unwrap().optional()];
+      }),
+  ),
+) as unknown as z.ZodType<StyleSignalPolicyOverride>;
+export type StyleSignalPolicyOverride = Partial<Omit<StyleSignalPolicy, "revision">>;
 
 export const styleSignalFindingSchema = z.object({
   ruleId: z.enum([

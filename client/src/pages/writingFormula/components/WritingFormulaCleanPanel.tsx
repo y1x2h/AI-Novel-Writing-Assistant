@@ -1,16 +1,19 @@
-import { isStyleIssueRewritable, type StyleDetectionReport, type StyleProfile, type StyleRewriteGuard } from "@ai-novel/shared/types/styleEngine";
-import { StyleRiskReport, StyleRewriteProtection } from "@/components/styleReview";
+import { isStyleIssueRewritable, type StyleDetectionReport, type StyleProfile, type StyleRewriteGuard, type StyleRewriteScope } from "@ai-novel/shared/types/styleEngine";
+import { StyleProtectedFragmentEditor, StyleRiskReport, StyleRewriteLedgerList, StyleRewriteProtection, StyleRewriteScopeSelect } from "@/components/styleReview";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 interface WritingFormulaCleanPanelProps {
   selectedProfile: StyleProfile | null;
+  novelId: string;
   detectInput: string;
   detectionReport: StyleDetectionReport | null;
   detectionPending: boolean;
   rewritePending: boolean;
   rewritePreview: string;
   rewriteGuard?: StyleRewriteGuard;
+  rewriteScope: StyleRewriteScope;
+  onRewriteScopeChange: (scope: StyleRewriteScope) => void;
   onDetectInputChange: (value: string) => void;
   onDetect: () => void;
   onRewrite: () => void;
@@ -19,11 +22,14 @@ interface WritingFormulaCleanPanelProps {
 export default function WritingFormulaCleanPanel(props: WritingFormulaCleanPanelProps) {
   const {
     selectedProfile,
+    novelId,
     detectInput,
     detectionReport,
     detectionPending,
     rewritePending,
     rewritePreview,
+    rewriteScope,
+    onRewriteScopeChange,
     onDetectInputChange,
     onDetect,
     onRewrite,
@@ -94,6 +100,16 @@ export default function WritingFormulaCleanPanel(props: WritingFormulaCleanPanel
               生成局部修订预览
             </Button>
           </div>
+
+          <StyleRewriteScopeSelect
+            value={rewriteScope}
+            onChange={onRewriteScopeChange}
+            disabled={rewritePending || detectionPending}
+          />
+
+          <StyleProtectedFragmentEditor novelId={novelId} />
+
+          <StyleRewriteLedgerList novelId={novelId} />
 
           {detectionReport ? (
             <StyleRiskReport report={detectionReport} />

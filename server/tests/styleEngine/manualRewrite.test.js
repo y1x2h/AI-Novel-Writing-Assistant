@@ -25,6 +25,10 @@ function fixture(violations, patch = {}, conservation = { status: 'preserved', r
     './StyleRuntimeResolver': { StyleRuntimeResolver: class { async resolve() { return { antiAiRules: [], context: {} }; } } },
     './antiAiPreviewRules': { buildAntiAiRuleDirectiveText: () => '', listPreviewAntiAiRules: async () => [] },
     './StyleDetectionService': { StyleDetectionService: class { async check() { checks++; return { violations }; } } },
+    './StyleFragmentRuleService': { StyleFragmentRuleService: class { async listProtectedFragments() { return []; } } },
+    './fragments/StyleFragmentRuleService': { StyleFragmentRuleService: class { async listProtectedFragments() { return []; } } },
+    './ledger/buildLedgerEntries': { buildLedgerEntries: () => [] },
+    './ledger/StyleRewriteLedgerService': { StyleRewriteLedgerService: class { async record() {} async list() { return []; } } },
     './rewrite': protection,
   });
   return { instance: new StyleRewriteService(), requests, get checks() { return checks; } };

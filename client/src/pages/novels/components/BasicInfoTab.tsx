@@ -2,6 +2,7 @@ import type { BasicTabProps } from "./NovelEditView.types";
 import NovelBasicInfoForm from "./NovelBasicInfoForm";
 import NovelStyleRecommendationCard from "./NovelStyleRecommendationCard";
 import { BookFramingQuickFillButton } from "./basicInfoForm/BookFramingQuickFillButton";
+import { BlurbQuickFillButton } from "./basicInfoForm/BlurbQuickFillButton";
 import NovelCreateTitleQuickFill from "./titleWorkshop/NovelCreateTitleQuickFill";
 import DirectorTakeoverEntryPanel from "./DirectorTakeoverEntryPanel";
 import { NovelCoverCard } from "./cover/NovelCoverCard";
@@ -46,6 +47,14 @@ export default function BasicInfoTab(props: BasicTabProps) {
               basicForm={props.basicForm}
               genreOptions={props.genreOptions}
               onApplySuggestion={props.onFormChange}
+            />
+          )}
+          blurbQuickFill={(
+            <BlurbQuickFillButton
+              basicForm={props.basicForm}
+              genreOptions={props.genreOptions}
+              novelId={props.novelId}
+              onApplyBlurb={(blurb) => props.onFormChange({ description: blurb })}
             />
           )}
           coverSection={(

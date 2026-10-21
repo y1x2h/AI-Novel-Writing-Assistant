@@ -7,10 +7,13 @@ import type {
   StyleBinding,
   StyleDetectionReport,
   StyleRewriteGuard,
+  StyleRewriteScope,
   StyleExtractionDraft,
   StyleExtractionSourceProcessingMode,
   StyleFeatureDecision,
+  StyleFragmentRule,
   StyleProfileFeature,
+  StyleRewriteLedger,
   StyleProfile,
   StyleRecommendationResult,
   StyleTemplate,
@@ -322,7 +325,44 @@ export async function rewriteStyleIssues(payload: {
   provider?: string;
   model?: string;
   temperature?: number;
+  scope?: StyleRewriteScope;
 }) {
   const { data } = await apiClient.post<ApiResponse<{ content: string; report?: StyleDetectionReport; rewriteGuard?: StyleRewriteGuard }>>("/style-detection/rewrite", payload);
+  return data;
+}
+
+export async function getStyleRewriteLedger(params: { novelId: string; chapterId?: string; limit?: number }) {
+  const { data } = await apiClient.get<ApiResponse<StyleRewriteLedger[]>>("/style-rewrite-ledger", { params });
+  return data;
+}
+
+export async function getStyleFragmentRules(novelId: string) {
+  const { data } = await apiClient.get<ApiResponse<StyleFragmentRule[]>>("/style-fragment-rules", {
+    params: { novelId },
+  });
+  return data;
+}
+
+export async function createStyleFragmentRule(payload: {
+  novelId: string;
+  fragment: string;
+  note?: string;
+  enabled?: boolean;
+}) {
+  const { data } = await apiClient.post<ApiResponse<StyleFragmentRule>>("/style-fragment-rules", payload);
+  return data;
+}
+
+export async function updateStyleFragmentRule(id: string, payload: Partial<{
+  fragment: string;
+  note: string | null;
+  enabled: boolean;
+}>) {
+  const { data } = await apiClient.put<ApiResponse<StyleFragmentRule>>(`/style-fragment-rules/${id}`, payload);
+  return data;
+}
+
+export async function deleteStyleFragmentRule(id: string) {
+  const { data } = await apiClient.delete<ApiResponse<null>>(`/style-fragment-rules/${id}`);
   return data;
 }

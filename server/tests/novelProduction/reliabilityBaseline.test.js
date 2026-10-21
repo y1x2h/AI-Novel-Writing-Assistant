@@ -16,6 +16,7 @@ function gateHarness() {
       upsert: async ({ where, create }) => { stored.set(JSON.stringify(where), create); },
     } } },
     "./ChapterAcceptanceAssessmentService": {},
+    "./structureSimilarity": { loadCrossChapterStructureEvidence: async () => null },
     "./chapterRuntimePackageBuilders": { hashContent, rememberCacheValue: (map, key, value) => map.set(key, value) },
   });
   const input = {

@@ -1,5 +1,5 @@
-import { isStyleIssueRewritable, type AntiAiRule, type StyleDetectionReport, type StyleRewriteGuard } from "@ai-novel/shared/types/styleEngine";
-import { StyleRiskReport, StyleRewriteProtection } from "@/components/styleReview";
+import { isStyleIssueRewritable, type AntiAiRule, type StyleDetectionReport, type StyleRewriteGuard, type StyleRewriteScope } from "@ai-novel/shared/types/styleEngine";
+import { StyleRiskReport, StyleRewriteProtection, StyleRewriteScopeSelect } from "@/components/styleReview";
 import { FlaskConical, Loader2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -10,6 +10,8 @@ interface AntiAiRuleEffectTestCardProps {
   rewriteGuard?: StyleRewriteGuard;
   detectionPending: boolean;
   rewritePending: boolean;
+  rewriteScope: StyleRewriteScope;
+  onRewriteScopeChange: (scope: StyleRewriteScope) => void;
   testRuleCount: number;
   scopeReady: boolean;
   previewRules: AntiAiRule[];
@@ -75,6 +77,7 @@ export default function AntiAiRuleEffectTestCard(props: AntiAiRuleEffectTestCard
           {props.rewritePending ? "修订中…" : "预览局部修订"}
         </Button>
       </div>
+      <StyleRewriteScopeSelect value={props.rewriteScope} onChange={props.onRewriteScopeChange} disabled={busy} />
       <p className="text-xs leading-5 text-muted-foreground">测试与预览不会保存到小说；采用前请核对人物口吻与设定。</p>
 
       <div aria-live="polite" aria-atomic="true" className="sr-only">

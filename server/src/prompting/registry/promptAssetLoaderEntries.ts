@@ -294,7 +294,7 @@ export const promptAssetLoaderEntries: PromptAssetLoaderEntry[] = [
     load: () => require("../prompts/novel/coreGeneration.prompts").novelChapterHookPrompt as UnknownPromptAsset,
   },
   {
-    key: "novel.chapter.acceptance_assessment@v24",
+    key: "novel.chapter.acceptance_assessment@v25",
     load: () => require("../prompts/novel/chapterAcceptance.prompts").chapterAcceptanceAssessmentPrompt as UnknownPromptAsset,
   },
   {
@@ -320,6 +320,10 @@ export const promptAssetLoaderEntries: PromptAssetLoaderEntry[] = [
   {
     key: "title.generation@v2",
     load: () => require("../prompts/helper/titleGeneration.prompt").titleGenerationPrompt as UnknownPromptAsset,
+  },
+  {
+    key: "novel.blurb.generate@v1",
+    load: () => require("../prompts/novel/blurbGeneration.prompts").blurbGenerationPrompt as UnknownPromptAsset,
   },
   {
     key: "novel.volume.strategy@v2",
@@ -558,7 +562,7 @@ export const promptAssetLoaderEntries: PromptAssetLoaderEntry[] = [
     load: () => require("../prompts/storyWorldSlice/storyWorldSlice.prompts").storyWorldSlicePrompt as UnknownPromptAsset,
   },
   {
-    key: "style.detection@v12",
+    key: "style.detection@v13",
     load: () => require("../prompts/style/style.prompts").styleDetectionPrompt as UnknownPromptAsset,
   },
   {
@@ -570,7 +574,7 @@ export const promptAssetLoaderEntries: PromptAssetLoaderEntry[] = [
     load: () => require("../prompts/style/style.prompts").styleGenerationPrompt as UnknownPromptAsset,
   },
   {
-    key: "style.rewrite@v5",
+    key: "style.rewrite@v7",
     load: () => require("../prompts/style/style.prompts").styleRewritePrompt as UnknownPromptAsset,
   },
   {

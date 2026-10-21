@@ -1,6 +1,39 @@
-import { isStyleIssueRewritable, type StyleDetectionReport, type StyleRewriteGuard } from "@ai-novel/shared/types/styleEngine";
+import { isStyleIssueRewritable, type StyleDetectionReport, type StyleRewriteGuard, type StyleRewriteScope } from "@ai-novel/shared/types/styleEngine";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
+export { StyleProtectedFragmentEditor } from "./StyleProtectedFragmentEditor";
+export { StyleRewriteLedgerList } from "./StyleRewriteLedgerList";
 
 const layerLabels = { surface: "句子表达", discourse: "段落衔接", narrative: "叙事建议" };
+
+const rewriteScopeOptions: Array<{ value: StyleRewriteScope; label: string; hint: string }> = [
+  { value: "in_place", label: "轻改", hint: "只换词和短语，不删整句" },
+  { value: "sentence", label: "中改", hint: "可以重写整句，删除不超过 15%" },
+  { value: "free", label: "重写", hint: "可以重写段落，删除不超过 35%" },
+];
+
+/** 修订力度是给零基础作者的三档旋钮：轻改 / 中改 / 重写。 */
+export function StyleRewriteScopeSelect({ value, onChange, disabled }: {
+  value: StyleRewriteScope;
+  onChange: (value: StyleRewriteScope) => void;
+  disabled?: boolean;
+}) {
+  const current = rewriteScopeOptions.find((option) => option.value === value) ?? rewriteScopeOptions[2];
+  return <div className="flex flex-wrap items-center gap-2">
+    <span className="text-xs text-muted-foreground">修订力度</span>
+    <Select value={value} onValueChange={(next) => onChange(next as StyleRewriteScope)} disabled={disabled}>
+      <SelectTrigger className="h-9 w-[168px] text-xs" aria-label="修订力度">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {rewriteScopeOptions.map((option) => <SelectItem key={option.value} value={option.value} className="text-xs">
+          {option.label} · {option.hint}
+        </SelectItem>)}
+      </SelectContent>
+    </Select>
+    <span className="text-xs text-muted-foreground">{current.hint}</span>
+  </div>;
+}
 
 export function StyleRiskReport({ report }: { report: StyleDetectionReport }) {
   return <section aria-label="写法检查结果" className="space-y-4 text-sm">

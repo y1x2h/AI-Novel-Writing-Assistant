@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { AntiAiRule } from "@ai-novel/shared/types/styleEngine";
+import type { AntiAiRule, StyleRewriteScope } from "@ai-novel/shared/types/styleEngine";
 import { FlaskConical, Plus, ShieldCheck } from "lucide-react";
 import {
   createAntiAiRule,
@@ -44,6 +44,7 @@ export default function AntiAiRulesPage() {
   const [testingRuleIds, setTestingRuleIds] = useState<string[]>([]);
   const [testInput, setTestInput] = useState("");
   const [rewritePreview, setRewritePreview] = useState("");
+  const [rewriteScope, setRewriteScope] = useState<StyleRewriteScope>("free");
 
   const rulesQuery = useQuery({
     queryKey: queryKeys.styleEngine.antiAiRules,
@@ -200,6 +201,7 @@ export default function AntiAiRulesPage() {
         provider: llm.provider,
         model: llm.model,
         temperature: 0.5,
+        scope: rewriteScope,
       });
       return { ...response, sourceContent, sourceScope };
     },
@@ -316,6 +318,8 @@ export default function AntiAiRulesPage() {
             rewriteGuard={currentRewrite?.rewriteGuard}
             detectionPending={detectionMutation.isPending}
             rewritePending={rewriteMutation.isPending}
+            rewriteScope={rewriteScope}
+            onRewriteScopeChange={setRewriteScope}
             testRuleCount={testRuleCount}
             scopeReady={testScopeReady}
             previewRules={testingRules}

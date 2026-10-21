@@ -262,8 +262,27 @@ export interface ChapterAcceptancePromptInput {
   expectedNarrativePov?: import("@ai-novel/shared/types/novel").NarrativePov | null;
   styleRewriteBaseline?: StyleRewriteBaseline;
   styleSignals?: import("@ai-novel/shared/types/styleEngine").StyleSignalScan;
+  crossChapterStructure?: import("@ai-novel/shared/types/novel/crossChapterStructure").CrossChapterStructureEvidence | null;
   repairReviewBaseline?: Pick<ChapterAcceptanceAssessmentOutput,
     "blockingIssues" | "missingObligations" | "repairDirectives">;
+}
+
+function renderCrossChapterStructureEvidence(
+  evidence: import("@ai-novel/shared/types/novel/crossChapterStructure").CrossChapterStructureEvidence,
+): string {
+  const lines = [
+    `已比较最近 ${evidence.comparedChapterCount} 章，最高相似度 ${evidence.maxSimilarity}。`,
+    ...evidence.candidates.map((candidate) => {
+      const parts = [`第 ${candidate.chapterOrder} 章相似度 ${candidate.similarity}`];
+      if (candidate.sharedBeats.length > 0) parts.push(`共享骨架：${candidate.sharedBeats.join(" → ")}`);
+      if (candidate.contractOverlap.length > 0) parts.push(`合同重叠：${candidate.contractOverlap.join("；")}`);
+      return `- ${parts.join("；")}`;
+    }),
+  ];
+  if (evidence.repeatedSkeletonRun) {
+    lines.push(`连续同构：第 ${evidence.repeatedSkeletonRun.chapterOrders.join("、")} 章，平均相似度 ${evidence.repeatedSkeletonRun.similarity}。`);
+  }
+  return lines.join("\n");
 }
 
 export function resolveChapterAcceptanceOutputTokens(input: Pick<ChapterAcceptancePromptInput, "repairReviewBaseline">): number {
@@ -303,7 +322,7 @@ export const chapterAcceptanceAssessmentPrompt: PromptAsset<
   ChapterAcceptanceModelOutput
 > = {
   id: "novel.chapter.acceptance_assessment",
-  version: "v24",
+  version: "v25",
   cacheBoundary: {messageIndex:0,contentBlockIndex:0},
   taskType: "review",
   mode: "structured",
@@ -419,6 +438,7 @@ export const chapterAcceptanceAssessmentPrompt: PromptAsset<
       "正文：",
       input.content,
       input.styleSignals ? `【机械候选线索：只供语义核对，不代表违规，不按命中加分】\n${renderStyleSignalEvidence(input.styleSignals)}` : "",
+      input.crossChapterStructure ? `【跨章结构候选证据：只作提醒，不代表违规，不按命中扣分】\n${renderCrossChapterStructureEvidence(input.crossChapterStructure)}\n核对相邻章节是否复用同一套场景骨架而缺少推进差异；只有确实让读者感到重复、或与本章合同要求的差异冲突时，才在 blockingIssues 里给出 plot 问题与保留本章任务的修复方向，不要仅凭相似度要求重写。` : "",
       input.styleReviewEnabled ? "【输出核对】styleReview 必填风险报告对象；无风险 observations=[]。所有证据连续复制正文，不得把概括写成原句。叙事写法建议只报告，不安排自动修文。" : "【输出核对】styleReview=null。",
     ].join("\n")),
     ...(input.previousChapterContent?.trim() ? [new HumanMessage([

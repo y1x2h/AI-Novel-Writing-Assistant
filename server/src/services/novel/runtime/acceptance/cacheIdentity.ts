@@ -43,6 +43,7 @@ export async function buildAcceptanceCacheIdentity(input: ChapterAcceptanceAsses
     styleRuleIds: getAcceptanceStyleRuleIds(input.contextPackage),
     expectedNarrativePov: getAcceptanceNarrativePov(input.contextPackage),
     styleSignals: buildAcceptanceStyleSignals(input.contextPackage, input.content),
+    crossChapterStructure: input.crossChapterStructure ?? null,
   };
   const prepared = preparePromptExecution({
     asset, promptInput, contextBlocks: [...applyAcceptanceStyleContext(input.contextPackage, context.blocks), ...(overlays?.appendBlocks ?? [])],

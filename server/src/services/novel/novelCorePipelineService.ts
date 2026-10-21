@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
-import { createStyleSignalPolicy } from "@ai-novel/shared/types/styleEngine";
+import { StyleSignalPolicyResolver } from "../styleEngine/signals";
+import { StyleRuntimeResolver } from "../styleEngine/StyleRuntimeResolver";
 import {assertDirectorPipelineOwner, canRecoverLegacyPipelineJob, sameDirectorPipelineOwner, type DirectorPipelineOwner} from "../../modules/novel/director-routing";
 import {AppError} from "../../middleware/errorHandler";
 import { DIRECTOR_ISSUE_GOVERNANCE_VERSION, directorIssuePolicySchema } from "@ai-novel/shared/types/directorIssue";
@@ -328,13 +329,22 @@ export class NovelCorePipelineService {
       });
   }
 
+  /**
+   * 章节验收与写法检测共用同一份信号策略：按当前生效写法推导阈值，未绑定写法时回退全局默认。
+   * 策略会随运行包落库，因此写法变化会自然产生新的运行包与缓存标识。
+   */
+  private async resolveStyleSignalPolicy(novelId: string, taskStyleProfileId?: string) {
+    const resolved = await new StyleRuntimeResolver().resolve({ novelId, taskStyleProfileId });
+    return new StyleSignalPolicyResolver().resolve(resolved.primaryProfile?.languageRules ?? null);
+  }
+
   async startPipelineJob(novelId: string, options: PipelineRunOptions) {
     await this.assertOwner(novelId, options);
     const rangeKey = this.buildRangeKey(novelId, options.startOrder, options.endOrder);
     return this.withStartLock(rangeKey, async () => {
       const maxRetries = clampPipelineMaxRetries(options.maxRetries);
       const issuePolicySnapshot = await this.resolveIssuePolicySnapshot(novelId, options);
-      const styleSignalPolicy = options.styleSignalPolicy ?? createStyleSignalPolicy();
+      const styleSignalPolicy = options.styleSignalPolicy ?? await this.resolveStyleSignalPolicy(novelId, options.taskStyleProfileId);
       const runtimeOptions: PipelineRunOptions = {
         ...options,
         maxRetries,

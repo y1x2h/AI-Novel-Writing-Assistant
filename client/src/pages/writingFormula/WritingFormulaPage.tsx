@@ -4,6 +4,7 @@ import type {
   StyleBinding,
   StyleProfile,
   StyleProfileFeature,
+  StyleRewriteScope,
 } from "@ai-novel/shared/types/styleEngine";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import OpenInCreativeHubButton from "@/components/creativeHub/OpenInCreativeHubButton";
@@ -93,6 +94,7 @@ export default function WritingFormulaPage() {
   const [testWriteOutput, setTestWriteOutput] = useState("");
   const [detectInput, setDetectInput] = useState("");
   const [rewritePreview, setRewritePreview] = useState("");
+  const [rewriteScope, setRewriteScope] = useState<StyleRewriteScope>("free");
 
   const activeMode = normalizeWritingFormulaMode(searchParams.get("mode"));
   const incomingProfileId = searchParams.get("profileId") ?? "";
@@ -470,9 +472,11 @@ export default function WritingFormulaPage() {
       const response = await rewriteStyleIssues({
         content: sourceContent,
         styleProfileId: selectedProfileId,
+        novelId: bookStyleNovelId || undefined,
         provider: llm.provider,
         model: llm.model,
         temperature: 0.5,
+        scope: rewriteScope,
       });
       return { ...response, sourceContent, sourceScope: reviewScope };
     },
@@ -666,12 +670,15 @@ export default function WritingFormulaPage() {
           <div className="h-full min-h-0 overflow-auto p-6 pt-4">
             <WritingFormulaCleanPanel
               selectedProfile={selectedProfile}
+              novelId={bookStyleNovelId}
               detectInput={detectInput}
               detectionReport={currentRewrite?.report ?? currentDetection ?? null}
               detectionPending={detectionMutation.isPending}
               rewritePending={rewriteMutation.isPending}
               rewritePreview={currentRewrite ? rewritePreview : ""}
               rewriteGuard={currentRewrite?.rewriteGuard}
+              rewriteScope={rewriteScope}
+              onRewriteScopeChange={setRewriteScope}
               onDetectInputChange={setDetectInput}
               onDetect={() => detectionMutation.mutate()}
               onRewrite={() => rewriteMutation.mutate()}

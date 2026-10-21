@@ -11,6 +11,7 @@ interface BookPositioningStudioProps {
   basicForm: NovelBasicFormState;
   onFormChange: (patch: Partial<NovelBasicFormState>) => void;
   titleQuickFill?: ReactNode;
+  blurbQuickFill?: ReactNode;
   framingQuickFill?: ReactNode;
   projectQuickStart?: ReactNode;
 }
@@ -36,7 +37,7 @@ function createPreview(value: string, fallback: string): string {
 }
 
 export default function BookPositioningStudio(props: BookPositioningStudioProps) {
-  const { basicForm, onFormChange, titleQuickFill, framingQuickFill, projectQuickStart } = props;
+  const { basicForm, onFormChange, titleQuickFill, blurbQuickFill, framingQuickFill, projectQuickStart } = props;
   const completedCount = POSITIONING_FIELDS.filter((field) => hasText(basicForm[field.key])).length;
   const readinessPercent = Math.round((completedCount / POSITIONING_FIELDS.length) * 100);
   const readinessItems = [
@@ -116,7 +117,9 @@ export default function BookPositioningStudio(props: BookPositioningStudioProps)
           <div className="space-y-2">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <FieldLabel htmlFor="basic-description">一句话概述</FieldLabel>
-              <span className="text-xs text-muted-foreground">主角 · 目标 · 阻力</span>
+              {blurbQuickFill ? <div className="shrink-0">{blurbQuickFill}</div> : (
+                <span className="text-xs text-muted-foreground">主角 · 目标 · 阻力</span>
+              )}
             </div>
             <textarea
               id="basic-description"

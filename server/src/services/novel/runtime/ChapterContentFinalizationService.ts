@@ -107,7 +107,7 @@ export class ChapterContentFinalizationService {
       styleRewriteBaseline: input.styleRewriteBaseline,
     });
     await input.assertExecutionOwnership?.();
-    const proseQualityReport = detectProseQuality(finalContent);
+    const proseQualityReport = detectProseQuality(finalContent, input.contextPackage.styleSignalPolicy);
     const proseQualityAuditReport = buildProseQualityAuditReport({
       novelId: input.novelId,
       chapterId: input.chapterId,

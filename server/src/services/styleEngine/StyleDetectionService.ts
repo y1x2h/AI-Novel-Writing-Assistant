@@ -1,7 +1,7 @@
 import type { LLMProvider } from "@ai-novel/shared/types/llm";
 import type { StyleDetectionReport } from "@ai-novel/shared/types/styleEngine";
-import { isStyleIssueRewritable, createStyleSignalPolicy } from "@ai-novel/shared/types/styleEngine";
-import { scanStyleSignals } from "./signals";
+import { isStyleIssueRewritable } from "@ai-novel/shared/types/styleEngine";
+import { StyleSignalPolicyResolver, scanStyleSignals } from "./signals";
 import { runStructuredPrompt } from "../../prompting/core/promptRunner";
 import { styleDetectionPrompt } from "../../prompting/prompts/style/style.prompts";
 import {
@@ -32,6 +32,7 @@ interface DetectionInput {
 
 export class StyleDetectionService {
   private readonly resolver = new StyleRuntimeResolver();
+  private readonly signalPolicyResolver = new StyleSignalPolicyResolver();
 
   async check(input: DetectionInput): Promise<StyleDetectionReport> {
     const resolved = await this.resolver.resolve({
@@ -63,7 +64,11 @@ export class StyleDetectionService {
       };
     }
 
-    const signalScan = scanStyleSignals(input.content, createStyleSignalPolicy());
+    // 检测阈值跟随当前生效写法：不同语体不共用同一套敏感度，未声明校准即回退全局默认。
+    const signalScan = scanStyleSignals(
+      input.content,
+      this.signalPolicyResolver.resolve(resolved.primaryProfile?.languageRules ?? null),
+    );
     const result = await runStructuredPrompt({
       asset: styleDetectionPrompt,
       promptInput: {

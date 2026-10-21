@@ -1,12 +1,15 @@
 import type { LLMProvider } from "@ai-novel/shared/types/llm";
 import { runStructuredPrompt } from "../../prompting/core/promptRunner";
-import { isStyleIssueRewritable, type StyleRewriteGuard, type StyleDetectionReport } from "@ai-novel/shared/types/styleEngine";
+import { isStyleIssueRewritable, selectPresentFragments, type StyleRewriteGuard, type StyleRewriteLedgerEntry, type StyleRewriteScope, type StyleDetectionReport } from "@ai-novel/shared/types/styleEngine";
 import { styleRewritePrompt } from "../../prompting/prompts/style/style.prompts";
 import { styleRewriteConservationPrompt } from "../../prompting/prompts/style/styleRewriteConservation.prompts";
 import { buildWriterStyleContractText } from "./styleContractText";
 import { StyleRuntimeResolver } from "./StyleRuntimeResolver";
 import { buildAntiAiRuleDirectiveText, listPreviewAntiAiRules } from "./antiAiPreviewRules";
 import { StyleDetectionService } from "./StyleDetectionService";
+import { StyleFragmentRuleService } from "./fragments/StyleFragmentRuleService";
+import { buildLedgerEntries } from "./ledger/buildLedgerEntries";
+import { StyleRewriteLedgerService } from "./ledger/StyleRewriteLedgerService";
 import { guardStylePatches } from "./rewrite";
 
 interface ConservationVerdict {
@@ -42,11 +45,15 @@ interface RewriteInput {
   provider?: LLMProvider;
   model?: string;
   temperature?: number;
+  /** 用户可见的改写力度：轻改 / 中改 / 重写，默认沿用自由档。 */
+  scope?: StyleRewriteScope;
 }
 
 export class StyleRewriteService {
   private readonly resolver = new StyleRuntimeResolver();
   private readonly detector = new StyleDetectionService();
+  private readonly fragmentRules = new StyleFragmentRuleService();
+  private readonly ledger = new StyleRewriteLedgerService();
 
   async rewrite(input: RewriteInput): Promise<{ content: string; report: StyleDetectionReport; rewriteGuard?: StyleRewriteGuard }> {
     // Request issues are hints, never an authorization receipt. Recheck the current
@@ -71,6 +78,10 @@ export class StyleRewriteService {
       buildWriterStyleContractText(resolved.context.compiledBlocks?.contract ?? null),
       buildAntiAiRuleDirectiveText(extraPreviewRules),
     ].filter(Boolean).join("\n\n");
+    // 只保护原文里真正出现的片段：把清单整份塞给模型会诱导它把没出现的片段写进正文。
+    const protectedFragments = input.novelId
+      ? selectPresentFragments(await this.fragmentRules.listProtectedFragments(input.novelId), input.content)
+      : [];
 
     const result = await runStructuredPrompt({
       asset: styleRewritePrompt,
@@ -78,6 +89,8 @@ export class StyleRewriteService {
         styleContractText,
         content: input.content,
         issuesBlock,
+        scope: input.scope,
+        protectedFragments,
       },
       options: {
         provider: input.provider ?? "deepseek",
@@ -90,22 +103,56 @@ export class StyleRewriteService {
       original: input.content, plan: result.output,
       allowedIssueIds: issues.map(item => item.issueId),
       styleIssueIds: issues.map(item => item.issueId),
+      protectedFragments,
+      scope: input.scope,
     });
-    if (protectedResult.content === input.content) {
-      return { content: input.content, report, rewriteGuard: protectedResult.guard };
-    }
-
-    const verdict = await this.reviewInformationConservation({
+    const guardBlocked = protectedResult.content === input.content;
+    const verdict = guardBlocked ? null : await this.reviewInformationConservation({
       original: input.content,
       changes: protectedResult.baseline.changes,
       provider: input.provider,
       model: input.model,
     });
+    const adopted = verdict !== null && verdict.status !== "changed";
+    await this.recordLedger({
+      novelId: input.novelId,
+      chapterId: input.chapterId,
+      sourceHash: protectedResult.guard.sourceContentHash,
+      candidateHash: protectedResult.guard.candidateContentHash,
+      policyRevision: protectedResult.guard.policyRevision,
+      entries: buildLedgerEntries({
+        plan: result.output,
+        issues,
+        guard: protectedResult.guard,
+        adopt: adopted,
+      }),
+    });
     return {
-      content: verdict.status === "changed" ? input.content : protectedResult.content,
+      content: adopted ? protectedResult.content : input.content,
       report,
-      rewriteGuard: upgradeGuardWithConservation(protectedResult.guard, verdict),
+      rewriteGuard: verdict && !guardBlocked
+        ? upgradeGuardWithConservation(protectedResult.guard, verdict)
+        : protectedResult.guard,
     };
+  }
+
+  /** 台账只归档结果，写入失败不影响本次改写，也不改变正文链路。 */
+  private async recordLedger(input: {
+    novelId?: string;
+    chapterId?: string;
+    sourceHash: string;
+    candidateHash: string;
+    policyRevision: string;
+    entries: StyleRewriteLedgerEntry[];
+  }): Promise<void> {
+    if (!input.novelId || input.entries.length === 0) {
+      return;
+    }
+    try {
+      await this.ledger.record({ ...input, novelId: input.novelId });
+    } catch (error) {
+      console.warn("[style-rewrite] 改动台账写入失败，本次改写结果不受影响。", error);
+    }
   }
 
   /** Review failures only downgrade the check to not_checked; they never hide the preview. */

@@ -75,6 +75,14 @@ export const DEFAULT_STYLE_TEMPLATES: DefaultTemplateDefinition[] = [
       allowSwearing: true,
       sentenceVariation: "high",
       allowUselessDetails: true,
+      // 口语粗粝语体天然带口头语、语气词和更随意的标点，放宽口语噪音类阈值，避免把风格当违规。
+      signalCalibration: {
+        clusterCount: 4,
+        punctuationCount: 6,
+        fillerCount: 3,
+        transitionRepeatCount: 3,
+        dialogueTagRatio: 0.6,
+      },
       summary: "语言粗粝、口语化，允许生活杂音。",
     },
     rhythmRules: {
@@ -123,6 +131,11 @@ export const DEFAULT_STYLE_TEMPLATES: DefaultTemplateDefinition[] = [
       allowSwearing: false,
       sentenceVariation: "medium",
       allowUselessDetails: false,
+      // 爽文追求短句和直接因果，收紧长句与逗号密度阈值，尽早提示拖沓。
+      signalCalibration: {
+        commaCount: 3,
+        longSentenceCharacters: 64,
+      },
       summary: "句式清晰，减少无效分散信息。",
     },
     rhythmRules: {
@@ -169,6 +182,11 @@ export const DEFAULT_STYLE_TEMPLATES: DefaultTemplateDefinition[] = [
       allowSwearing: false,
       sentenceVariation: "medium_high",
       allowUselessDetails: true,
+      // 悬疑克制语体少用语气装饰和对话标签，收紧标点与对话标签阈值。
+      signalCalibration: {
+        punctuationCount: 3,
+        dialogueTagRatio: 0.4,
+      },
       summary: "细节精确，保留少量噪音增强现场感。",
     },
     rhythmRules: {
@@ -216,6 +234,11 @@ export const DEFAULT_STYLE_TEMPLATES: DefaultTemplateDefinition[] = [
       allowSwearing: false,
       sentenceVariation: "high",
       allowUselessDetails: true,
+      // 情感流依赖留白和停顿，放宽标点与同词簇阈值，不把停顿感当密集修饰。
+      signalCalibration: {
+        clusterCount: 4,
+        punctuationCount: 5,
+      },
       summary: "语言自然，允许留白与停顿。",
     },
     rhythmRules: {
@@ -264,6 +287,11 @@ export const DEFAULT_STYLE_TEMPLATES: DefaultTemplateDefinition[] = [
       allowSwearing: false,
       sentenceVariation: "high",
       allowUselessDetails: false,
+      // 群像多线交织，句式与情绪本就参差，放宽同词簇与标点阈值。
+      signalCalibration: {
+        clusterCount: 4,
+        punctuationCount: 5,
+      },
       summary: "保持角色差异，避免所有人说话一样。",
     },
     rhythmRules: {
@@ -310,6 +338,12 @@ export const DEFAULT_STYLE_TEMPLATES: DefaultTemplateDefinition[] = [
       allowSwearing: false,
       sentenceVariation: "medium_high",
       allowUselessDetails: true,
+      // 日常浸没语体保留生活杂音和口头语，放宽口语噪音类阈值。
+      signalCalibration: {
+        clusterCount: 4,
+        punctuationCount: 6,
+        fillerCount: 3,
+      },
       summary: "保留生活细节和杂音，不追求工整。",
     },
     rhythmRules: {
@@ -356,6 +390,11 @@ export const DEFAULT_STYLE_TEMPLATES: DefaultTemplateDefinition[] = [
       allowSwearing: false,
       sentenceVariation: "medium",
       allowUselessDetails: false,
+      // 冷峻专业语体信息密度高、装饰少，收紧标点与对话标签阈值。
+      signalCalibration: {
+        punctuationCount: 3,
+        dialogueTagRatio: 0.35,
+      },
       summary: "术语和事实优先，避免廉价金句。",
     },
     rhythmRules: {
@@ -402,6 +441,12 @@ export const DEFAULT_STYLE_TEMPLATES: DefaultTemplateDefinition[] = [
       allowSwearing: true,
       sentenceVariation: "high",
       allowUselessDetails: true,
+      // 黑色幽默依赖冷感口语与杂质，放宽口语噪音类阈值。
+      signalCalibration: {
+        clusterCount: 4,
+        punctuationCount: 6,
+        fillerCount: 3,
+      },
       summary: "允许夹带荒诞杂质和冷幽默节奏。",
     },
     rhythmRules: {

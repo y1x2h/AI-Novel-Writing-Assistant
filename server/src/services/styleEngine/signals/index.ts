@@ -117,3 +117,5 @@ export function scanStyleSignals(content: string, policy: StyleSignalPolicy): St
   return { policy: effective, sourceContentHash: createHash("sha256").update(text).digest("hex"),
     coordinateSystem: "utf16-crlf-normalized", findings };
 }
+
+export { StyleSignalPolicyResolver } from "./StyleSignalPolicyResolver";

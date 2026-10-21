@@ -9,6 +9,7 @@ function fixture() {
     (path, ...handlers) => routes.set(`${method}:${path}`, handlers)]));
   const imports = {
     express: { Router: () => router }, zod: require('zod'),
+    '@ai-novel/shared/types/styleEngine': require('../../../shared/dist/types/styleEngine.js'),
     '../llm/providerSchema': { llmProviderSchema: require('zod').z.enum(['deepseek']) },
     '../middleware/auth': { authMiddleware: () => {} },
     '../middleware/validate': { validate: ({ body }) => (req) => { req.body = body.parse(req.body); } },
@@ -19,6 +20,12 @@ function fixture() {
     imports[`../services/styleEngine/${name}`] = { [name]: class {
       async check(input) { requests.push(input); return { violations: [] }; }
       async rewrite(input) { requests.push(input); return { content: input.content, report: { violations: [] } }; }
+    } };
+  }
+  for (const name of ['fragments/StyleFragmentRuleService', 'ledger/StyleRewriteLedgerService']) {
+    imports[`../services/styleEngine/${name}`] = { [name.split('/').pop()]: class {
+      async list() { return []; }
+      async record() {}
     } };
   }
   loadRuntimeSource('../../../routes/styleEngine.ts', imports);
