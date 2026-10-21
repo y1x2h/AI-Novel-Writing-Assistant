@@ -1279,6 +1279,242 @@ test("runPipelineChapterWithRuntime defaults to a single repair pass before stop
   }
 });
 
+test("runPipelineChapterWithRuntime 熔断：同一批 code 已记录为未解决时不再发起自动修复", async () => {
+  const originalRunStructuredPrompt = promptRunner.runStructuredPrompt;
+  const stages = [];
+  const consumedRetries = [];
+  const recordedCodes = [];
+  let repeatedChecks = 0;
+  let reviewCount = 0;
+
+  // 熔断命中时不应发起任何修复调用。
+  promptRunner.runStructuredPrompt = async () => {
+    throw new Error("熔断命中时不应发起修复调用");
+  };
+
+  try {
+    const result = await runPipelineChapterWithRuntime(
+      {
+        validateRequest(input) {
+          return input;
+        },
+        async ensureNovelCharacters() {},
+        async assemble() {
+          return {
+            novel: { id: "novel-1", title: "测试小说" },
+            chapter: {
+              id: "chapter-1",
+              title: "第一章",
+              order: 1,
+              content: null,
+              expectation: null,
+            },
+            contextPackage: {},
+          };
+        },
+        async generateDraftFromWriter() {
+          return { content: "生成后的正文" };
+        },
+        async saveDraftAndArtifacts() {},
+        async syncFinalChapterArtifacts(_novelId, _chapterId, content) {
+          return completedArtifactSync(content);
+        },
+        async finalizeChapterContent() {
+          reviewCount += 1;
+          return { finalContent: "初审正文需要承接。", runtimePackage: createRuntimePackage(72) };
+        },
+        async finalizeChapterTimeline() {},
+        async commitFinalizedChapterContent() {},
+        async markChapterGenerationState() {},
+        async markChapterNeedsRepair() {},
+        repairCircuitBreaker: {
+          async hasUnresolvedRepeated(_novelId, _chapterId, codes) {
+            repeatedChecks += 1;
+            return codes.includes("CONTINUITY_GAP");
+          },
+          async recordUnresolved(_novelId, _chapterId, codes) {
+            recordedCodes.push(codes);
+          },
+        },
+      },
+      "novel-1",
+      "chapter-1",
+      {
+        autoReview: true,
+        autoRepair: true,
+      },
+      {
+        async onStageChange(stage) {
+          stages.push(stage);
+        },
+        async onRetryConsumed(kind) {
+          consumedRetries.push(kind);
+        },
+      },
+    );
+
+    assert.equal(repeatedChecks, 1);
+    assert.equal(reviewCount, 1);
+    assert.deepEqual(stages, ["generating_chapters", "reviewing"]);
+    assert.deepEqual(consumedRetries, []);
+    assert.equal(result.retryCountUsed, 0);
+    assert.equal(result.pass, false);
+    assert.deepEqual(recordedCodes, []);
+    assert.deepEqual(result.qualityDebtAttribution.repeatedUnresolvedCodes, ["CONTINUITY_GAP"]);
+  } finally {
+    promptRunner.runStructuredPrompt = originalRunStructuredPrompt;
+  }
+});
+
+test("runPipelineChapterWithRuntime 记录本轮未解决 code 以支持下一轮熔断", async () => {
+  const originalRunStructuredPrompt = promptRunner.runStructuredPrompt;
+  const recordedCodes = [];
+  let repeatedChecks = 0;
+  let reviewCount = 0;
+
+  promptRunner.runStructuredPrompt = async () => ({
+    output: {
+      strategy: "patch_first",
+      summary: "补足承接。",
+      patches: [{
+        id: "patch-1",
+        targetExcerpt: "初审正文需要承接。",
+        replacement: "修后正文补足承接。",
+        reason: "补足承接。",
+        issueIds: [],
+      }],
+      requiresFullRewrite: false,
+      escalationReason: null,
+    },
+  });
+
+  try {
+    const result = await runPipelineChapterWithRuntime(
+      {
+        validateRequest(input) {
+          return input;
+        },
+        async ensureNovelCharacters() {},
+        async assemble() {
+          return {
+            novel: { id: "novel-1", title: "测试小说" },
+            chapter: {
+              id: "chapter-1",
+              title: "第一章",
+              order: 1,
+              content: null,
+              expectation: null,
+            },
+            contextPackage: {},
+          };
+        },
+        async generateDraftFromWriter() {
+          return { content: "生成后的正文" };
+        },
+        async saveDraftAndArtifacts() {},
+        async syncFinalChapterArtifacts(_novelId, _chapterId, content) {
+          return completedArtifactSync(content);
+        },
+        async finalizeChapterContent() {
+          reviewCount += 1;
+          return {
+            finalContent: reviewCount === 1 ? "初审正文需要承接。" : "修后复审正文",
+            runtimePackage: createRuntimePackage(reviewCount === 1 ? 72 : 73),
+          };
+        },
+        async finalizeChapterTimeline() {},
+        async commitFinalizedChapterContent() {},
+        async markChapterGenerationState() {},
+        async markChapterNeedsRepair() {},
+        repairCircuitBreaker: {
+          async hasUnresolvedRepeated() {
+            repeatedChecks += 1;
+            return false;
+          },
+          async recordUnresolved(_novelId, _chapterId, codes) {
+            recordedCodes.push(codes);
+          },
+        },
+      },
+      "novel-1",
+      "chapter-1",
+      {
+        autoReview: true,
+        autoRepair: true,
+      },
+      {},
+    );
+
+    assert.equal(repeatedChecks, 1);
+    assert.equal(reviewCount, 2);
+    assert.equal(result.retryCountUsed, 1);
+    assert.deepEqual(recordedCodes, [["CONTINUITY_GAP"]]);
+  } finally {
+    promptRunner.runStructuredPrompt = originalRunStructuredPrompt;
+  }
+});
+
+test("runPipelineChapterWithRuntime 章节通过后清除熔断记录", async () => {
+  const recordedCodes = [];
+  let repeatedChecks = 0;
+
+  const result = await runPipelineChapterWithRuntime(
+    {
+      validateRequest(input) {
+        return input;
+      },
+      async ensureNovelCharacters() {},
+      async assemble() {
+        return {
+          novel: { id: "novel-1", title: "测试小说" },
+          chapter: {
+            id: "chapter-1",
+            title: "第一章",
+            order: 1,
+            content: null,
+            expectation: null,
+          },
+          contextPackage: {},
+        };
+      },
+      async generateDraftFromWriter() {
+        return { content: "生成后的正文" };
+      },
+      async saveDraftAndArtifacts() {},
+      async syncFinalChapterArtifacts(_novelId, _chapterId, content) {
+        return completedArtifactSync(content);
+      },
+      async finalizeChapterContent() {
+        return { finalContent: "生成后的正文", runtimePackage: createRuntimePackage(80) };
+      },
+      async finalizeChapterTimeline() {},
+      async commitFinalizedChapterContent() {},
+      async markChapterGenerationState() {},
+      async markChapterNeedsRepair() {},
+      repairCircuitBreaker: {
+        async hasUnresolvedRepeated() {
+          repeatedChecks += 1;
+          return true;
+        },
+        async recordUnresolved(_novelId, _chapterId, codes) {
+          recordedCodes.push(codes);
+        },
+      },
+    },
+    "novel-1",
+    "chapter-1",
+    {
+      autoReview: true,
+      autoRepair: true,
+    },
+    {},
+  );
+
+  assert.equal(result.pass, true);
+  assert.equal(repeatedChecks, 0);
+  assert.deepEqual(recordedCodes, [[]]);
+});
+
 test("runPipelineChapterWithRuntime clamps maxRetries to a single repair pass", async () => {
   const originalRunStructuredPrompt = promptRunner.runStructuredPrompt;
   const stages = [];

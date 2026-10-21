@@ -19,6 +19,7 @@ import {
 } from "./chapterEmptyContentError";
 import { runChapterRepairText } from "./repair/chapterRepairRuntime";
 import { shouldAttemptAutomaticRepair } from "./repair/ChapterRepairEligibility";
+import type { ChapterRepairCircuitBreaker } from "./repair/ChapterRepairCircuitBreaker";
 import { detectNewSevereProseFindings } from "./proseQuality";
 import { ChapterPatchRepairFailedError } from "../chapterPatchRepairService";
 import {
@@ -86,6 +87,8 @@ export interface QualityDebtAttribution {
   lengthVsContentDrift: boolean;
   /** 首次失败缺失的义务种类（来自 obligationCoverage.missing[].kind） */
   missingObligationKinds: string[];
+  /** 触发熔断的 code 集合：与上一轮未解决记录完全一致，说明自动修复已证明修不动这批问题。 */
+  repeatedUnresolvedCodes: string[];
 }
 
 export interface PipelineRuntimeResult {
@@ -185,6 +188,8 @@ interface RunPipelineChapterDeps {
     generationState: "reviewed" | "approved",
   ) => Promise<void>;
   markChapterNeedsRepair: (chapterId: string) => Promise<void>;
+  /** 可选：章节级修复熔断记录。未提供时不做跨轮次熔断，保持旧调用与测试行为。 */
+  repairCircuitBreaker?: ChapterRepairCircuitBreaker;
 }
 
 const QUALITY_THRESHOLD = { coherence: 80, repetition: 75, engagement: 75 };
@@ -192,6 +197,16 @@ const QUALITY_THRESHOLD = { coherence: 80, repetition: 75, engagement: 75 };
 // writer attempt at zero avoids stacking a hidden empty-content retry on top.
 const EMPTY_CONTENT_GENERATION_RETRY_LIMIT = 0;
 const NON_PATCHABLE_REVIEW_ISSUE_CODES = new Set(["acceptance_gate_unavailable", "style_review_unavailable"]);
+
+/** 不可补丁化的 code 只作为风险标签与债务提示，不参与修复输入、blocking 判定与熔断签名。 */
+function isPatchableReviewIssueCode(code: unknown): boolean {
+  return typeof code === "string" && !NON_PATCHABLE_REVIEW_ISSUE_CODES.has(code);
+}
+
+/** 归一化 issue code 集合：去空、去重、排序，用于跨轮次比对与归因。 */
+function normalizeIssueCodes(codes: string[]): string[] {
+  return [...new Set(codes.map((code) => code.trim()).filter((code) => code.length > 0))].sort();
+}
 
 const AUDIT_CATEGORY_MAP: Record<"continuity" | "character" | "plot" | "mode_fit", ReviewIssue["category"]> = {
   continuity: "coherence",
@@ -251,6 +266,8 @@ export async function runPipelineChapterWithRuntime(
   let firstFailureClassificationCode: string | null = null;
   let firstMissingObligationKinds: string[] = [];
   let secondFailureIssueCodes: string[] = [];
+  /** 熔断触发时的未解决 code 集合；为空表示未触发熔断。 */
+  let repeatedUnresolvedCodes: string[] = [];
 
   for (let attempt = 0; attempt <= effectiveMaxRetries; attempt += 1) {
     await hooks.onCheckCancelled?.();
@@ -428,6 +445,15 @@ export async function runPipelineChapterWithRuntime(
       break;
     }
 
+    // 熔断：同一批 code 已经修过一次仍未解决时不再重复消耗修复额度，直接按章节级
+    // 质量债收尾（保留原稿），不升级为全局失败或重规划。
+    const unresolvedCodes = normalizeIssueCodes(firstFailureIssueCodes);
+    if (await hasRepeatedUnresolvedCodes(deps, novelId, chapterId, unresolvedCodes)) {
+      repeatedUnresolvedCodes = unresolvedCodes;
+      break;
+    }
+    await recordUnresolvedRepairCodes(deps, novelId, chapterId, unresolvedCodes);
+
     await hooks.onStageChange?.("repairing");
     await hooks.onCheckCancelled?.();
     await hooks.onCheckBudget?.(DIRECTOR_CHAPTER_PREFLIGHT_RESERVE_TOKENS, "repair");
@@ -484,6 +510,10 @@ export async function runPipelineChapterWithRuntime(
     evaluation: latestResult,
     assertExecutionOwnership: hooks.onCheckCancelled,
   });
+  // 章节通过后清除熔断记录，避免下一轮误判为"反复未解决"。
+  if (pass) {
+    await recordUnresolvedRepairCodes(deps, novelId, chapterId, []);
+  }
   // 章节未通过时构建归因对象
   const qualityDebtAttribution: QualityDebtAttribution | null = !pass
     ? buildQualityDebtAttribution({
@@ -493,6 +523,7 @@ export async function runPipelineChapterWithRuntime(
         secondFailureIssueCodes,
         firstFailureClassificationCode,
         firstMissingObligationKinds,
+        repeatedUnresolvedCodes,
       })
     : null;
 
@@ -638,7 +669,8 @@ function isQualityPass(score: QualityScore, qualityThreshold: number): boolean {
 }
 
 function toReviewIssues(runtimePackage: ChapterRuntimePackage): ReviewIssue[] {
-  const issues = runtimePackage.audit.openIssues.map((issue) => ({
+  const patchableOpenIssues = runtimePackage.audit.openIssues.filter((issue) => isPatchableReviewIssueCode(issue.code));
+  const issues = patchableOpenIssues.map((issue) => ({
     severity: issue.severity,
     category: AUDIT_CATEGORY_MAP[issue.auditType],
     evidence: issue.evidence,
@@ -646,12 +678,14 @@ function toReviewIssues(runtimePackage: ChapterRuntimePackage): ReviewIssue[] {
   }));
   return issues.length > 0
     ? issues
-    : runtimePackage.audit.reports.flatMap((report) => report.issues.map((issue) => ({
-      severity: issue.severity,
-      category: AUDIT_CATEGORY_MAP[report.auditType],
-      evidence: issue.evidence,
-      fixSuggestion: issue.fixSuggestion,
-    })));
+    : runtimePackage.audit.reports.flatMap((report) => report.issues
+      .filter((issue) => isPatchableReviewIssueCode(issue.code))
+      .map((issue) => ({
+        severity: issue.severity,
+        category: AUDIT_CATEGORY_MAP[report.auditType],
+        evidence: issue.evidence,
+        fixSuggestion: issue.fixSuggestion,
+      })));
 }
 
 function toAcceptanceDirectiveIssues(runtimePackage: ChapterRuntimePackage): ReviewIssue[] {
@@ -753,16 +787,59 @@ function shouldDeferNonPatchableReviewRisk(
   runtimePackage: ChapterRuntimePackage,
 ): boolean {
   const openIssues = runtimePackage.audit.openIssues ?? [];
-  return openIssues.length > 0
-    && openIssues.every((issue) => typeof issue.code === "string"
-      && NON_PATCHABLE_REVIEW_ISSUE_CODES.has(issue.code));
+  if (openIssues.length === 0) {
+    return false;
+  }
+  const repairableIssues = openIssues.filter((issue) => isPatchableReviewIssueCode(issue.code));
+  if (repairableIssues.length > 0) {
+    return false;
+  }
+  // 过滤掉不可补丁化的问题后没有剩余可修复问题；若同时没有可执行的补丁指令，
+  // 就不该继续消耗修复额度。
+  const patchableDirectives = (runtimePackage.meta?.repairDirectives ?? [])
+    .filter((directive) => directive.mode === "patch");
+  return patchableDirectives.length === 0;
 }
 
-/** 从 runtimePackage 提取 openIssues 的 code 列表（过滤空值） */
+/** 从 runtimePackage 提取可修复的 openIssues code 列表（过滤空值与不可补丁化 code） */
 function extractIssueCodes(runtimePackage: ChapterRuntimePackage): string[] {
   return (runtimePackage.audit.openIssues ?? [])
     .map((issue) => issue.code)
-    .filter((code): code is string => typeof code === "string" && code.trim().length > 0);
+    .filter((code): code is string => isPatchableReviewIssueCode(code) && code.trim().length > 0);
+}
+
+/**
+ * 熔断判定：本批未解决 code 是否与上一轮未解决记录完全一致。
+ * 记录读取失败按"没有记录"处理，不阻塞章节生产。
+ */
+async function hasRepeatedUnresolvedCodes(
+  deps: RunPipelineChapterDeps,
+  novelId: string,
+  chapterId: string,
+  codes: string[],
+): Promise<boolean> {
+  if (!deps.repairCircuitBreaker || codes.length === 0) {
+    return false;
+  }
+  try {
+    return await deps.repairCircuitBreaker.hasUnresolvedRepeated(novelId, chapterId, codes);
+  } catch {
+    return false;
+  }
+}
+
+/** 记录本轮未解决 code；传空数组表示章节已通过、清除记录。记录失败不阻塞章节生产。 */
+async function recordUnresolvedRepairCodes(
+  deps: RunPipelineChapterDeps,
+  novelId: string,
+  chapterId: string,
+  codes: string[],
+): Promise<void> {
+  try {
+    await deps.repairCircuitBreaker?.recordUnresolved(novelId, chapterId, codes);
+  } catch {
+    // 忽略熔断记录写入失败。
+  }
 }
 
 const LENGTH_ISSUE_CODE_PREFIXES = ["LENGTH_", "length_"];
@@ -779,6 +856,7 @@ function buildQualityDebtAttribution(input: {
   secondFailureIssueCodes: string[];
   firstFailureClassificationCode: string | null;
   firstMissingObligationKinds: string[];
+  repeatedUnresolvedCodes: string[];
 }): QualityDebtAttribution {
   const {
     repairAttemptsUsed,
@@ -787,6 +865,7 @@ function buildQualityDebtAttribution(input: {
     secondFailureIssueCodes,
     firstFailureClassificationCode,
     firstMissingObligationKinds,
+    repeatedUnresolvedCodes,
   } = input;
 
   // 根因 A：首次和二次 codes 完全一致（修复未解决义务问题）
@@ -819,6 +898,7 @@ function buildQualityDebtAttribution(input: {
     planMisaligned,
     lengthVsContentDrift,
     missingObligationKinds: firstMissingObligationKinds,
+    repeatedUnresolvedCodes,
   };
 }
 
