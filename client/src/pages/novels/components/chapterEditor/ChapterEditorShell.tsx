@@ -21,7 +21,7 @@ import {
   type ChapterQualityDebtDetails,
 } from "@ai-novel/shared/types/chapterQualityLoop";
 import { AlertTriangle, Loader2 } from "lucide-react";
-import { createNovelSnapshot, previewChapterAiRevision, previewChapterCursorContinuation, previewChapterSceneDirected, resolveChapterAuditIssue, reviewNovelChapter, updateNovelChapter } from "@/api/novel";
+import { createNovelSnapshot, markChapterDiagnosticHandled, previewChapterAiRevision, previewChapterCursorContinuation, previewChapterSceneDirected, resolveChapterAuditIssue, reviewNovelChapter, updateNovelChapter } from "@/api/novel";
 import { queryKeys } from "@/api/queryKeys";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
@@ -299,13 +299,28 @@ export default function ChapterEditorShell(props: ChapterEditorShellProps) {
     mutationFn: async (issueId: string) => resolveChapterAuditIssue(novelId, issueId),
     onSuccess: async (_response, issueId) => {
       if (chapter) {
+        const workspaceKey = queryKeys.novels.chapterEditorWorkspace(novelId, chapter.id);
+        const card = queryClient
+          .getQueryData<ApiResponse<ChapterEditorWorkspaceResponse>>(workspaceKey)
+          ?.data?.diagnosticCards.find((item) => item.sourceIssueId === issueId);
         queryClient.setQueryData<ApiResponse<ChapterEditorWorkspaceResponse>>(
-          queryKeys.novels.chapterEditorWorkspace(novelId, chapter.id),
+          workspaceKey,
           (cached) => {
-            const card = cached?.data?.diagnosticCards.find((item) => item.sourceIssueId === issueId);
-            return cached?.data && card ? { ...cached, data: removeCompletedDiagnostic(cached.data, card) } : cached;
+            const cachedCard = cached?.data?.diagnosticCards.find((item) => item.sourceIssueId === issueId);
+            return cached?.data && cachedCard ? { ...cached, data: removeCompletedDiagnostic(cached.data, cachedCard) } : cached;
           },
         );
+        // 熔断：手动确认处理完成的问题同样记录，避免下次分析再次报出。
+        if (card) {
+          try {
+            await markChapterDiagnosticHandled(novelId, chapter.id, {
+              title: card.title,
+              problemSummary: card.problemSummary,
+            });
+          } catch (error) {
+            console.warn("Failed to record handled diagnostic.", error);
+          }
+        }
       }
       setSelectedDiagnosticId(null);
       await invalidateChapterQueries();
@@ -516,6 +531,18 @@ export default function ChapterEditorShell(props: ChapterEditorShellProps) {
         } catch {
           completedCard = undefined;
           toast.error("正文已保存，但问题状态更新失败。请在问题卡中确认已处理。");
+        }
+      }
+      // 熔断：卡片随正文保存完成处理后上报，同一问题下次分析不再重复出现。
+      // 上报失败不影响已保存的正文，只意味着该问题可能还会被再次提示。
+      if (completedCard && chapter) {
+        try {
+          await markChapterDiagnosticHandled(novelId, chapter.id, {
+            title: completedCard.title,
+            problemSummary: completedCard.problemSummary,
+          });
+        } catch (error) {
+          console.warn("Failed to record handled diagnostic.", error);
         }
       }
       if (chapter && session.targetRange) {

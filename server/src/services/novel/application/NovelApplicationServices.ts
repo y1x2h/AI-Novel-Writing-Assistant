@@ -475,6 +475,10 @@ export class DefaultNovelApplicationServices {
     return this.chapterEditorWorkspaceService.getWorkspace(...args);
   }
 
+  markChapterDiagnosticHandled(...args: Parameters<ChapterEditorWorkspaceService["markDiagnosticHandled"]>) {
+    return this.chapterEditorWorkspaceService.markDiagnosticHandled(...args);
+  }
+
   getNovelState(...args: Parameters<NovelCoreService["getNovelState"]>) {
     return this.core.getNovelState(...args);
   }

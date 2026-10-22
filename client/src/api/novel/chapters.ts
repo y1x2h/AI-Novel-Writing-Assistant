@@ -161,6 +161,19 @@ export async function resolveChapterAuditIssue(novelId: string, issueId: string)
   return data;
 }
 
+/** 上报「这张诊断卡已完整处理」，同一问题之后不再重复出现在诊断列表。 */
+export async function markChapterDiagnosticHandled(
+  novelId: string,
+  chapterId: string,
+  payload: { title: string; problemSummary?: string },
+) {
+  const { data } = await apiClient.post<ApiResponse<{ recorded: boolean }>>(
+    `/novels/${novelId}/chapters/${chapterId}/editor/diagnostics/handled`,
+    payload,
+  );
+  return data;
+}
+
 export async function generateChapterExecutionContract(
   novelId: string,
   chapterId: string,

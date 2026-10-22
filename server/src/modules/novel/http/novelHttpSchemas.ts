@@ -521,6 +521,11 @@ export const sceneDirectedPreviewSchema = z.object({
   temperature: z.number().min(0).max(2).optional(),
 });
 
+export const chapterDiagnosticHandledSchema = z.object({
+  title: z.string().trim().min(1).max(200),
+  problemSummary: z.string().trim().max(1000).optional(),
+});
+
 export const aiRevisionPreviewSchema = z.object({
   source: z.enum(["preset", "freeform"]),
   scope: z.enum(["selection", "chapter"]),

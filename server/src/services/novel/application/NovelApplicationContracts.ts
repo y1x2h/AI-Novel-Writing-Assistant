@@ -73,6 +73,7 @@ export interface NovelApplicationServices {
   previewChapterSceneDirected: NovelApplicationMethod;
   previewChapterCursorContinuation: NovelApplicationMethod;
   getChapterEditorWorkspace: NovelApplicationMethod;
+  markChapterDiagnosticHandled: NovelApplicationMethod;
   getNovelState: NovelApplicationMethod;
   getLatestStateSnapshot: NovelApplicationMethod;
   getNovelCharacterStates: NovelApplicationMethod;
@@ -194,6 +195,7 @@ export const novelApplicationServiceMethodNames = [
   "previewChapterSceneDirected",
   "previewChapterCursorContinuation",
   "getChapterEditorWorkspace",
+  "markChapterDiagnosticHandled",
   "getNovelState",
   "getLatestStateSnapshot",
   "getNovelCharacterStates",

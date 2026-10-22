@@ -11,6 +11,13 @@ import type {
   VolumeChapterPlan,
   VolumePlan,
 } from "@ai-novel/shared/types/novel";
+import {
+  CHAPTER_EDITOR_HANDLED_DIAGNOSTICS_PROMPT_LIMIT,
+  appendChapterEditorHandledDiagnostic,
+  isChapterEditorDiagnosticHandled,
+  readChapterEditorHandledDiagnostics,
+} from "@ai-novel/shared/types/chapterEditorDiagnostics";
+import { prisma } from "../../../db/prisma";
 import { runStructuredPrompt } from "../../../prompting/core/promptRunner";
 import {
   chapterEditorWorkspaceDiagnosisPrompt,
@@ -324,6 +331,9 @@ export class ChapterEditorWorkspaceService {
     }
 
     try {
+      // 熔断：本章此前已完整处理过的诊断问题，既作为上下文告诉诊断 AI 不要重复报告，
+      // 也在投影层把措辞漂移后再次出现的同名卡片过滤掉。
+      const handledDiagnostics = readChapterEditorHandledDiagnostics(context.chapter.riskFlags);
       const result = await this.promptRunner({
         asset: chapterEditorWorkspaceDiagnosisPrompt,
         promptInput: {
@@ -347,6 +357,13 @@ export class ChapterEditorWorkspaceService {
             evidence: trimPromptText(issue.evidence, 180),
             fixSuggestion: trimPromptText(issue.fixSuggestion, 180),
           })),
+          handledIssues: handledDiagnostics
+            .slice(-CHAPTER_EDITOR_HANDLED_DIAGNOSTICS_PROMPT_LIMIT)
+            .map((record) => ({
+              title: record.title,
+              problemSummary: record.problemSummary ?? "",
+              handledAt: record.handledAt,
+            })),
         } satisfies ChapterEditorWorkspaceDiagnosisPromptInput,
         options: {
           provider: "deepseek",
@@ -355,8 +372,14 @@ export class ChapterEditorWorkspaceService {
       });
 
       const sourceIssueIds = new Set(context.openAuditIssues.map((issue) => issue.id));
-      const diagnosticCards = result.output.cards.map((card) => mapDiagnosticCard(card, context.paragraphs, sourceIssueIds));
-      const recommendedTask = mapRecommendedTask(result.output.recommendedTask, diagnosticCards, context.paragraphs);
+      const allCards = result.output.cards.map((card) => mapDiagnosticCard(card, context.paragraphs, sourceIssueIds));
+      const diagnosticCards = allCards.filter((card) => !isChapterEditorDiagnosticHandled(card.title, handledDiagnostics));
+      const suppressedCount = allCards.length - diagnosticCards.length;
+      const recommendedTaskInput = result.output.recommendedTask
+        && !isChapterEditorDiagnosticHandled(result.output.recommendedTask.title, handledDiagnostics)
+        ? result.output.recommendedTask
+        : undefined;
+      const recommendedTask = mapRecommendedTask(recommendedTaskInput, diagnosticCards, context.paragraphs);
 
       return {
         chapterMeta: {
@@ -371,7 +394,9 @@ export class ChapterEditorWorkspaceService {
         macroContext: context.macroContext,
         diagnosticCards,
         recommendedTask,
-        refreshReason: "已基于本章内容、卷内定位与开放问题实时生成修文建议。",
+        refreshReason: suppressedCount > 0
+          ? `已基于本章内容、卷内定位与开放问题实时生成修文建议；另有 ${suppressedCount} 个此前已处理的问题未再重复提示。`
+          : "已基于本章内容、卷内定位与开放问题实时生成修文建议。",
       };
     } catch (error) {
       console.warn("Failed to generate chapter editor workspace diagnosis.", error);
@@ -391,5 +416,29 @@ export class ChapterEditorWorkspaceService {
         refreshReason: "AI 暂未完成本章诊断，你仍可先手动定位片段或直接告诉 AI 怎么改。",
       };
     }
+  }
+
+  /**
+   * 记录「这张诊断卡已被作者完整处理」。之后同一标题指纹的问题不再重复出现在诊断列表里。
+   * 记录在 chapter.riskFlags.editorHandledDiagnostics，与质量债共用同一持久化载体，无需迁移。
+   */
+  async markDiagnosticHandled(
+    novelId: string,
+    chapterId: string,
+    input: { title: string; problemSummary?: string | null },
+  ): Promise<{ recorded: boolean }> {
+    const chapter = await prisma.chapter.findFirst({
+      where: { id: chapterId, novelId },
+      select: { id: true, riskFlags: true },
+    });
+    if (!chapter) {
+      throw new Error("章节不存在。");
+    }
+    const nextRiskFlags = appendChapterEditorHandledDiagnostic(chapter.riskFlags, input);
+    if (!nextRiskFlags) {
+      return { recorded: false };
+    }
+    await prisma.chapter.update({ where: { id: chapter.id }, data: { riskFlags: nextRiskFlags } });
+    return { recorded: true };
   }
 }

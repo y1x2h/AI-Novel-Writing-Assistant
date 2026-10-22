@@ -326,7 +326,7 @@ test('partial diagnostic acceptance keeps the card pending',async()=>{
 test('accepting a sourced diagnostic resolves only its real audit issue after saving prose',async()=>{
   const result=await run('diagnostic-issue');
   assert.deepEqual(result.requests.filter(row=>row.method!=='get').map(row=>row.url),[
-    '/novels/book/chapters/c1/editor/ai-revision-preview','/novels/book/snapshots','/novels/book/chapters/c1','/novels/book/audit-issues/audit-1/resolve']);
+    '/novels/book/chapters/c1/editor/ai-revision-preview','/novels/book/snapshots','/novels/book/chapters/c1','/novels/book/audit-issues/audit-1/resolve','/novels/book/chapters/c1/editor/diagnostics/handled']);
   assert.equal(result.workspace.chapterMeta.openIssueCount,0);
   assert.deepEqual(result.workspace.diagnosticCards.map(row=>row.id),['problem-2']);
 });
