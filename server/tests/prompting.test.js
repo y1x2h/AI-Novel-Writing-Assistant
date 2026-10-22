@@ -562,7 +562,7 @@ test("volume skeleton prompt protects compact and long-form volume structures", 
 });
 
 test("workspace diagnosis prompt requires english recommendedAction enum values", () => {
-  const asset = getRegisteredPromptAsset("novel.chapter_editor.workspace_diagnosis", "v2");
+  const asset = getRegisteredPromptAsset("novel.chapter_editor.workspace_diagnosis", "v3");
   assert.ok(asset);
 
   const messages = asset.render({

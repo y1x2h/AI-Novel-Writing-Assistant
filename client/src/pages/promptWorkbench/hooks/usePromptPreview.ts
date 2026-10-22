@@ -171,6 +171,7 @@ function buildPreviewPromptInput(
       activePlotThreads: ["追踪档案站"],
       paragraphs: [{ index: 1, text: "主角走进旧仓库。" }],
       openIssues: [],
+      handledIssues: [],
     };
   }
 

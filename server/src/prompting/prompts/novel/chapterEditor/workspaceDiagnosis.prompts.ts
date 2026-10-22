@@ -27,6 +27,11 @@ export interface ChapterEditorWorkspaceDiagnosisPromptInput {
     evidence: string;
     fixSuggestion: string;
   }>;
+  handledIssues: Array<{
+    title: string;
+    problemSummary: string;
+    handledAt: string;
+  }>;
 }
 
 function renderList(title: string, rows: string[]): string {
@@ -38,7 +43,7 @@ export const chapterEditorWorkspaceDiagnosisPrompt: PromptAsset<
   ChapterEditorWorkspaceDiagnosisParsed
 > = {
   id: "novel.chapter_editor.workspace_diagnosis",
-  version: "v2",
+  version: "v3",
   taskType: "writer",
   mode: "structured",
   language: "zh",
@@ -73,6 +78,7 @@ export const chapterEditorWorkspaceDiagnosisPrompt: PromptAsset<
       "5. 如果问题卡直接对应【开放问题】中的某一条，sourceIssueId 必须填写该条问题的 id；如果只是新的写作建议则留空。",
       "6. 不要输出 schema 之外的任何解释。",
       "7. 不要输出中文动作词本身；只能输出对应的英文枚举值。",
+      "8. 【已处理过的问题】中列出的问题作者已经处理完毕，除非当前段落摘录里有明确证据表明同一问题重新出现（例如作者把原文改回去了），否则不要再为它们生成问题卡。",
       "",
       "推荐逻辑：",
       "1. 如果存在明显的节奏、冲突、情绪或承接问题，优先选择这类问题。",
@@ -96,6 +102,11 @@ export const chapterEditorWorkspaceDiagnosisPrompt: PromptAsset<
       renderList(
         "【开放问题】",
         input.openIssues.map((issue, index) => `- ${index + 1}. id=${issue.id} [${issue.severity}/${issue.auditType}/${issue.code}] ${issue.evidence}；建议：${issue.fixSuggestion}`),
+      ),
+      "",
+      renderList(
+        "【已处理过的问题】",
+        (input.handledIssues ?? []).map((issue, index) => `- ${index + 1}. ${issue.title}${issue.problemSummary ? `（当时的问题：${issue.problemSummary}）` : ""}`),
       ),
       "",
       renderList(

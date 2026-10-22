@@ -9,12 +9,14 @@ interface RegisterNovelChapterEditorRoutesInput {
   router: Router;
   novelService: Pick<NovelApplicationServices,
     | "getChapterEditorWorkspace"
+    | "markChapterDiagnosticHandled"
     | "previewChapterAiRevision"
     | "previewChapterCursorContinuation"
     | "previewChapterRewrite"
     | "previewChapterSceneDirected"
   >;
   chapterParamsSchema: z.ZodType<{ id: string; chapterId: string }>;
+  chapterDiagnosticHandledSchema: z.ZodTypeAny;
   rewritePreviewSchema: z.ZodTypeAny;
   aiRevisionPreviewSchema: z.ZodTypeAny;
   sceneDirectedPreviewSchema: z.ZodTypeAny;
@@ -27,6 +29,7 @@ export function registerNovelChapterEditorRoutes(input: RegisterNovelChapterEdit
     router,
     novelService,
     chapterParamsSchema,
+    chapterDiagnosticHandledSchema,
     rewritePreviewSchema,
     aiRevisionPreviewSchema,
     sceneDirectedPreviewSchema,
@@ -45,6 +48,31 @@ export function registerNovelChapterEditorRoutes(input: RegisterNovelChapterEdit
           success: true,
           data,
           message: "Chapter editor workspace loaded.",
+        } satisfies ApiResponse<typeof data>);
+      } catch (error) {
+        if (forwardBusinessError(error, next)) {
+          return;
+        }
+        if (error instanceof Error && ["小说不存在。", "章节不存在。"].includes(error.message)) {
+          next(new AppError(error.message, 400));
+          return;
+        }
+        next(error);
+      }
+    },
+  );
+
+  router.post(
+    "/:id/chapters/:chapterId/editor/diagnostics/handled",
+    validate({ params: chapterParamsSchema, body: chapterDiagnosticHandledSchema }),
+    async (req, res, next) => {
+      try {
+        const { id, chapterId } = req.params as z.infer<typeof chapterParamsSchema>;
+        const data = await novelService.markChapterDiagnosticHandled(id, chapterId, req.body);
+        res.status(200).json({
+          success: true,
+          data,
+          message: "Chapter editor diagnostic marked as handled.",
         } satisfies ApiResponse<typeof data>);
       } catch (error) {
         if (forwardBusinessError(error, next)) {

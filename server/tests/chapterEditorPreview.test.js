@@ -58,7 +58,7 @@ test('workspace diagnosis retains AI repair goals, approach and protected inform
 });
 
 test('registered diagnosis accepts no actionable issues and legacy cards without new repair fields',()=>{
-  const asset=getRegisteredPromptAsset('novel.chapter_editor.workspace_diagnosis','v2');
+  const asset=getRegisteredPromptAsset('novel.chapter_editor.workspace_diagnosis','v3');
   assert.ok(asset);
   assert.deepEqual(asset.outputSchema.parse({cards:[]}),{cards:[]});
   assert.doesNotThrow(()=>asset.outputSchema.parse({cards:[{

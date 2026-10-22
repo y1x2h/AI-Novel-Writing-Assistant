@@ -450,7 +450,7 @@ export const promptAssetLoaderEntries: PromptAssetLoaderEntry[] = [
     load: () => require("../prompts/novel/timelineExtractor.prompts").timelineExtractorPrompt as UnknownPromptAsset,
   },
   {
-    key: "novel.chapter_editor.workspace_diagnosis@v2",
+    key: "novel.chapter_editor.workspace_diagnosis@v3",
     load: () => require("../prompts/novel/chapterEditor/workspaceDiagnosis.prompts").chapterEditorWorkspaceDiagnosisPrompt as UnknownPromptAsset,
   },
   {

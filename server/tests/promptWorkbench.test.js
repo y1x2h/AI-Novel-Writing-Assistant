@@ -172,7 +172,7 @@ test("prompt preview renders base prompt messages with resolved context but does
 test("prompt preview reports missing required context for manager diagnosis", async () => {
   const service = new PromptWorkbenchService();
   const preview = await service.preview({
-    promptKey: "novel.chapter_editor.workspace_diagnosis@v2",
+    promptKey: "novel.chapter_editor.workspace_diagnosis@v3",
     promptInput: {
       chapterTitle: "第 3 章",
       chapterMission: "让主角发现关键线索。",
