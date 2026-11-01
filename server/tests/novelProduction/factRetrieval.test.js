@@ -104,6 +104,7 @@ test('retrieval filters outdated and future fact chunks before topK fusion, reta
     './types':require('../../dist/services/rag/types'),'./chunkFacets':facets,
     './RagRetrievalTracer':{RagRetrievalTracer:class{record(){} setScope(){} flushAsync(){}}},
     './RagRerankerService':{RagRerankerService:class{},resolveRerankerCandidateLimit:()=>2},'./facts':f.documents,
+    './execution':{ragReadOnlyExecution:()=>false,scopedRagRetrieve:async(_query,_options,run)=>run()},
   });
   const service=new HybridRetrievalService({},{});
   service.vectorSearch=async()=>candidates;

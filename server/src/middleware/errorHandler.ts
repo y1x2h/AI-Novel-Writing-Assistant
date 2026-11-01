@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 import type { ApiResponse } from "@ai-novel/shared/types/api";
 import { ZodError, type ZodIssue } from "zod";
+import {randomUUID} from "node:crypto";
 
 export class AppError extends Error {
   readonly statusCode: number;
@@ -140,7 +141,7 @@ function setRequestErrorMessage(
 }
 
 function logServerError(req: Request, error: unknown): void {
-  console.error(`[error] ${req.method} ${req.originalUrl}`, error);
+  console.error(`[error] requestId=${req.res?.locals.requestId ?? "unavailable"} ${req.method} ${req.originalUrl}`, error);
 }
 
 function collectErrorMessages(error: unknown, depth = 0): string[] {
@@ -214,6 +215,9 @@ export function errorHandler(
   res: Response<ApiResponse<null>>,
   _next: NextFunction,
 ): void {
+  const requestId = randomUUID();
+  res.locals.requestId = requestId;
+  res.setHeader?.("X-Request-Id", requestId);
   if (
     error
     && typeof error === "object"
@@ -249,11 +253,13 @@ export function errorHandler(
       success: false,
       error: error.message,
       message: detail,
+      ...("code" in error && typeof error.code === "string" ? {code: error.code} : {}),
+      requestId,
     });
     return;
   }
 
-  const message = error instanceof Error ? error.message : "服务器发生未知错误。";
+  const message = "服务器错误，请稍后重试。";
   const upstreamConnectionMessage = formatUpstreamConnectionError(error);
   if (upstreamConnectionMessage) {
     setRequestErrorMessage(res, upstreamConnectionMessage);
@@ -270,5 +276,6 @@ export function errorHandler(
   res.status(500).json({
     success: false,
     error: message,
+    requestId,
   });
 }
