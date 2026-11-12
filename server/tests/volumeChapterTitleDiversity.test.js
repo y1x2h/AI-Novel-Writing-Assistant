@@ -584,21 +584,32 @@ function createChapterListGenerationFixtures() {
 }
 
 function mockChapterListInvoker(titles) {
-  setPromptRunnerStructuredInvokerForTests(async () => ({
-    data: {
+  let generatedCount = 0;
+  let currentBatch = null;
+  setPromptRunnerStructuredInvokerForTests(async (input) => {
+    if (!currentBatch || !input.label.includes("#semantic-retry-")) {
+      const chapterCount = Math.min(4, titles.length - generatedCount);
+      currentBatch = { startIndex: generatedCount, chapterCount };
+      generatedCount += chapterCount;
+    }
+    const { startIndex, chapterCount } = currentBatch;
+    const chapters = titles.slice(startIndex, startIndex + chapterCount).map((title, index) => ({
       beatKey: "open_hook",
-      beatLabel: "开卷抓手",
-      chapterCount: titles.length,
-      chapters: titles.map((title, index) => ({
+      title,
+      summary: `主角选择调整第 ${startIndex + index + 1} 条巡查路线，并承担变更轮值的代价，局面因此出现新的变化。`,
+      plannedCharacterIds: [],
+    }));
+    return {
+      data: {
         beatKey: "open_hook",
-        title,
-        summary: `主角带队处理第 ${index + 1} 个异常局面，主动调整轮值与巡查路线，局面因此出现新的变化。`,
-        plannedCharacterIds: [],
-      })),
-    },
-    repairUsed: false,
-    repairAttempts: 0,
-  }));
+        beatLabel: "开卷抓手",
+        chapterCount,
+        chapters,
+      },
+      repairUsed: false,
+      repairAttempts: 0,
+    };
+  });
 }
 
 test("chapter list generation accepts marginal title concentration as recorded debt", async () => {

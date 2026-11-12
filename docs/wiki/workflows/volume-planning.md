@@ -216,6 +216,7 @@ V2 的整卷拆章步骤将同一通知写入本次 Run 的 `chapter_list_progre
 执行规则：
 
 - 集中度是整卷属性，只在最终合并判级；中间合并只拦 `blocking`，因为局部集中可能被后续 beat 稀释。
+- 多批切片的 Prompt 校验同样只拦 `blocking` 标题硬伤，不能用 4 章切片的局部比例触发 `marginal` / `severe` 语义重试，否则整卷门禁还未看到完整标题就会被局部结果抢占。切片仍通过提示词引导标题句法分散，并通过保留标题集合检查跨批重复。单次调用覆盖完整 beat 时保留原有多样性语义重试与耗尽降级，最终整卷门禁仍独立判级。
 - 边际放行通过 `VolumeGenerateOptions.onChapterTitleDiversityDebt` 回调上抛，导演拆章步骤把它转成 StepResult 质量债务（code `CHAPTER_TITLE_DIVERSITY`，action `continue_with_warning`），进入既有质量债务仓储；保存后的标题仍可被 `getChapterTitleDiversityIssue` 检出，标题提醒与快速修复入口照常工作。
 - 提示词口径必须与校验数字一致：「X的Y / X中的Y / 在X中Y」最多约三成（10 章最多 3 个）、任一单一骨架不超过一半、相邻同骨架最多连续 3 章。不要在提示词里混用两套数字。
 - 不要把边际带宽放宽到半数及以上：占比过半意味着整批标题的句法多样性已经塌陷，必须重写而不是记账。

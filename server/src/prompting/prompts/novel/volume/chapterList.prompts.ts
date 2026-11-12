@@ -6,8 +6,8 @@ import { type BeatChapterSlice, type VolumeChapterListPromptInput } from "./shar
 import { buildVolumeChapterListContextBlocks } from "./contextBlocks";
 import { NOVEL_PROMPT_BUDGETS } from "../promptBudgetProfiles";
 import {
+  assessChapterTitleDiversity,
   getChapterTitleCollisionIssue,
-  getChapterTitleDiversityIssue,
   isBlockingChapterTitleQualityIssue,
   isChapterTitleDuplicateIssue,
   isChapterTitleDiversityIssue,
@@ -549,12 +549,17 @@ export function createVolumeChapterListPrompt(
         }
       });
 
-      const titleDiversityIssue = getChapterTitleDiversityIssue(
+      const titleDiversityAssessment = assessChapterTitleDiversity(
         output.chapters.map((chapter) => chapter.title),
       );
 
-      if (titleDiversityIssue) {
-        throw new Error(titleDiversityIssue);
+      // A slice is only a partial title list. Its concentration cannot represent
+      // the whole volume, so the final merged gate owns non-blocking findings.
+      if (
+        titleDiversityAssessment
+        && (!hasMultipleSlices || titleDiversityAssessment.severity === "blocking")
+      ) {
+        throw new Error(titleDiversityAssessment.issue);
       }
 
       const titleCollisionIssue = getChapterTitleCollisionIssue(
