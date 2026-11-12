@@ -1,15 +1,15 @@
-const fs = require("node:fs");
 const path = require("node:path");
 const { execFileSync } = require("node:child_process");
+const { checkRevision, assertReleaseTag, readVersion } = require("./desktop-release/guard.cjs");
 
 const repoRoot = path.resolve(__dirname, "..");
-const desktopPackagePath = path.join(repoRoot, "desktop", "package.json");
 
 function parseArgs(argv) {
   const options = {
     remote: "origin",
     branch: "main",
     dryRun: false,
+    forceTests: false,
     help: false,
   };
 
@@ -22,6 +22,10 @@ function parseArgs(argv) {
     }
     if (arg === "--dry-run") {
       options.dryRun = true;
+      continue;
+    }
+    if (arg === "--force-tests") {
+      options.forceTests = true;
       continue;
     }
     if (arg === "--remote" && argv[index + 1]) {
@@ -43,10 +47,11 @@ function parseArgs(argv) {
 
 function printHelp() {
   console.log([
-    "Usage: node scripts/trigger-desktop-release.cjs [--dry-run] [--remote origin] [--branch main]",
+    "Usage: node scripts/trigger-desktop-release.cjs [--dry-run] [--force-tests] [--remote origin] [--branch main]",
     "",
     "Reads desktop/package.json version, creates tag vX.Y.Z, then pushes the branch and tag",
-    "to trigger the GitHub Desktop Release workflow. This script does not build locally.",
+    "to trigger the GitHub Desktop Release workflow after isolated tests and typechecks pass.",
+    "Reuses the local passing record for the same clean commit; --force-tests runs every check again.",
   ].join("\n"));
 }
 
@@ -69,14 +74,7 @@ function gitOk(args) {
 }
 
 function readDesktopVersion() {
-  const packageJson = JSON.parse(fs.readFileSync(desktopPackagePath, "utf8"));
-  const version = typeof packageJson.version === "string" ? packageJson.version.trim() : "";
-  if (!/^\d+\.\d+\.\d+$/.test(version)) {
-    throw new Error(
-      `desktop/package.json version must be stable semver like 0.3.2, got ${version || "(empty)"}.`,
-    );
-  }
-  return version;
+  return readVersion(repoRoot);
 }
 
 function assertCleanWorkingTree() {
@@ -112,10 +110,13 @@ function main() {
 
   const version = readDesktopVersion();
   const tagName = `v${version}`;
+  if (options.branch !== "main") throw new Error("Public desktop releases must be triggered from main.");
 
   assertCleanWorkingTree();
   assertOnBranch(options.branch);
   assertTagDoesNotExist(options.remote, tagName);
+  checkRevision(repoRoot, { forceTests: options.forceTests });
+  assertReleaseTag(tagName, readDesktopVersion());
 
   console.log(`[desktop-release] version=${version}`);
   console.log(`[desktop-release] tag=${tagName}`);

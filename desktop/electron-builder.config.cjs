@@ -40,21 +40,13 @@ const windowsSigningLink = firstNonEmpty(
   process.env.AI_NOVEL_WINDOWS_CSC_LINK,
   process.env.AI_NOVEL_WINDOWS_CSC_FILE,
 );
-const macSigningLink = firstNonEmpty(
-  process.env.MAC_CSC_LINK,
-  process.env.AI_NOVEL_MAC_CSC_LINK,
-  process.env.AI_NOVEL_MAC_CSC_FILE,
-);
 const allowUnsignedRelease =
   firstNonEmpty(
     process.env.AI_NOVEL_ALLOW_UNSIGNED_RELEASE,
     process.env.AI_NOVEL_ALLOW_UNSIGNED_WINDOWS_RELEASE,
   ).toLowerCase() === "true";
 const hasWindowsSigningMaterial = Boolean(windowsSigningLink);
-const hasMacSigningMaterial = Boolean(macSigningLink);
 const builderIconPath = path.join("builder", "app-icon.ico");
-const builderMacIconPath = path.join("builder", "app-icon.icns");
-
 if (targetPlatform === "win" && !isBetaRelease && !hasWindowsSigningMaterial && !allowUnsignedRelease) {
   throw new Error(
     "Public Windows desktop releases require signing material. Provide CSC_LINK/WIN_CSC_LINK, or explicitly opt in to an unsigned release.",
@@ -75,6 +67,8 @@ module.exports = {
     "node_modules/.prisma/**/*",
   ],
   extraResources: [
+    { from: "builder/app-icon.icns", to: "icons/app-icon.icns" },
+    { from: "builder/app-icon.png", to: "icons/app-icon.png" },
     {
       from: "builder/app-icon.ico",
       to: "icons/app-icon.ico",
@@ -97,8 +91,9 @@ module.exports = {
   asarUnpack: [
     "node_modules/**/*.node",
   ],
-  npmRebuild: true,
-  nativeRebuilder: "sequential",
+  npmRebuild: false,
+  beforePack: "./scripts/packaging/rebuild-native.cjs",
+  afterPack: "./scripts/packaging/verify-native-runtime.cjs",
   extraMetadata: {
     main: "dist/main.js",
   },
@@ -127,6 +122,20 @@ module.exports = {
       },
     ],
   },
+  mac: {
+    icon: "builder/app-icon.icns",
+    identity: null,
+    notarize: false,
+    target: [{ target: "dmg", arch: ["x64", "arm64"] }],
+    artifactName: "${productName}-${version}-mac-${arch}.${ext}",
+    category: "public.app-category.productivity",
+  },
+  linux: {
+    icon: "builder/app-icon.png",
+    target: [{ target: "AppImage", arch: ["x64"] }],
+    artifactName: "${productName}-${version}-linux-${arch}.${ext}",
+    category: "Office",
+  },
   nsis: {
     artifactName: "${productName}-${version}-setup-${arch}.${ext}",
     oneClick: false,
@@ -143,39 +152,5 @@ module.exports = {
   },
   portable: {
     artifactName: "${productName}-${version}-portable-${arch}.${ext}",
-  },
-  mac: {
-    icon: builderMacIconPath,
-    category: "public.app-category.productivity",
-    target: [
-      {
-        target: "dmg",
-        arch: ["arm64"],
-      },
-      {
-        target: "zip",
-        arch: ["arm64"],
-      },
-    ],
-    // Without signing material, Apple Silicon builds still need an ad-hoc signature to launch.
-    identity: hasMacSigningMaterial ? undefined : "-",
-    hardenedRuntime: hasMacSigningMaterial,
-    gatekeeperAssess: false,
-    notarize: false,
-  },
-  dmg: {
-    artifactName: "${productName}-${version}-${arch}.${ext}",
-    contents: [
-      {
-        x: 140,
-        y: 200,
-      },
-      {
-        x: 400,
-        y: 200,
-        type: "link",
-        path: "/Applications",
-      },
-    ],
   },
 };

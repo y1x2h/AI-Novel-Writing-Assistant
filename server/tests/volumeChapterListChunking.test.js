@@ -440,6 +440,88 @@ test("generateBeatChunkedChapterList skips full-volume regeneration when all bea
   }
 });
 
+test("explicit estimated chapter count constrains a larger saved beat sheet", async () => {
+  const document = createDocument();
+  document.volumes[0].chapters = [];
+  document.beatSheets[0].beats = [
+    {
+      key: "open_hook",
+      label: "开卷抓手",
+      summary: "先把局势危险钉死。",
+      chapterSpanHint: "1-26章",
+      mustDeliver: ["压迫感"],
+    },
+    {
+      key: "midpoint_turn",
+      label: "中段转向",
+      summary: "让局势方向发生变化。",
+      chapterSpanHint: "27-52章",
+      mustDeliver: ["转向"],
+    },
+  ];
+  const originalRunStructuredPrompt = promptRunner.runStructuredPrompt;
+  const targetBeatChapterCounts = [];
+
+  promptRunner.runStructuredPrompt = async ({ asset, promptInput }) => {
+    targetBeatChapterCounts.push(promptInput.targetBeatChapterCount);
+    return {
+      output: asset.outputSchema.parse({
+        beatKey: promptInput.targetBeat.key,
+        beatLabel: promptInput.targetBeat.label,
+        chapterCount: promptInput.targetBeatChapterCount,
+        chapters: Array.from({ length: promptInput.targetBeatChapterCount }, (_, index) => ({
+          beatKey: promptInput.targetBeat.key,
+          title: `${promptInput.targetBeat.key === "open_hook" ? "信号灯亮起" : "闸门落下"}${index + 1}`,
+          summary: "林远主动核对信号记录，逼出关键破绽并承担暴露行踪的代价。",
+        })),
+      }),
+    };
+  };
+
+  try {
+    const result = await generateBeatChunkedChapterList({
+      document,
+      novel: {
+        title: "测试小说",
+        description: null,
+        targetAudience: null,
+        bookSellingPoint: null,
+        competingFeel: null,
+        first30ChapterPromise: null,
+        commercialTagsJson: null,
+        estimatedChapterCount: 52,
+        narrativePov: null,
+        pacePreference: null,
+        emotionIntensity: null,
+        storyModePromptBlock: null,
+        genre: null,
+        characters: [],
+      },
+      workspace: {
+        ...document,
+        workspaceVersion: "v2",
+        readiness: {},
+      },
+      storyMacroPlan: null,
+      options: {
+        targetVolumeId: "volume-1",
+        generationMode: "full_volume",
+        estimatedChapterCount: 6,
+      },
+      notifyPhase: async () => {},
+    });
+
+    assert.deepEqual(targetBeatChapterCounts, [3, 3]);
+    assert.equal(result.mergedDocument.volumes[0].chapters.length, 6);
+    assert.deepEqual(
+      result.mergedDocument.volumes[0].chapters.map((chapter) => chapter.beatKey),
+      ["open_hook", "open_hook", "open_hook", "midpoint_turn", "midpoint_turn", "midpoint_turn"],
+    );
+  } finally {
+    promptRunner.runStructuredPrompt = originalRunStructuredPrompt;
+  }
+});
+
 test("generateBeatChunkedChapterList rejects beat sheets that cover far fewer chapters than the budget target", async () => {
   const document = buildVolumeWorkspaceDocument({
     ...createDocument(),
@@ -624,6 +706,7 @@ test("generateBeatChunkedChapterList resumes after the last persisted complete b
   const originalRunStructuredPrompt = promptRunner.runStructuredPrompt;
   const generatedBeatKeys = [];
   const intermediateEvents = [];
+  const progressEvents = [];
 
   promptRunner.runStructuredPrompt = async ({ promptInput }) => {
     generatedBeatKeys.push(promptInput.targetBeat.key);
@@ -670,12 +753,13 @@ test("generateBeatChunkedChapterList resumes after the last persisted complete b
         targetVolumeId: "volume-1",
         generationMode: "full_volume",
       },
-      notifyPhase: async () => {},
+      notifyPhase: async (_label, progress) => { progressEvents.push(progress); },
       notifyIntermediateDocument: async (event) => {
         intermediateEvents.push(event);
       },
     });
 
+    assert.deepEqual(progressEvents.map(event => [event.completedChapters, event.totalChapters]), [[2, 4], [4, 4]]);
     assert.deepEqual(generatedBeatKeys, ["midpoint_turn"]);
     assert.equal(intermediateEvents[0].isFinal, false);
     assert.equal(intermediateEvents[0].targetBeatKey, "midpoint_turn");
@@ -780,6 +864,7 @@ test("generateBeatChunkedChapterList emits a single-beat intermediate document w
   const document = createDocument();
   const originalRunStructuredPrompt = promptRunner.runStructuredPrompt;
   const intermediateEvents = [];
+  const progressEvents = [];
 
   promptRunner.runStructuredPrompt = async ({ promptInput }) => ({
     output: {
@@ -824,12 +909,13 @@ test("generateBeatChunkedChapterList emits a single-beat intermediate document w
         generationMode: "single_beat",
         targetBeatKey: "midpoint_turn",
       },
-      notifyPhase: async () => {},
+      notifyPhase: async (_label, progress) => { progressEvents.push(progress); },
       notifyIntermediateDocument: async (event) => {
         intermediateEvents.push(event);
       },
     });
 
+    assert.deepEqual(progressEvents.map(event => [event.completedChapters, event.totalChapters]), [[0, 2], [2, 2]]);
     assert.equal(intermediateEvents.length, 2);
     assert.equal(intermediateEvents[0].isFinal, false);
     assert.equal(intermediateEvents[0].targetBeatKey, "midpoint_turn");
@@ -956,6 +1042,7 @@ test("generateBeatChunkedChapterList emits a resumable intermediate document aft
   const document = createDocument();
   const originalRunStructuredPrompt = promptRunner.runStructuredPrompt;
   const intermediateEvents = [];
+  const progressEvents = [];
 
   promptRunner.runStructuredPrompt = async ({ promptInput }) => ({
     output: {
@@ -1009,12 +1096,13 @@ test("generateBeatChunkedChapterList emits a resumable intermediate document aft
         targetVolumeId: "volume-1",
         generationMode: "full_volume",
       },
-      notifyPhase: async () => {},
+      notifyPhase: async (_label, progress) => { progressEvents.push(progress); },
       notifyIntermediateDocument: async (event) => {
         intermediateEvents.push(event);
       },
     });
 
+    assert.deepEqual(progressEvents.map(event => [event.completedChapters, event.totalChapters]), [[0, 4], [2, 4], [2, 4], [4, 4]]);
     assert.equal(intermediateEvents.length, 3);
     assert.equal(intermediateEvents[0].isFinal, false);
     assert.equal(intermediateEvents[0].targetBeatKey, "open_hook");

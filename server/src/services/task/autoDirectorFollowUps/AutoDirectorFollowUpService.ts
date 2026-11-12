@@ -208,7 +208,7 @@ export class AutoDirectorFollowUpService {
         }
       }
       return Array.from(latestByChannel.values()).map((row) => ({
-        channelType: row.channelType === "wecom" ? "wecom" : "dingtalk",
+        channelType: row.channelType === "feishu" ? "feishu" : row.channelType === "wecom" ? "wecom" : "dingtalk",
         status: row.status === "delivered" ? "delivered" : (row.status === "pending" ? "pending" : "failed"),
         deliveredAt: row.deliveredAt?.toISOString() ?? null,
         responseStatus: row.responseStatus ?? null,
@@ -231,7 +231,8 @@ export class AutoDirectorFollowUpService {
       .map((row) => row.novelId)
       .filter((novelId): novelId is string => Boolean(novelId?.trim()));
     const records = await loadRecentAutoDirectorAutoApprovalRecords(novelIds);
-    return records.map((record) => projectAutoApprovalRecordItem({
+    const removedIds = new Set(await getArchivedTaskIds("novel_workflow"));
+    return records.filter((record) => !removedIds.has(record.taskId)).map((record) => projectAutoApprovalRecordItem({
       ...record,
       novel: taskById.get(record.taskId)?.novel ?? null,
     }, taskById));

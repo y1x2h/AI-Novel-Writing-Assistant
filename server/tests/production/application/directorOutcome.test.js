@@ -32,10 +32,26 @@ test('quality pause only projects after the retained manuscript was saved', () =
   assert.equal(result.closed, false);
   assert.equal(map({ status: 'paused', progress: { ...progress, committedContentHash: null } }).stopSignal.kind, 'data_integrity');
 });
+test('a style review rejection pauses for manual recovery before commit and cannot close the chapter', () => {
+  const progress = finished({ completed: ['prepare', 'draft', 'accept'], committedContentHash: undefined,
+    selectedContentHash: 'saved',
+    styleReviewPause: { contentHash: 'saved', code: 'continuation_imitation', reason: '复刻原作开头', acknowledged: false } });
+  const result = map({ status: 'paused', progress });
+  assert.equal(result.closed, false);
+  assert.equal(result.stopSignal.kind, 'manual_recovery');
+  assert.equal(result.stopSignal.action, 'pause_for_manual');
+  assert.equal(result.stopSignal.source, 'runtime');
+  assert.equal(map({ status: 'paused', progress: { ...progress, committedContentHash: 'saved' } }).stopSignal.kind, 'data_integrity');
+  assert.equal(map({ status: 'paused', progress: { ...progress,
+    styleReviewPause: { ...progress.styleReviewPause, contentHash: 'other' } } }).stopSignal.kind, 'data_integrity');
+});
 test('only an explicit global-book replan can project a director replan', () => {
   assert.equal(map({ status: 'stopped', progress: finished(), reason: 'global_book' }).stopSignal.kind, 'replan');
   assert.notEqual(map({ status: 'stopped', progress: finished(), reason: 'local_window' }).stopSignal.kind, 'replan');
-  assert.equal(map({ status: 'failed', progress: finished(), reason: 'no_usable_content' }).stopSignal.kind, 'no_usable_content');
+  const empty = map({ status: 'failed', progress: finished(), reason: 'no_usable_content' }).stopSignal;
+  assert.equal(empty.kind, 'manual_recovery');
+  assert.equal(empty.action, 'pause_for_manual');
+  assert.equal(empty.source, 'runtime');
   assert.equal(map({ status: 'failed', progress: finished(), reason: 'data_integrity' }).stopSignal.kind, 'data_integrity');
 });
 test('a completed label cannot hide missing reconciliation or a mismatched retained manuscript', () => {

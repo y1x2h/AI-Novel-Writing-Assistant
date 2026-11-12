@@ -1,21 +1,27 @@
-import type { StructuredResponseEvidence } from "@ai-novel/shared/types/structuredDiagnostics";
+import type { StructuredFailureReason, StructuredResponseEvidence } from "@ai-novel/shared/types/structuredDiagnostics";
 import { toJSONSchema, type ZodType } from "zod";
 import type { LLMProvider } from "@ai-novel/shared/types/llm";
 import type { ModelRouteRequestProtocol } from "@ai-novel/shared/types/novel";
-import { isBuiltInProvider } from "./providers";
+import { resolveCapability, storedCapability, type StructuredMode } from "./compatibility";
+import { getProviderDefaultBaseUrl, isBuiltInProvider } from "./providers";
 import { isDeepSeekThinkingModeProvider, supportsGlmReasoningToggle } from "./reasoning";
 
 export type StructuredExecutionMode = "plain" | "structured";
-export type StructuredOutputStrategy = "json_schema" | "json_object" | "prompt_json";
+export type StructuredOutputStrategy = "json_schema" | "json_object" | "tool_calling" | "prompt_json";
 export type StructuredOutputErrorCategory =
   | "unsupported_native_json"
   | "thinking_pollution"
   | "incomplete_json"
   | "malformed_json"
   | "schema_mismatch"
+  | "empty_response"
+  | "reasoning_budget_exhausted"
+  | "output_budget_exhausted"
   | "transport_error";
 
 export interface StructuredOutputProfile {
+  structuredModes?: StructuredMode[];
+  failedModes?: StructuredMode[];
   nativeJsonSchema: boolean;
   nativeJsonObject: boolean;
   requiresNonThinkingForStructured: boolean;
@@ -141,7 +147,7 @@ function buildProfile(input: Partial<StructuredOutputProfile> & { family: string
   };
 }
 
-export function resolveStructuredOutputProfile(input: {
+function resolveBuiltinStructuredOutputProfile(input: {
   provider: LLMProvider;
   model?: string;
   baseURL?: string;
@@ -302,6 +308,39 @@ export function resolveStructuredOutputProfile(input: {
   });
 }
 
+export function resolveStructuredOutputProfile(input: Parameters<typeof resolveBuiltinStructuredOutputProfile>[0]): StructuredOutputProfile {
+  const builtin = resolveBuiltinStructuredOutputProfile(input);
+  const capability = resolveCapability(input);
+  const stored = storedCapability(input);
+  const customEndpoint = !isBuiltInProvider(input.provider)
+    || Boolean(input.baseURL && extractHost(input.baseURL) !== extractHost(getProviderDefaultBaseUrl(input.provider)));
+  const modes = stored?.structuredModes ?? (capability.family === "spark" ? ["prompt_only" as const] : [
+    ...(builtin.nativeJsonSchema ? ["json_schema" as const] : []),
+    ...(builtin.nativeJsonObject ? ["json_object" as const] : []),
+    ...(builtin.nativeJsonSchema || builtin.nativeJsonObject ? ["tool_calling" as const] : []),
+    "prompt_only" as const,
+  ]);
+  const available = modes.filter((mode) => !capability.failedModes.includes(mode));
+  return { ...builtin, structuredModes: modes, failedModes: capability.failedModes,
+    nativeJsonSchema: available.includes("json_schema"), nativeJsonObject: available.includes("json_object"),
+    preferredStructuredStrategy: available[0] === "prompt_only" || !available[0] ? "prompt_json" : available[0],
+    supportsReasoningToggle: capability.thinkingToggle.supported,
+    // Unknown gateways must not inherit request-level thinking-on defaults.
+    // A saved probe or override remains authoritative about usable controls.
+    requiresNonThinkingForStructured: stored ? capability.thinkingToggle.supported : customEndpoint || builtin.requiresNonThinkingForStructured,
+  };
+}
+
+export function structuredStrategySequence<T>(profile: StructuredOutputProfile, schema: ZodType<T>): StructuredOutputStrategy[] {
+  if (schemaAllowsTopLevelArray(schema)) return ["prompt_json"];
+  const modes = profile.structuredModes ?? [
+    ...(profile.nativeJsonSchema ? ["json_schema" as const] : []),
+    ...(profile.nativeJsonObject ? ["json_object" as const] : []),
+    "prompt_only" as const,
+  ];
+  return [...new Set([...modes.filter((mode) => !profile.failedModes?.includes(mode)).map((mode) => mode === "prompt_only" ? "prompt_json" as const : mode), "prompt_json" as const])];
+}
+
 export function schemaAllowsTopLevelArray<T>(schema: ZodType<T>): boolean {
   const probe = schema.safeParse([]);
   if (probe.success) {
@@ -314,6 +353,7 @@ export function selectStructuredOutputStrategy<T>(
   profile: StructuredOutputProfile,
   schema: ZodType<T>,
 ): StructuredOutputStrategy {
+  if (profile.structuredModes) return structuredStrategySequence(profile, schema)[0];
   if (schemaAllowsTopLevelArray(schema)) {
     return "prompt_json";
   }
@@ -348,11 +388,27 @@ export function buildStructuredResponseFormat<T>(input: {
       json_schema: {
         name: sanitizeSchemaName(input.label),
         strict: true,
-        schema: toJSONSchema(input.schema),
+        schema: toJSONSchema(input.schema, { unrepresentable: "any" }),
       },
     };
   }
   return undefined;
+}
+
+/** The preflight and physical invocation must describe the same protocol payload. */
+export function buildStructuredCallOptions<T>(input: {
+  strategy: StructuredOutputStrategy;
+  schema: ZodType<T>;
+  label: string;
+}): Record<string, unknown> {
+  const responseFormat = buildStructuredResponseFormat(input);
+  if (responseFormat) return { response_format: responseFormat };
+  if (input.strategy === "tool_calling") return {
+    tools: [{ type: "function", function: { name: "structured_output", description: "Return the requested structured result",
+      parameters: toJSONSchema(input.schema, { unrepresentable: "any" }) } }],
+    tool_choice: { type: "function", function: { name: "structured_output" } },
+  };
+  return {};
 }
 
 export function classifyStructuredOutputFailure(input: {
@@ -444,6 +500,9 @@ export function extractStructuredOutputErrorCategory(message?: string | null): S
     "incomplete_json",
     "malformed_json",
     "schema_mismatch",
+    "empty_response",
+    "reasoning_budget_exhausted",
+    "output_budget_exhausted",
     "transport_error",
   ].includes(category) ? category : null;
 }
@@ -467,6 +526,35 @@ export class StructuredOutputError extends Error {
     this.category = input.category;
     this.diagnostics = input.diagnostics;
     this.retryWithNextStrategy = input.retryWithNextStrategy ?? false;
+  }
+}
+
+export function describeStructuredResponseFailure(reason: StructuredFailureReason): {
+  category: StructuredOutputErrorCategory;
+  message: string;
+} {
+  switch (reason) {
+    case "empty_response":
+      return {
+        category: "empty_response",
+        message: "模型返回了空内容，没有收到可用正文。请重试；若持续出现，请检查渠道兼容性、思考设置或更换模型。",
+      };
+    case "reasoning_budget_exhausted":
+      return {
+        category: "reasoning_budget_exhausted",
+        message: "模型只返回了思考内容，输出 Token 已在生成正文前耗尽。请关闭深度思考或提高输出 Token 上限后重试。",
+      };
+    case "output_budget_exhausted":
+      return {
+        category: "output_budget_exhausted",
+        message: "模型输出达到 Token 上限后被截断（finish_reason=length/max_tokens），结果不完整。请提高输出 Token 上限后重试。",
+      };
+    case "blocked":
+      return { category: "transport_error", message: "模型拒绝或过滤了本次请求，请调整创作要求或核对模型服务提示。" };
+    case "cancelled":
+      return { category: "transport_error", message: "本次模型请求已取消。" };
+    default:
+      return { category: "transport_error", message: "模型未返回完整可用的结构化结果。" };
   }
 }
 

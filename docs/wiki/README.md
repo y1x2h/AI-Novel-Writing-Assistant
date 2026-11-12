@@ -21,10 +21,12 @@ Wiki 不记录单次提交改了什么，也不替代 release notes。它只记�
 - [正文生产内核运行进度、提交与恢复](./architecture/production-kernel-persistence.md)
 - [当前模型选择与厂商默认模型边界](./architecture/model-selection.md)
 - [配置项归属与可见性规范](./architecture/configuration-conventions.md)
+- [API 访问令牌边界](./architecture/access-token-boundary.md)
 
 ### Workflows
 
 - [自动导演 Runtime 与恢复边界](./workflows/auto-director-runtime.md)
+- [自动导演外部通知与动作边界](./workflows/auto-director-channels.md)
 - [简易创作模式](./product/simple-creation-mode.md)
 - [章节生产链路](./workflows/chapter-production-chain.md)
 - [章节检查重试策略](./workflows/chapter-review-retry-policy.md)
@@ -65,6 +67,8 @@ Wiki 不记录单次提交改了什么，也不替代 release notes。它只记�
 - [结构化输出通过、业务层却校验失败（含 zod v4 错误文案陷阱）](./debugging/structured-output-length-and-zod-v4-messages.md)
 
 ### Product
+
+- [手机快捷终端](./product/mobile-quick-terminal.md)
 
 - [新手优先与整本小说完成原则](./product/beginner-first-novel-completion.md)
 - [工作台状态表达与下一步合同](./product/workspace-status-expression.md)

@@ -1,7 +1,10 @@
+require("./fixtures/compatibilitySettings.cjs");
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { z } = require("zod");
 
+const compat = require("../dist/llm/compatibility/store.js");
+compat.recordFailedMode = async () => {}; // Persistence and cache invalidation are covered by modelCompatibility.test.js.
 const factory = require("../dist/llm/factory.js");
 const structuredFallbackSettings = require("../dist/llm/structuredFallbackSettings.js");
 const { buildStructuredResponseFormat, resolveStructuredOutputProfile } = require("../dist/llm/structuredOutput.js");
@@ -173,7 +176,7 @@ test("parseStructuredLlmRawContentDetailed rejects empty model output without in
         model: "deepseek-v4-flash",
         executionMode: "structured",
       }),
-    }), /STRUCTURED_OUTPUT:transport_error.*没有返回可用内容/i);
+    }), /STRUCTURED_OUTPUT:empty_response.*模型返回了空内容/i);
     assert.equal(repairInvoked, false);
   } finally {
     factory.getLLM = originalGetLLM;
@@ -417,16 +420,17 @@ test("invokeStructuredLlmDetailed degrades through unsupported and empty native 
     assert.deepEqual(calls, [
       { provider: "openai", strategy: "json_schema" },
       { provider: "openai", strategy: "json_object" },
+      { provider: "openai", strategy: "tool_calling" },
       { provider: "openai", strategy: "prompt_json" },
     ]);
 
     const nativeJsonProviders = [
-      ["gemini", "gemini-2.5-flash", ["json_schema", "json_object", "prompt_json"]],
-      ["glm", "glm-4.5-air", ["json_object", "prompt_json"]],
-      ["qwen", "qwen3.6-plus", ["json_object", "prompt_json"]],
-      ["kimi", "kimi-k2.5", ["json_object", "prompt_json"]],
-      ["grok", "grok-4", ["json_object", "prompt_json"]],
-      ["deepseek", "deepseek-v4-flash", ["json_object", "prompt_json"]],
+      ["gemini", "gemini-2.5-flash", ["json_schema", "json_object", "tool_calling", "prompt_json"]],
+      ["glm", "glm-4.5-air", ["json_object", "tool_calling", "prompt_json"]],
+      ["qwen", "qwen3.6-plus", ["json_object", "tool_calling", "prompt_json"]],
+      ["kimi", "kimi-k2.5", ["json_object", "tool_calling", "prompt_json"]],
+      ["grok", "grok-4", ["json_object", "tool_calling", "prompt_json"]],
+      ["deepseek", "deepseek-v4-flash", ["json_object", "tool_calling", "prompt_json"]],
     ];
     for (const [provider, model, expectedStrategies] of nativeJsonProviders) {
       calls.length = 0;
@@ -608,6 +612,7 @@ test("invokeStructuredLlmDetailed can disable repair replay on the fallback mode
     assert.deepEqual(calls, [
       {provider: "openai", strategy: "json_schema"},
       {provider: "deepseek", strategy: "json_object"},
+      {provider: "deepseek", strategy: "tool_calling"},
       {provider: "deepseek", strategy: "prompt_json"},
     ]);
   } finally {

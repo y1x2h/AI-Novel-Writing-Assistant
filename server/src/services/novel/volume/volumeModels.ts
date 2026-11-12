@@ -1,3 +1,4 @@
+import type { VolumeChapterListProgress } from "@ai-novel/shared/types/volumePlanning";
 import type { LLMProvider } from "@ai-novel/shared/types/llm";
 import type { ChapterTaskSheetQualityMode, ChapterTaskSheetQualityGateResult, AiChapterTaskSheetQualityAssessment } from "@ai-novel/shared/types/chapterTaskSheetQuality";
 import type { DirectorCompletionProfile } from "@ai-novel/shared/types/directorCompletion";
@@ -27,6 +28,7 @@ export type VolumeGenerationPhase = "load_context" | "prompt";
 export interface VolumeGenerationPhaseEvent {
   scope: VolumeGenerationScope;
   phase: VolumeGenerationPhase;
+  chapterProgress?: VolumeChapterListProgress;
   label: string;
 }
 
@@ -91,6 +93,16 @@ export interface VolumeGenerateOptions {
     chapterId: string; chapterOrder: number;
     result: ChapterTaskSheetQualityGateResult;
     assessment?: AiChapterTaskSheetQualityAssessment;
+  }) => void | Promise<void>;
+  /**
+   * Fired when a finished chapter list is accepted with a marginal
+   * chapter-title concentration finding, so the caller can record it as
+   * quality debt instead of failing the whole generation.
+   */
+  onChapterTitleDiversityDebt?: (event: {
+    volumeId: string;
+    issue: string;
+    chapterOrder: number;
   }) => void | Promise<void>;
   provider?: LLMProvider;
   model?: string;

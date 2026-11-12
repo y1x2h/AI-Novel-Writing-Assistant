@@ -39,17 +39,20 @@ for (const scenario of [
       "../../services/styleEngine/StyleBindingService": { StyleBindingService: class { async ensureNovelDefault() {} } },
       "../../modules/novel/director-routing": {},
       "../../services/novel/director/runtime/novelDirectorHelpers": chapterCountHelpers,
+      "@ai-novel/shared/types/creativeCarryoverContract": require("@ai-novel/shared/types/creativeCarryoverContract"),
     });
     await launchNewDirectorBook({
       candidate: { workingTitle: "测试", logline: "故事", targetChapterCount: scenario.candidateCount },
       idea: "测试故事",
       runMode: "full_book_autopilot",
       estimatedChapterCount: scenario.explicitCount,
+      userPreferredVolumeCount: 3,
     }, "source", "original_opening");
     assert.equal(created.length, 1);
     assert.equal(commands.length, 1);
     assert.equal(created[0].estimatedChapterCount, scenario.expected);
     assert.equal(commands[0].launchInput.estimatedChapterCount, scenario.expected);
+    assert.equal(commands[0].launchInput.userPreferredVolumeCount, 3);
     assert.deepEqual(commands[0].launchInput.executionRange, { from: 1, to: scenario.expected });
   });
 }

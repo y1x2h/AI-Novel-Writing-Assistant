@@ -12,6 +12,7 @@ import type {
   NarrativeForm,
 } from "@ai-novel/shared/types/creationStudio";
 import type { DirectorCandidate, DirectorConfirmRequest } from "@ai-novel/shared/types/novelDirector";
+import type { CreativeCarryoverContract } from "@ai-novel/shared/types/creativeCarryoverContract";
 import type { WritingPlatform, WritingPlatformPreference } from "@ai-novel/shared/types/writingPlatform";
 import { prisma } from "../../../../db/prisma";
 import { AppError } from "../../../../middleware/errorHandler";
@@ -27,6 +28,7 @@ import { supportsWritingPlatformForm, writingPlatformProfileService } from "../.
 interface CreationStudioSeed {
   referenceSelection?: ShortStoryReferenceSelection;
   referenceSnapshot?: ShortStoryReferenceSnapshot;
+  creativeCarryoverContract?: CreativeCarryoverContract | null;
   idea: string;
   derivedFromNovelId?: string;
   currentIntentVersionId?: string;
@@ -80,7 +82,8 @@ export class CreationStudioService {
   configureLongNovelLauncher(launcher?: NonNullable<CreationStudioService["longNovelLauncher"]>): void {this.longNovelLauncher = launcher;}
 
   async interpret(input: CreationStudioInterpretRequest): Promise<CreationStudioTaskProjection> {
-    const idea = input.idea.trim();
+    const idea = input.idea?.trim()
+      || (input.reference ? `创作目标：${input.reference.goal.trim()}` : "");
     if (!idea) {
       throw new AppError("请先写下你想创作的内容。", 400);
     }
@@ -486,6 +489,7 @@ export class CreationStudioService {
         genreId: foundation.genreId,
         primaryStoryModeId: foundation.primaryStoryModeId,
         secondaryStoryModeId: foundation.secondaryStoryModeId,
+        creativeCarryoverContract: seed.creativeCarryoverContract ?? null,
       };
       const result = this.longNovelLauncher ? await this.longNovelLauncher(confirmInput,taskId) : await this.directorService.confirmCandidate(confirmInput);
       const productionTaskId = result.workflowTaskId;

@@ -24,7 +24,7 @@ test.after(async () => {
   settings.getStructuredFallbackSettings = originalSettings;
   factory.getLLM = originalGetLLM;
   await prisma.$disconnect();
-  assert.equal(path.dirname(fixtureDir), fs.realpathSync(os.tmpdir()));
+  assert.equal(fs.realpathSync(path.dirname(fixtureDir)), fs.realpathSync(os.tmpdir()));
   assert.ok(path.basename(fixtureDir).startsWith("short-story-diagnostics-"));
   fs.rmSync(fixtureDir, { recursive: true, force: true });
 });
@@ -37,10 +37,12 @@ async function invoke(chunks, { fail, retries = 0, repair = 0, failOnce = false,
     temperature: 0.3, requestProtocol: "openai_compatible",
     structuredProfile: resolveStructuredOutputProfile({ provider: "deepseek", model: "offline-model", executionMode: "structured" }),
   });
-  factory.createLLMFromResolvedOptions = () => ({ stream: async function* () {
+  factory.createLLMFromResolvedOptions = (resolved) => ({ stream: async function* () {
     calls++;
     if (fail && (!failOnce || calls === 1)) throw fail;
-    for (const chunk of chunks) yield chunk;
+    for (const chunk of chunks) yield resolved.structuredStrategy === "tool_calling"
+      ? { ...chunk, content: "", tool_call_chunks: [{ args: chunk.content }] }
+      : chunk;
   } });
   if (repairChunks || repairError) factory.getLLM = async () => ({ stream: async function* () {
     if (repairError) throw repairError;
@@ -191,4 +193,22 @@ test("short story repair debug logs omit story text and raw provider errors", ()
     assert.doesNotMatch(JSON.stringify(rows), /PRIVATE_STORY|PRIVATE_KEY/);
     assert.equal(rows[0].repairAttempt, 1);
   } finally { file.appendLlmRepairSessionLog = previous; }
+});
+
+test("accepted bounded quality recovery clears the failed diagnostic instead of asking users to retry forever", async () => {
+  const { task } = await invoke([{ content: '{"value":"usable"}', response_metadata: { finish_reason: "stop" } }]);
+  const { runStructuredPrompt } = require("../dist/prompting/core/promptRunner");
+  const { latestStructuredDiagnostic } = require("../dist/platform/llm/diagnostics/StructuredDiagnosticStore");
+  const { shortStoryPlanPrompt } = require("../dist/prompting/prompts/shortStory/shortStory.prompts");
+  const { HumanMessage } = require("@langchain/core/messages");
+  const result = await runStructuredPrompt({
+    asset: { ...shortStoryPlanPrompt, outputSchema: z.object({ value: z.string() }),
+      repairPolicy: { maxAttempts: 0 }, semanticRetryPolicy: { maxAttempts: 0 },
+      render: () => [new HumanMessage("测试")],
+      postValidate: () => { throw new Error("篇幅偏差"); },
+      postValidateFailureRecovery: ({ rawOutput }) => rawOutput },
+    promptInput: {}, options: {taskId: task.id, provider: "deepseek", model: "offline-model"},
+  });
+  assert.equal(result.output.value, "usable");
+  assert.equal(await latestStructuredDiagnostic(task.id), null);
 });

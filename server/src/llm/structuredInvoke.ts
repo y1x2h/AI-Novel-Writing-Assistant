@@ -1,3 +1,6 @@
+import { implicatesStructuredMode, recordFailedMode, runWithInvocationChain, observeInvocationParse } from "./compatibility";
+import { declarePromptCacheBoundary, getPromptCacheBoundary } from "../platform/llm/cache";
+import { toJSONSchema } from "zod";
 import { randomUUID } from "node:crypto";
 import { beginStructuredDiagnostic, finishStructuredDiagnostic, type StructuredDiagnosticContext } from "../platform/llm/diagnostics/StructuredDiagnosticStore";
 import { emptyResponseEvidence, observeStructuredChunk, classifyResponseEvidence, terminalResponseReason } from "../platform/llm/diagnostics/structuredEvidence";
@@ -14,12 +17,14 @@ import {
 } from "./factory";
 import { resolveModel, toStructuredOutputStrategy } from "./modelRouter";
 import {
-  buildStructuredResponseFormat,
+  buildStructuredCallOptions,
+  structuredStrategySequence,
   classifyStructuredOutputFailure,
   extractStructuredOutputErrorCategory,
   resolveStructuredOutputProfile,
   schemaAllowsTopLevelArray,
   selectStructuredOutputStrategy,
+  describeStructuredResponseFailure,
   StructuredOutputError,
   type StructuredOutputErrorCategory,
   type StructuredOutputProfile,
@@ -119,7 +124,10 @@ function waitForTransportRetry(signal: AbortSignal | undefined, retryAttempt: nu
 
 function buildInvokeMessages<T>(input: StructuredInvokeInput<T>): BaseMessage[] {
   if (Array.isArray(input.messages) && input.messages.length > 0) {
-    return input.messages;
+    const messages = [...input.messages];
+    const boundary = getPromptCacheBoundary(input.messages);
+    if (boundary) declarePromptCacheBoundary(messages, boundary);
+    return messages;
   }
   if (typeof input.systemPrompt === "string" && typeof input.userPrompt === "string") {
     return [new SystemMessage(input.systemPrompt), new HumanMessage(input.userPrompt)];
@@ -141,15 +149,7 @@ function buildStrategySequence<T>(
   profile: StructuredOutputProfile,
   schema: ZodType<T>,
 ): StructuredOutputStrategy[] {
-  const first = selectStructuredOutputStrategy(profile, schema);
-  const sequence: StructuredOutputStrategy[] = [first];
-  if (first === "json_schema" && profile.nativeJsonObject) {
-    sequence.push("json_object");
-  }
-  if (first !== "prompt_json") {
-    sequence.push("prompt_json");
-  }
-  return Array.from(new Set(sequence));
+  return structuredStrategySequence(profile, schema);
 }
 
 function computeAttemptTemperature(baseTemperature: number, strategyIndex: number): number {
@@ -241,20 +241,20 @@ async function invokeStructuredAttempt<T>(input: {
     requestProtocol: input.target.requestProtocol,
   });
   const llm = createLLMFromResolvedOptions(resolved);
-  const invokeOptions: Record<string, unknown> = {};
-  const responseFormat = buildStructuredResponseFormat({
+  const invokeOptions = buildStructuredCallOptions({
     strategy: input.strategy,
     schema: input.baseInput.schema,
     label: input.baseInput.label,
   });
-  if (responseFormat) {
-    invokeOptions.response_format = responseFormat;
-  }
   if (input.baseInput.signal) {
     invokeOptions.signal = input.baseInput.signal;
   }
 
   const messages = buildInvokeMessages(input.baseInput);
+  // Registry messages already include schema hints and may be frozen by production preflight.
+  if (!input.baseInput.promptMeta && (input.strategy === "prompt_json" || input.strategy === "json_object")) {
+    messages.push(new HumanMessage(`Return only JSON matching this schema: ${JSON.stringify(toJSONSchema(input.baseInput.schema, { unrepresentable: "any" }))}`));
+  }
   logStructuredInvokeEvent({
     event: "invoke_start",
     label: input.baseInput.label,
@@ -295,7 +295,10 @@ async function invokeStructuredAttempt<T>(input: {
         let tokenUsage = null;
         const reasoningCollector = new ReasoningStreamCollector();
         for await (const chunk of stream) {
-          const content = toText(chunk.content);
+          const toolChunk = chunk as typeof chunk & { tool_call_chunks?: Array<{ args?: string }> };
+          const content = input.strategy === "tool_calling"
+            ? (toolChunk.tool_call_chunks ?? []).map((call) => call.args ?? "").join("")
+            : toText(chunk.content);
           observeStructuredChunk(evidence, chunk);
           const reasoning = reasoningCollector.push(chunk, content);
           evidence.reasoningChars += reasoning.length;
@@ -313,11 +316,20 @@ async function invokeStructuredAttempt<T>(input: {
     });
     const rawContent = collected.rawContent;
     evidence.failureReason = classifyResponseEvidence(evidence);
-    if (terminalResponseReason(evidence.failureReason)) throw buildStructuredError({
-      message: "模型未返回完整可用的结构化结果。", category: "transport_error", strategy: input.strategy,
-      retryWithNextStrategy: evidence.failureReason === "empty_response" && input.strategy !== "prompt_json",
-      profile: resolved.structuredProfile ?? input.target.profile,
-    });
+    if (terminalResponseReason(evidence.failureReason)) {
+      const failure = describeStructuredResponseFailure(evidence.failureReason!);
+      throw buildStructuredError({
+        message: `[${input.baseInput.label}] ${failure.message}`,
+        category: failure.category,
+        strategy: input.strategy,
+        retryWithNextStrategy: evidence.failureReason === "empty_response" && input.strategy !== "prompt_json",
+        profile: resolved.structuredProfile ?? input.target.profile,
+        fallbackAvailable: input.fallbackAvailable,
+        fallbackUsed: input.fallbackUsed,
+        reasoningForcedOff: resolved.reasoningForcedOff,
+        response: evidence,
+      });
+    }
     logStructuredInvokeEvent({
       event: "invoke_done",
       label: input.baseInput.label,
@@ -334,6 +346,7 @@ async function invokeStructuredAttempt<T>(input: {
     let repairStarted = false;
     const parsed = await liveSession.observe(() => parseStructuredLlmRawContentDetailed({
       rawContent,
+      responseEvidence: evidence,
       diagnosticContext: input.baseInput.diagnosticContext,
       schema: input.baseInput.schema,
       tokenUsage: collected.tokenUsage,
@@ -348,7 +361,7 @@ async function invokeStructuredAttempt<T>(input: {
       taskType: input.baseInput.taskType,
       requestProtocol: resolved.requestProtocol,
       label: input.baseInput.label,
-      maxRepairAttempts: input.baseInput.maxRepairAttempts,
+      maxRepairAttempts: input.baseInput.maxRepairAttempts ?? 1,
       repairGuidance: input.baseInput.repairGuidance,
       promptMeta: input.baseInput.promptMeta,
       repairMessages: currentModelRequestBudget() ? messages : undefined,
@@ -393,7 +406,7 @@ async function invokeStructuredAttempt<T>(input: {
       fallbackUsed: input.fallbackUsed,
       reasoningForcedOff: resolved.reasoningForcedOff,
     });
-    const wrapped = wrapStructuredInvokeError({
+    let wrapped = wrapStructuredInvokeError({
       label: input.baseInput.label,
       error,
       strategy: input.strategy,
@@ -410,6 +423,21 @@ async function invokeStructuredAttempt<T>(input: {
       evidence.retryAfterMs ??= child.retryAfterMs;
     }
     evidence.failureReason ??= classifyResponseEvidence(evidence, error, wrapped.category, input.baseInput.signal?.aborted);
+    if (!(error instanceof StructuredOutputError) && (evidence.failureReason === "network" || evidence.failureReason === "timeout")) {
+      wrapped = buildStructuredError({
+        message: `[${input.baseInput.label}] ${evidence.failureReason === "network"
+          ? "连接模型服务时发生网络错误，请检查网络、渠道地址和服务状态后重试。"
+          : "模型请求超时，请检查服务状态或稍后重试。"}`,
+        cause: error,
+        category: "transport_error",
+        strategy: input.strategy,
+        profile: resolved.structuredProfile ?? input.target.profile,
+        reasoningForcedOff: resolved.reasoningForcedOff,
+        fallbackAvailable: input.fallbackAvailable,
+        fallbackUsed: input.fallbackUsed,
+        response: evidence,
+      });
+    }
     evidence.durationMs = Date.now() - startedAt;
     wrapped.diagnostics.response = evidence;
     wrapped.diagnostics.attemptId = diagnosticId;
@@ -424,8 +452,12 @@ async function tryStructuredStrategies<T>(input: {
   fallbackAvailable: boolean;
   fallbackUsed: boolean;
 }): Promise<StructuredInvokeResult<T>> {
+  input.target.profile = resolveStructuredOutputProfile({ ...input.target, executionMode: "structured" });
   const sequence = buildStrategySequence(input.target.profile, input.baseInput.schema);
   const preferredSequence = input.target.preferredStrategy
+    && !schemaAllowsTopLevelArray(input.baseInput.schema)
+    && !input.target.profile.failedModes?.includes(input.target.preferredStrategy === "prompt_json" ? "prompt_only" : input.target.preferredStrategy)
+    && (input.target.requestProtocol !== "anthropic" || input.target.preferredStrategy === "prompt_json")
     ? [
       input.target.preferredStrategy,
       ...sequence.filter((strategy) => strategy !== input.target.preferredStrategy),
@@ -438,14 +470,14 @@ async function tryStructuredStrategies<T>(input: {
     const strategy = preferredSequence[index] ?? preferredSequence.at(-1)!;
     const remainingBefore = budget?.remaining();
     try {
-      return await invokeStructuredAttempt({
+      return await observeInvocationParse(() => invokeStructuredAttempt({
         baseInput: input.baseInput,
         target: input.target,
         strategy,
         strategyIndex: index,
         fallbackAvailable: input.fallbackAvailable,
         fallbackUsed: input.fallbackUsed,
-      });
+      }), value => value.data);
     } catch (error) {
       lastError = wrapStructuredInvokeError({
         label: input.baseInput.label,
@@ -455,6 +487,15 @@ async function tryStructuredStrategies<T>(input: {
         fallbackAvailable: input.fallbackAvailable,
         fallbackUsed: input.fallbackUsed,
       });
+      const reason = lastError.diagnostics.response?.failureReason;
+      const modeFailure = strategy !== "prompt_json" && !input.baseInput.signal?.aborted
+        && implicatesStructuredMode({ category: lastError.category, message: lastError.message,
+          httpStatus: lastError.diagnostics.response?.httpStatus, failureReason: reason });
+      if (modeFailure) {
+        await recordFailedMode(input.target, strategy);
+        if (budget?.remaining() === 0) break;
+        continue;
+      }
       if (terminalResponseReason(lastError.diagnostics.response?.failureReason)
         && !(lastError.diagnostics.response?.failureReason === "empty_response" && lastError.retryWithNextStrategy)) break;
       if (currentModelRequestBudget()?.remaining() === 0) break;
@@ -522,7 +563,11 @@ async function tryStructuredStrategiesWithTransportRetries<T>(input: {
   }
 }
 
-export async function invokeStructuredLlmDetailed<T>(input: StructuredInvokeInput<T>): Promise<StructuredInvokeResult<T>> {
+export function invokeStructuredLlmDetailed<T>(input: StructuredInvokeInput<T>): Promise<StructuredInvokeResult<T>> {
+  return runWithInvocationChain(() => invokeStructuredLlmInChain(input));
+}
+
+async function invokeStructuredLlmInChain<T>(input: StructuredInvokeInput<T>): Promise<StructuredInvokeResult<T>> {
   input = { ...input, diagnosticContext: input.diagnosticContext ?? { invocationId: randomUUID(), nextAttempt: 0 } };
   const primaryTarget = await resolveAttemptTarget({
     provider: input.provider,
@@ -620,6 +665,9 @@ export function summarizeStructuredOutputFailure(input: {
     incomplete_json: incompleteJsonSummary,
     malformed_json: `模型输出的 JSON 格式不稳定${suffix}`,
     schema_mismatch: `模型输出未满足目标结构要求${suffix}`,
+    empty_response: "模型返回了空内容，没有收到可用正文；请重试，持续出现时检查渠道兼容性、思考设置或更换模型。",
+    reasoning_budget_exhausted: "模型只返回了思考内容，输出 Token 已在生成正文前耗尽；请关闭深度思考或提高输出 Token 上限。",
+    output_budget_exhausted: "模型输出达到 Token 上限后被截断，结果不完整；请提高输出 Token 上限后重试。",
     transport_error: `结构化调用过程发生传输或服务端错误${suffix}`,
   };
   return {

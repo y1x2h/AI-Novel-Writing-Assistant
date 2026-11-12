@@ -608,6 +608,7 @@ export default function NovelEdit() {
     isGeneratingSkeleton,
     isGeneratingBeatSheet,
     isGeneratingChapterList,
+    chapterListProgress,
     generatingChapterListVolumeId,
     generatingChapterListBeatKey,
     generatingChapterListMode,
@@ -775,6 +776,13 @@ export default function NovelEdit() {
   const activeDirectorRuntimeSnapshot = activeDirectorSnapshot?.runtime ?? null;
   const activeDirectorRuntimeProjection = activeDirectorSnapshot?.projection ?? null;
   const activeDirectorDashboardView = activeDirectorSnapshot?.dashboardView ?? null;
+  const directorDashboardView = bookAutomationProjection?.dashboardView ?? activeDirectorDashboardView ?? null;
+  const directorStepReviewPending = Boolean(
+    displayAutoDirectorTask
+    && displayAutoDirectorTask.status === "waiting_approval"
+    && displayAutoDirectorTask.checkpointType === "step_review_required"
+  );
+  const directorManualRecoveryPending = directorDashboardView?.mode === "recovering";
   const activeDirectorRuntimeHardBlocked = activeDirectorDashboardView?.mode === "failed"
     || activeDirectorDashboardView?.mode === "recovering"
     || (
@@ -2492,6 +2500,7 @@ export default function NovelEdit() {
     isGeneratingBeatSheet,
     onGenerateBeatSheet: startBeatSheetGeneration,
     isGeneratingChapterList,
+    chapterListProgress,
     generatingChapterListVolumeId,
     generatingChapterListBeatKey,
     generatingChapterListMode,
@@ -2603,13 +2612,7 @@ export default function NovelEdit() {
       enabled: Boolean(
         displayAutoDirectorTask?.id
         && selectedChapter?.content?.trim()
-        && (
-          displayAutoDirectorTask.pendingManualRecovery
-          || (
-            displayAutoDirectorTask.status === "waiting_approval"
-            && displayAutoDirectorTask.checkpointType === "step_review_required"
-          )
-        )
+        && (directorManualRecoveryPending || directorStepReviewPending)
       ),
       isAccepting: acceptManualChangesAndContinueMutation.isPending,
       onAccept: () => {
@@ -2755,6 +2758,9 @@ export default function NovelEdit() {
         isExportingFullMarkdown,
         isExportingFullJson,
         isExportingFullTxt,
+        isExportingFullZip: exportNovelMutation.isPending
+          && exportVariables?.scope === "full"
+          && exportVariables?.format === "zip",
         onExportCurrent: (format) => {
           if (!currentExportScope) {
             return;
@@ -2788,8 +2794,7 @@ export default function NovelEdit() {
         activeStepId: extractDirectorTaskSeedPayloadFromMeta(displayAutoDirectorTask.meta)?.stepReview?.stepId
           ?? displayAutoDirectorTask.currentItemKey
           ?? null,
-        enabled: displayAutoDirectorTask.status === "waiting_approval"
-          && displayAutoDirectorTask.checkpointType === "step_review_required",
+        enabled: directorStepReviewPending,
         isSubmitting: calibrateDirectorStepMutation.isPending,
         onSubmit: (request: DirectorStepCalibrationRequest) => calibrateDirectorStepMutation.mutate({
           directorTaskId: displayAutoDirectorTask.id,

@@ -14,9 +14,11 @@ import {
   upsertModelRouteConfig,
 } from "./modelRouter";
 import { invokeStructuredLlmDetailed, summarizeStructuredOutputFailure } from "./structuredInvoke";
+import { toText } from "../services/novel/novelP0Utils";
 import {
   resolveStructuredOutputProfile,
   selectStructuredOutputStrategy,
+  structuredStrategySequence,
   type StructuredOutputStrategy,
 } from "./structuredOutput";
 
@@ -87,14 +89,9 @@ function getStructuredFormatCandidates(input: {
     requestProtocol: input.requestProtocol,
     executionMode: "structured",
   });
-  const profileFirst = selectStructuredOutputStrategy(profile, STRUCTURED_PROBE_SCHEMA);
-  const fallbackOrder: StructuredOutputStrategy[] = profileFirst === "json_schema"
-    ? ["json_schema", "json_object", "prompt_json"]
-    : profileFirst === "json_object"
-      ? ["json_object", "prompt_json", "json_schema"]
-      : ["prompt_json", "json_object", "json_schema"];
+  const fallbackOrder = structuredStrategySequence(profile, STRUCTURED_PROBE_SCHEMA);
   const preferred = input.preferred;
-  if (preferred === "json_schema" || preferred === "json_object" || preferred === "prompt_json") {
+  if (preferred === "json_schema" || preferred === "json_object" || preferred === "tool_calling" || preferred === "prompt_json") {
     return [preferred, ...fallbackOrder].filter((value, index, array) => array.indexOf(value) === index);
   }
   return fallbackOrder;
@@ -128,7 +125,12 @@ async function testPlainConnection(input: {
       requestProtocol: resolved.requestProtocol,
     });
     const start = Date.now();
-    await llm.invoke([new HumanMessage("请只回复 ok")]);
+    const stream = await llm.stream([new HumanMessage("请只回复 ok")]);
+    let content = "";
+    for await (const chunk of stream) content += toText(chunk.content);
+    if (!content.trim()) {
+      throw new Error("模型连接已建立，但返回了空正文，无法确认渠道可用。请检查渠道协议、模型能力及思考设置。");
+    }
     const plain = {
       ok: true,
       latency: Date.now() - start,
