@@ -409,6 +409,18 @@ export interface ChapterEditorRecommendedTask {
   paragraphLabel?: string | null;
 }
 
+export interface ChapterEditorQualityView {
+  available: boolean;
+  overall: number | null;
+  coherence: number | null;
+  repetition: number | null;
+  pacing: number | null;
+  voice: number | null;
+  engagement: number | null;
+  evaluatedAt: string | null;
+  reason: string | null;
+}
+
 export interface ChapterEditorWorkspaceResponse {
   chapterMeta: {
     chapterId: string;
@@ -418,6 +430,7 @@ export interface ChapterEditorWorkspaceResponse {
     openIssueCount: number;
     styleSummary?: string | null;
     updatedAt: string;
+    quality?: ChapterEditorQualityView;
   };
   macroContext: ChapterEditorMacroContext;
   diagnosticCards: ChapterEditorDiagnosticCard[];

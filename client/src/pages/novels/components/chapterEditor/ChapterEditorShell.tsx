@@ -21,7 +21,7 @@ import {
   type ChapterQualityDebtDetails,
 } from "@ai-novel/shared/types/chapterQualityLoop";
 import { AlertTriangle, Loader2, PanelLeftOpen, PanelRightOpen } from "lucide-react";
-import { createNovelSnapshot, markChapterDiagnosticHandled, previewChapterAiRevision, previewChapterCursorContinuation, previewChapterSceneDirected, resolveChapterAuditIssue, reviewNovelChapter, updateNovelChapter } from "@/api/novel";
+import { createNovelSnapshot, markChapterDiagnosticHandled, previewChapterAiRevision, previewChapterCursorContinuation, previewChapterSceneDirected, reanalyzeChapterEditorWorkspace, resolveChapterAuditIssue, updateNovelChapter } from "@/api/novel";
 import { queryKeys } from "@/api/queryKeys";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
@@ -276,19 +276,25 @@ export default function ChapterEditorShell(props: ChapterEditorShellProps) {
       if (isDirty || saveMutation.isPending) {
         throw new Error("请先保存正文，再重新审校。");
       }
-      return reviewNovelChapter(novelId, chapter.id, {
+      return reanalyzeChapterEditorWorkspace(novelId, chapter.id, {
         provider: llm.provider,
         model: llm.model,
         temperature: 0.1,
-        content: savedContent,
       });
     },
     onSuccess: async (response) => {
+      if (chapter) {
+        queryClient.setQueryData<ApiResponse<ChapterEditorWorkspaceResponse>>(
+          queryKeys.novels.chapterEditorWorkspace(novelId, chapter.id),
+          response,
+        );
+      }
+      setSelectedDiagnosticId(null);
       await invalidateChapterQueries();
-      const assessment = response.data?.qualityAssessment;
-      toast.success(assessment?.recommendedAction === "continue"
-        ? "重新审校通过，本章待优化项已关闭。"
-        : "重新审校完成，AI 仍发现需要处理的内容。");
+      const quality = response.data?.chapterMeta.quality;
+      toast.success(quality?.available
+        ? "本章评审和诊断已完成。"
+        : quality?.reason ?? "本章诊断已完成，本次未生成评分。");
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : "重新审校失败，请稍后重试。");
@@ -977,8 +983,8 @@ export default function ChapterEditorShell(props: ChapterEditorShellProps) {
             backLabel={props.backLabel}
             onOpenChapterVersions={() => setIsVersionDrawerOpen(true)}
             onOpenVersionHistory={onOpenVersionHistory ? () => leaveEditor(onOpenVersionHistory) : undefined}
-            onRefreshWorkspace={onRefreshWorkspace}
-            isRefreshingWorkspace={isRefreshingWorkspace}
+            onRefreshWorkspace={() => reviewMutation.mutate()}
+            isRefreshingWorkspace={isRefreshingWorkspace || reviewMutation.isPending}
             onSave={() => saveMutation.mutate(contentDraft)}
             onFocusDiagnostic={handleFocusDiagnostic}
             onRunDiagnostic={handleRunDiagnostic}

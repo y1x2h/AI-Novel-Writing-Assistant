@@ -603,8 +603,8 @@ test("volume skeleton prompt protects compact and long-form volume structures", 
   assert.match(String(longMessages[0].content), /卖点轮换、压力源轮换和阶段兑现密度/);
 });
 
-test("workspace diagnosis prompt requires english recommendedAction enum values", () => {
-  const asset = getRegisteredPromptAsset("novel.chapter_editor.workspace_diagnosis", "v3");
+test("workspace diagnosis prompt requires english actions and verifiable recurrence evidence", () => {
+  const asset = getRegisteredPromptAsset("novel.chapter_editor.workspace_diagnosis", "v4");
   assert.ok(asset);
 
   const messages = asset.render({
@@ -630,6 +630,9 @@ test("workspace diagnosis prompt requires english recommendedAction enum values"
   assert.match(String(messages[0].content), /compress（精简）/);
   assert.match(String(messages[0].content), /polish（优化表达）/);
   assert.match(String(messages[0].content), /不要输出中文动作词本身/);
+  assert.match(String(messages[0].content), /handledIssueTitle 必须精确复制/);
+  assert.match(String(messages[0].content), /recurrenceEvidence 只能是该段落范围内逐字连续的原文摘录/);
+  assert.match(String(messages[0].content), /独立新问题不要填写 handledIssueTitle/);
   assert.match(String(messages[1].content), /"recommendedAction":"compress"/);
 });
 

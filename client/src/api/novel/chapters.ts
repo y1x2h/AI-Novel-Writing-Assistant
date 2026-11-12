@@ -117,6 +117,22 @@ export async function getChapterEditorWorkspace(novelId: string, chapterId: stri
   return data;
 }
 
+export async function reanalyzeChapterEditorWorkspace(
+  novelId: string,
+  chapterId: string,
+  payload: {
+    provider?: import("@ai-novel/shared/types/llm").LLMProvider;
+    model?: string;
+    temperature?: number;
+  },
+) {
+  const { data } = await apiClient.post<ApiResponse<ChapterEditorWorkspaceResponse>>(
+    `/novels/${novelId}/chapters/${chapterId}/editor/reanalyze`,
+    payload,
+  );
+  return data;
+}
+
 export async function previewChapterSceneDirected(
   novelId: string,
   chapterId: string,
@@ -161,7 +177,7 @@ export async function resolveChapterAuditIssue(novelId: string, issueId: string)
   return data;
 }
 
-/** 上报「这张诊断卡已完整处理」，同一问题之后不再重复出现在诊断列表。 */
+/** 上报已完整处理的诊断卡，供后续 AI 复检关联并核对当前正文是否真实复发。 */
 export async function markChapterDiagnosticHandled(
   novelId: string,
   chapterId: string,

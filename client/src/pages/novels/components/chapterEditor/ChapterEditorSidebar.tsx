@@ -34,6 +34,7 @@ function MetaChip({ label }: { label: string }) {
 export default function ChapterEditorSidebar(props: ChapterEditorSidebarProps) {
   const { chapter, workspace } = props;
   const macro = workspace?.macroContext;
+  const quality = workspace?.chapterMeta.quality;
   const loading = props.workspaceStatus === "loading";
   return (
     <div className="flex h-full min-h-0 flex-col gap-5 overflow-y-auto px-3 py-2">
@@ -59,7 +60,7 @@ export default function ChapterEditorSidebar(props: ChapterEditorSidebarProps) {
           {props.onOpenChapterVersions ? <Button size="sm" variant="outline" onClick={props.onOpenChapterVersions}>查看本章版本</Button>
             : props.onOpenVersionHistory ? <Button size="sm" variant="outline" onClick={props.onOpenVersionHistory}>版本入口</Button> : null}
           {props.onRefreshWorkspace ? <Button size="sm" variant="ghost" onClick={props.onRefreshWorkspace} disabled={props.isRefreshingWorkspace || props.diagnosticsDisabled}>
-            {props.isRefreshingWorkspace ? "分析中..." : "重新分析本章"}
+            {props.isRefreshingWorkspace ? "评审并分析中..." : "重新分析本章"}
           </Button> : null}
         </div>
       </section>
@@ -79,6 +80,37 @@ export default function ChapterEditorSidebar(props: ChapterEditorSidebarProps) {
             {workspace?.chapterMeta.styleSummary ? <p>写法：{workspace.chapterMeta.styleSummary}</p> : null}
           </div>
         </div>
+      </details>
+      <details className="border-t border-border/50 pt-5" open>
+        <summary className="cursor-pointer text-sm font-medium">本章质量评审</summary>
+        {quality?.available ? (
+          <div className="mt-3 space-y-3">
+            <div className="grid grid-cols-3 gap-3 text-sm">
+              {[
+                ["总体", quality.overall],
+                ["连贯", quality.coherence],
+                ["重复", quality.repetition],
+                ["节奏", quality.pacing],
+                ["文风", quality.voice],
+                ["吸引力", quality.engagement],
+              ].map(([label, value]) => (
+                <div key={String(label)} className="space-y-1">
+                  <div className="text-xs text-muted-foreground">{label}</div>
+                  <div className="font-medium">{typeof value === "number" ? value : "—"}</div>
+                </div>
+              ))}
+            </div>
+            {quality.evaluatedAt ? (
+              <p className="text-xs text-muted-foreground">
+                最近评审：{new Date(quality.evaluatedAt).toLocaleString("zh-CN", { hour12: false })}
+              </p>
+            ) : null}
+          </div>
+        ) : (
+          <p className="mt-3 text-sm leading-6 text-muted-foreground">
+            {quality?.reason ?? "本章还没有质量评分，完成一次章节分析后会显示。"}
+          </p>
+        )}
       </details>
       <ChapterEditorDiagnosticList workspace={workspace} status={props.workspaceStatus} selectedId={props.selectedDiagnosticId}
         disabled={props.diagnosticsDisabled ?? false} isDirty={props.isDirty} isResolving={props.isResolvingDiagnostic ?? false}

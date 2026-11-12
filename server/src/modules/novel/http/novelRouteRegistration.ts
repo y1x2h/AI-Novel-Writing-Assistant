@@ -117,6 +117,7 @@ export function registerNovelHttpRoutes(router: Router, services: NovelHttpServi
     novelService,
     chapterParamsSchema,
     chapterDiagnosticHandledSchema,
+    reviewSchema,
     rewritePreviewSchema,
     aiRevisionPreviewSchema,
     sceneDirectedPreviewSchema,

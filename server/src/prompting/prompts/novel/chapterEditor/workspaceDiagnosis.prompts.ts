@@ -43,7 +43,7 @@ export const chapterEditorWorkspaceDiagnosisPrompt: PromptAsset<
   ChapterEditorWorkspaceDiagnosisParsed
 > = {
   id: "novel.chapter_editor.workspace_diagnosis",
-  version: "v3",
+  version: "v4",
   taskType: "writer",
   mode: "structured",
   language: "zh",
@@ -63,6 +63,7 @@ export const chapterEditorWorkspaceDiagnosisPrompt: PromptAsset<
     note: [
       "输出 0 到 4 个适合初学作者立即处理的问题卡，按阅读影响从高到低排列，并只保留一个最优先任务。",
       "recommendedAction 只能使用英文枚举：polish、expand、compress、emotion、conflict。",
+      "handledIssueTitle 关联已处理问题；真实复发必须用 recurrenceEvidence 提供当前段落内的连续原文摘录。",
     ].join(" "),
   },
   render: (input) => [
@@ -78,7 +79,9 @@ export const chapterEditorWorkspaceDiagnosisPrompt: PromptAsset<
       "5. 如果问题卡直接对应【开放问题】中的某一条，sourceIssueId 必须填写该条问题的 id；如果只是新的写作建议则留空。",
       "6. 不要输出 schema 之外的任何解释。",
       "7. 不要输出中文动作词本身；只能输出对应的英文枚举值。",
-      "8. 【已处理过的问题】中列出的问题作者已经处理完毕，除非当前段落摘录里有明确证据表明同一问题重新出现（例如作者把原文改回去了），否则不要再为它们生成问题卡。",
+      "8. 【已处理过的问题】中列出的问题作者已处理完毕。若当前卡片与它语义相同、只是换了标题或表述，handledIssueTitle 必须精确复制那条已处理标题；没有当前正文的明确复发证据时，不要生成这张卡。",
+      "9. 已处理问题真实复发时，必须填写 recurrenceEvidence 和明确的 paragraphStart / paragraphEnd；recurrenceEvidence 只能是该段落范围内逐字连续的原文摘录，不得概括、拼接或引用范围外文字。",
+      "10. 独立新问题不要填写 handledIssueTitle / recurrenceEvidence，即使标题与已处理问题相近也要按正文如实报告；不能为了减少卡片而漏报独立新问题。",
       "",
       "推荐逻辑：",
       "1. 如果存在明显的节奏、冲突、情绪或承接问题，优先选择这类问题。",

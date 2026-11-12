@@ -58,12 +58,23 @@ test('workspace diagnosis retains AI repair goals, approach and protected inform
 });
 
 test('registered diagnosis accepts no actionable issues and legacy cards without new repair fields',()=>{
-  const asset=getRegisteredPromptAsset('novel.chapter_editor.workspace_diagnosis','v3');
+  const asset=getRegisteredPromptAsset('novel.chapter_editor.workspace_diagnosis','v4');
   assert.ok(asset);
   assert.deepEqual(asset.outputSchema.parse({cards:[]}),{cards:[]});
   assert.doesNotThrow(()=>asset.outputSchema.parse({cards:[{
     title:'旧诊断',problemSummary:'节奏拖慢',whyItMatters:'推进迟缓',recommendedAction:'compress',
     recommendedScope:'selection',severity:'medium',
+  }]}));
+  const linked=asset.outputSchema.parse({cards:[{
+    title:'重复痛感',handledIssueTitle:'痛感重复',recurrenceEvidence:'黑丝再次渗入伤口',
+    problemSummary:'相同痛感反复出现',whyItMatters:'拖慢节奏',recommendedAction:'compress',
+    recommendedScope:'selection',paragraphStart:2,paragraphEnd:2,severity:'medium',
+  }]});
+  assert.equal(linked.cards[0].handledIssueTitle,'痛感重复');
+  assert.equal(linked.cards[0].recurrenceEvidence,'黑丝再次渗入伤口');
+  assert.doesNotThrow(()=>asset.outputSchema.parse({cards:[{
+    title:'关联卡',handledIssueTitle:'痛感重复',problemSummary:'等待证据核对',whyItMatters:'避免误报',
+    recommendedAction:'compress',recommendedScope:'selection',severity:'medium',
   }]}));
 });
 
@@ -645,6 +656,67 @@ test("GET workspace and POST ai-revision-preview routes return the new editor pa
   } finally {
     DefaultNovelApplicationServices.prototype.getChapterEditorWorkspace = originalWorkspaceMethod;
     DefaultNovelApplicationServices.prototype.previewChapterAiRevision = originalRevisionMethod;
+    await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+  }
+});
+
+
+test("GET workspace stays diagnostic-only while POST reanalyze invokes the explicit quality workflow", async () => {
+  const originalWorkspaceMethod = DefaultNovelApplicationServices.prototype.getChapterEditorWorkspace;
+  const originalReanalyzeMethod = DefaultNovelApplicationServices.prototype.reanalyzeChapterEditorWorkspace;
+  let workspaceCalls = 0;
+  let reanalyzeCalls = 0;
+  let receivedOptions;
+  const workspace = {
+    chapterMeta: {
+      chapterId: "chapter-1", order: 1, title: "Test Chapter", wordCount: 5,
+      openIssueCount: 0, styleSummary: null, updatedAt: new Date().toISOString(),
+      quality: { available: false, overall: null, reason: "本章还没有质量评分。" },
+    },
+    macroContext: {},
+    diagnosticCards: [],
+    recommendedTask: null,
+    refreshReason: "本章修文建议已更新。",
+  };
+  DefaultNovelApplicationServices.prototype.getChapterEditorWorkspace = async () => {
+    workspaceCalls += 1;
+    return workspace;
+  };
+  DefaultNovelApplicationServices.prototype.reanalyzeChapterEditorWorkspace = async (_novelId, _chapterId, options) => {
+    reanalyzeCalls += 1;
+    receivedOptions = options;
+    return {
+      ...workspace,
+      chapterMeta: {
+        ...workspace.chapterMeta,
+        quality: { available: true, overall: 82, reason: null },
+      },
+    };
+  };
+
+  const app = createApp();
+  const server = http.createServer(app);
+  const port = await listen(server);
+  try {
+    const getResponse = await fetch(`http://127.0.0.1:${port}/api/novels/novel-1/chapters/chapter-1/editor/workspace`);
+    assert.equal(getResponse.status, 200);
+    assert.equal(workspaceCalls, 1);
+    assert.equal(reanalyzeCalls, 0);
+
+    const postResponse = await fetch(`http://127.0.0.1:${port}/api/novels/novel-1/chapters/chapter-1/editor/reanalyze`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provider: "deepseek", model: "test-model", temperature: 0.1 }),
+    });
+    assert.equal(postResponse.status, 200);
+    const payload = await postResponse.json();
+    assert.equal(payload.data.chapterMeta.quality.overall, 82);
+    assert.equal(reanalyzeCalls, 1);
+    assert.equal(workspaceCalls, 1, "POST uses the application reanalysis result without another GET route call");
+    assert.deepEqual(receivedOptions, { provider: "deepseek", model: "test-model", temperature: 0.1 });
+  } finally {
+    DefaultNovelApplicationServices.prototype.getChapterEditorWorkspace = originalWorkspaceMethod;
+    DefaultNovelApplicationServices.prototype.reanalyzeChapterEditorWorkspace = originalReanalyzeMethod;
     await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
   }
 });

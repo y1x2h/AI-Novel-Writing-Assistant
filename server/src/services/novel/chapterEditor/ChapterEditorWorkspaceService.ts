@@ -4,6 +4,7 @@ import type {
   AuditReport,
   ChapterEditorDiagnosticCard,
   ChapterEditorMacroContext,
+  ChapterEditorQualityView,
   ChapterEditorRecommendedTask,
   ChapterEditorWorkspaceResponse,
   StoryPlan,
@@ -14,8 +15,9 @@ import type {
 import {
   CHAPTER_EDITOR_HANDLED_DIAGNOSTICS_PROMPT_LIMIT,
   appendChapterEditorHandledDiagnostic,
-  isChapterEditorDiagnosticHandled,
+  chapterEditorDiagnosticTitlesMatch,
   readChapterEditorHandledDiagnostics,
+  type ChapterEditorHandledDiagnostic,
 } from "@ai-novel/shared/types/chapterEditorDiagnostics";
 import { prisma } from "../../../db/prisma";
 import { runStructuredPrompt } from "../../../prompting/core/promptRunner";
@@ -23,7 +25,12 @@ import {
   chapterEditorWorkspaceDiagnosisPrompt,
   type ChapterEditorWorkspaceDiagnosisPromptInput,
 } from "../../../prompting/prompts/novel/chapterEditor/workspaceDiagnosis.prompts";
+import type { ChapterEditorWorkspaceDiagnosisParsed } from "../../../prompting/prompts/novel/chapterEditor/workspaceDiagnosis.promptSchemas";
 import { NovelCoreService } from "../NovelCoreService";
+import type { ReviewOptions } from "../novelCoreShared";
+import { createQualityReport } from "../novelCoreReviewService";
+import { recheckEditedChapterQuality } from "../production/qualityClosure/recheckEditedChapterQuality";
+import { chapterQualityLoopService } from "../quality/ChapterQualityLoopService";
 import { NovelVolumeService } from "../volume/NovelVolumeService";
 import {
   buildAnchorRangeFromParagraphBounds,
@@ -152,6 +159,45 @@ function normalizeSnapshotDates(snapshot: Awaited<ReturnType<NovelCoreService["g
   };
 }
 
+type WorkspaceDiagnosticCardOutput = ChapterEditorWorkspaceDiagnosisParsed["cards"][number];
+
+function normalizeRecurrenceEvidence(text: string): string {
+  return text.trim().replace(/\s+/g, " ");
+}
+
+/**
+ * AI 负责判断语义关联；投影层只验证关联对象和当前段落内的连续原文证据。
+ * 标题相近但没有结构化关联的新问题必须保留，证据不足的关联卡才收起。
+ */
+function shouldRetainDiagnosticCard(
+  card: WorkspaceDiagnosticCardOutput,
+  handledDiagnostics: ChapterEditorHandledDiagnostic[],
+  paragraphs: ChapterEditorParagraph[],
+): boolean {
+  const handledIssueTitle = card.handledIssueTitle?.trim();
+  if (!handledIssueTitle) {
+    return true;
+  }
+  const hasValidAssociation = handledDiagnostics.some((record) => (
+    chapterEditorDiagnosticTitlesMatch(record.title, handledIssueTitle)
+  ));
+  if (!hasValidAssociation) {
+    return true;
+  }
+
+  const evidence = normalizeRecurrenceEvidence(card.recurrenceEvidence ?? "");
+  const start = card.paragraphStart ?? null;
+  const end = card.paragraphEnd ?? start;
+  if (evidence.length < 4 || start === null || end === null || end < start) {
+    return false;
+  }
+  return paragraphs.some((paragraph) => (
+    paragraph.index >= start
+    && paragraph.index <= end
+    && normalizeRecurrenceEvidence(paragraph.text).includes(evidence)
+  ));
+}
+
 function mapDiagnosticCard(
   card: {
     sourceIssueId?: string;
@@ -226,6 +272,70 @@ function mapRecommendedTask(
     recommendedScope: firstCard.recommendedScope,
     anchorRange: firstCard.anchorRange ?? null,
     paragraphLabel: firstCard.paragraphLabel ?? null,
+  };
+}
+
+function readQualityNumber(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return null;
+  }
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function readAuditQualityPayload(report: AuditReport): { score: Record<string, unknown> | null; scoreAvailable: boolean; riskTags: string[] } | null {
+  const raw = (report as { legacyScoreJson?: unknown }).legacyScoreJson;
+  if (!raw) {
+    return null;
+  }
+  let parsed: unknown = raw;
+  if (typeof raw === "string") {
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return null;
+  }
+  const record = parsed as Record<string, unknown>;
+  // Acceptance writes a flat score object; older reports may nest it under `score`.
+  const score = record.score && typeof record.score === "object" && !Array.isArray(record.score)
+    ? record.score as Record<string, unknown>
+    : record;
+  const riskTags = Array.isArray(record.riskTags)
+    ? record.riskTags.filter((tag): tag is string => typeof tag === "string")
+    : [];
+  return { score, scoreAvailable: record.scoreAvailable !== false, riskTags };
+}
+
+function describeQualityUnavailable(riskTags: string[]): string {
+  if (riskTags.some((tag) => tag.includes("continuity_review_evidence_invalid"))) {
+    return "本次审校的前后章证据核对未通过，未生成评分。继续写作不受影响，可稍后重新分析本章。";
+  }
+  if (riskTags.some((tag) => tag.includes("transport") || tag.includes("timeout") || tag.includes("unavailable"))) {
+    return "本次审校未完成，未生成评分。继续写作不受影响，可稍后重新分析本章。";
+  }
+  return "本章还没有质量评分，完成一次章节分析后会显示。";
+}
+
+function buildChapterQualityView(auditReports: AuditReport[]): ChapterEditorQualityView {
+  const latest = auditReports.find((report) => readAuditQualityPayload(report) !== null);
+  const payload = latest ? readAuditQualityPayload(latest) : null;
+  const score = payload?.score ?? null;
+  const overall = readQualityNumber(score?.overall);
+  const available = Boolean(payload && payload.scoreAvailable && overall !== null);
+  const createdAt = latest?.createdAt;
+  return {
+    available,
+    overall,
+    coherence: available ? readQualityNumber(score?.coherence) : null,
+    repetition: available ? readQualityNumber(score?.repetition) : null,
+    pacing: available ? readQualityNumber(score?.pacing) : null,
+    voice: available ? readQualityNumber(score?.voice) : null,
+    engagement: available ? readQualityNumber(score?.engagement) : null,
+    evaluatedAt: createdAt ? new Date(createdAt).toISOString() : null,
+    reason: available ? null : describeQualityUnavailable(payload?.riskTags ?? []),
   };
 }
 
@@ -311,6 +421,7 @@ export class ChapterEditorWorkspaceService {
 
   async getWorkspace(novelId: string, chapterId: string): Promise<ChapterEditorWorkspaceResponse> {
     const context = await this.loadContext(novelId, chapterId);
+    const quality = buildChapterQualityView(context.auditReports);
 
     if (!context.normalizedContent.trim() || context.paragraphs.length === 0) {
       return {
@@ -322,6 +433,7 @@ export class ChapterEditorWorkspaceService {
           openIssueCount: context.openAuditIssues.length,
           styleSummary: context.styleSummary || null,
           updatedAt: context.chapter.updatedAt instanceof Date ? context.chapter.updatedAt.toISOString() : context.chapter.updatedAt,
+          quality,
         },
         macroContext: context.macroContext,
         diagnosticCards: [],
@@ -331,8 +443,7 @@ export class ChapterEditorWorkspaceService {
     }
 
     try {
-      // 熔断：本章此前已完整处理过的诊断问题，既作为上下文告诉诊断 AI 不要重复报告，
-      // 也在投影层把措辞漂移后再次出现的同名卡片过滤掉。
+      // AI 结构化关联已处理问题；投影层只收起缺少当前正文复发证据的关联卡。
       const handledDiagnostics = readChapterEditorHandledDiagnostics(context.chapter.riskFlags);
       const result = await this.promptRunner({
         asset: chapterEditorWorkspaceDiagnosisPrompt,
@@ -372,11 +483,17 @@ export class ChapterEditorWorkspaceService {
       });
 
       const sourceIssueIds = new Set(context.openAuditIssues.map((issue) => issue.id));
-      const allCards = result.output.cards.map((card) => mapDiagnosticCard(card, context.paragraphs, sourceIssueIds));
-      const diagnosticCards = allCards.filter((card) => !isChapterEditorDiagnosticHandled(card.title, handledDiagnostics));
-      const suppressedCount = allCards.length - diagnosticCards.length;
+      const retainedCards = result.output.cards.filter((card) => (
+        shouldRetainDiagnosticCard(card, handledDiagnostics, context.paragraphs)
+      ));
+      const diagnosticCards = retainedCards.map((card) => (
+        mapDiagnosticCard(card, context.paragraphs, sourceIssueIds)
+      ));
+      const suppressedCount = result.output.cards.length - diagnosticCards.length;
       const recommendedTaskInput = result.output.recommendedTask
-        && !isChapterEditorDiagnosticHandled(result.output.recommendedTask.title, handledDiagnostics)
+        && retainedCards.some((card) => (
+          chapterEditorDiagnosticTitlesMatch(card.title, result.output.recommendedTask?.title)
+        ))
         ? result.output.recommendedTask
         : undefined;
       const recommendedTask = mapRecommendedTask(recommendedTaskInput, diagnosticCards, context.paragraphs);
@@ -390,12 +507,13 @@ export class ChapterEditorWorkspaceService {
           openIssueCount: context.openAuditIssues.length,
           styleSummary: context.styleSummary || null,
           updatedAt: context.chapter.updatedAt instanceof Date ? context.chapter.updatedAt.toISOString() : context.chapter.updatedAt,
+          quality,
         },
         macroContext: context.macroContext,
         diagnosticCards,
         recommendedTask,
         refreshReason: suppressedCount > 0
-          ? `已基于本章内容、卷内定位与开放问题实时生成修文建议；另有 ${suppressedCount} 个此前已处理的问题未再重复提示。`
+          ? `本章修文建议已更新，并收起 ${suppressedCount} 项未在当前正文中发现复发证据的已处理问题。`
           : "已基于本章内容、卷内定位与开放问题实时生成修文建议。",
       };
     } catch (error) {
@@ -409,6 +527,7 @@ export class ChapterEditorWorkspaceService {
           openIssueCount: context.openAuditIssues.length,
           styleSummary: context.styleSummary || null,
           updatedAt: context.chapter.updatedAt instanceof Date ? context.chapter.updatedAt.toISOString() : context.chapter.updatedAt,
+          quality,
         },
         macroContext: context.macroContext,
         diagnosticCards: [],
@@ -418,8 +537,43 @@ export class ChapterEditorWorkspaceService {
     }
   }
 
+  /** 显式重新分析：先验收并保存当前正文的评分，再生成同一正文版本的诊断。 */
+  async reanalyzeWorkspace(
+    novelId: string,
+    chapterId: string,
+    options: ReviewOptions = {},
+  ): Promise<ChapterEditorWorkspaceResponse> {
+    const chapter = await prisma.chapter.findFirst({
+      where: { id: chapterId, novelId },
+      select: { id: true, order: true, content: true },
+    });
+    if (!chapter) {
+      throw new Error("章节不存在。");
+    }
+    const content = chapter.content ?? "";
+    if (!content.trim()) {
+      throw new Error("当前章节正文为空，无法重新分析。请先写下至少一段正文。");
+    }
+    const review = await recheckEditedChapterQuality(novelId, chapterId, content, options, {
+      persistAssessment: true,
+    });
+    if (review.reviewExecuted) {
+      await createQualityReport(novelId, chapterId, review.score, review.issues);
+      await chapterQualityLoopService.recordAssessment({
+        novelId,
+        chapterId,
+        chapterOrder: chapter.order,
+        score: review.score,
+        issues: review.issues,
+        source: "manual_review",
+        terminalAction: review.pass ? null : "defer_and_continue",
+      });
+    }
+    return this.getWorkspace(novelId, chapterId);
+  }
+
   /**
-   * 记录「这张诊断卡已被作者完整处理」。之后同一标题指纹的问题不再重复出现在诊断列表里。
+   * 记录「这张诊断卡已被作者完整处理」，供后续诊断进行结构化复发核对。
    * 记录在 chapter.riskFlags.editorHandledDiagnostics，与质量债共用同一持久化载体，无需迁移。
    */
   async markDiagnosticHandled(

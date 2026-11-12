@@ -111,6 +111,7 @@ function buildWorkspaceContext(riskFlags) {
 const DIAGNOSIS_OUTPUT = {
   cards: [{
     title: "梆子声重复过多",
+    handledIssueTitle: "梆子声重复过多，节奏被冲淡",
     problemSummary: "同一声响反复出现",
     whyItMatters: "节奏机械",
     repairGoal: "合并重复",
@@ -160,7 +161,7 @@ test("workspace diagnosis suppresses cards whose problem was already handled", a
   const workspace = await service.getWorkspace("novel-1", "chapter-1");
 
   assert.deepEqual(workspace.diagnosticCards.map((card) => card.title), ["人物动机不清"]);
-  assert.ok(workspace.refreshReason.includes("1 个此前已处理的问题未再重复提示"));
+  assert.ok(workspace.refreshReason.includes("收起 1 项"));
   assert.equal(workspace.recommendedTask?.title, "人物动机不清", "被抑制的推荐任务回退到首个保留卡片");
   assert.deepEqual(
     (capturedInput.handledIssues ?? []).map((issue) => issue.title),
@@ -169,11 +170,185 @@ test("workspace diagnosis suppresses cards whose problem was already handled", a
   );
 });
 
+function withFirstDiagnosticCard(patch) {
+  return {
+    ...DIAGNOSIS_OUTPUT,
+    cards: [{ ...DIAGNOSIS_OUTPUT.cards[0], ...patch }, DIAGNOSIS_OUTPUT.cards[1]],
+  };
+}
+
+function handledSoundRiskFlags() {
+  return appendChapterEditorHandledDiagnostic(null, {
+    title: "梆子声重复过多，节奏被冲淡",
+    problemSummary: "当时的问题",
+  });
+}
+
+test("workspace diagnosis suppresses a semantic rewrite linked to a handled issue without evidence", async () => {
+  const service = new ChapterEditorWorkspaceService({}, {}, async () => ({
+    output: withFirstDiagnosticCard({ title: "梆子声反复出现，节奏机械" }),
+  }));
+  service.loadContext = async () => buildWorkspaceContext(handledSoundRiskFlags());
+  const workspace = await service.getWorkspace("novel-1", "chapter-1");
+  assert.deepEqual(workspace.diagnosticCards.map((card) => card.title), ["人物动机不清"]);
+});
+
+test("workspace diagnosis retains a real recurrence with continuous evidence in its declared paragraph", async () => {
+  const service = new ChapterEditorWorkspaceService({}, {}, async () => ({
+    output: withFirstDiagnosticCard({ recurrenceEvidence: "alpha" }),
+  }));
+  service.loadContext = async () => buildWorkspaceContext(handledSoundRiskFlags());
+  const workspace = await service.getWorkspace("novel-1", "chapter-1");
+  assert.deepEqual(workspace.diagnosticCards.map((card) => card.title), ["梆子声重复过多", "人物动机不清"]);
+  assert.equal(workspace.recommendedTask?.title, "梆子声重复过多");
+});
+
+test("workspace diagnosis suppresses linked cards when evidence is outside the declared paragraph", async () => {
+  const service = new ChapterEditorWorkspaceService({}, {}, async () => ({
+    output: withFirstDiagnosticCard({ recurrenceEvidence: "beta" }),
+  }));
+  service.loadContext = async () => buildWorkspaceContext(handledSoundRiskFlags());
+  const workspace = await service.getWorkspace("novel-1", "chapter-1");
+  assert.deepEqual(workspace.diagnosticCards.map((card) => card.title), ["人物动机不清"]);
+  assert.equal(workspace.recommendedTask?.title, "人物动机不清");
+});
+
+test("workspace diagnosis keeps a similar-title independent issue without an AI association", async () => {
+  const independentCard = { ...DIAGNOSIS_OUTPUT.cards[0] };
+  delete independentCard.handledIssueTitle;
+  const service = new ChapterEditorWorkspaceService({}, {}, async () => ({
+    output: { ...DIAGNOSIS_OUTPUT, cards: [independentCard, DIAGNOSIS_OUTPUT.cards[1]] },
+  }));
+  service.loadContext = async () => buildWorkspaceContext(handledSoundRiskFlags());
+  const workspace = await service.getWorkspace("novel-1", "chapter-1");
+  assert.deepEqual(workspace.diagnosticCards.map((card) => card.title), ["梆子声重复过多", "人物动机不清"]);
+});
+
 test("workspace diagnosis keeps all cards when nothing was handled before", async () => {
   const service = new ChapterEditorWorkspaceService({}, {}, async () => ({ output: DIAGNOSIS_OUTPUT }));
   service.loadContext = async () => buildWorkspaceContext(null);
   const workspace = await service.getWorkspace("novel-1", "chapter-1");
   assert.equal(workspace.diagnosticCards.length, 2);
   assert.equal(workspace.recommendedTask?.title, "梆子声重复过多");
-  assert.ok(!workspace.refreshReason.includes("未再重复提示"));
+  assert.ok(!workspace.refreshReason.includes("收起"));
+});
+
+function buildReviewResult(overrides = {}) {
+  return {
+    reviewExecuted: true,
+    pass: false,
+    score: { coherence: 76, repetition: 76, pacing: 76, voice: 76, engagement: 76, overall: 76 },
+    issues: [],
+    runtimePackage: null,
+    retryCountUsed: 0,
+    ...overrides,
+  };
+}
+
+function mockChapterFindFirst(t, result) {
+  const { prisma } = require("../dist/db/prisma.js");
+  const chapter = prisma.chapter;
+  const descriptor = Object.getOwnPropertyDescriptor(chapter, "findFirst");
+  const findFirst = t.mock.fn(async () => result);
+  Object.defineProperty(chapter, "findFirst", {
+    configurable: true,
+    enumerable: true,
+    writable: true,
+    value: findFirst,
+  });
+  t.after(() => {
+    if (descriptor) {
+      Object.defineProperty(chapter, "findFirst", descriptor);
+    } else {
+      delete chapter.findFirst;
+    }
+  });
+  return findFirst;
+}
+
+test("explicit workspace reanalysis saves the score and quality loop before refreshing diagnostics", async (t) => {
+  const recheckModule = require("../dist/services/novel/production/qualityClosure/recheckEditedChapterQuality.js");
+  const reviewModule = require("../dist/services/novel/novelCoreReviewService.js");
+  const { chapterQualityLoopService } = require("../dist/services/novel/quality/ChapterQualityLoopService.js");
+  const events = [];
+  mockChapterFindFirst(t, { id: "chapter-1", order: 7, content: "alpha" });
+  const recheck = t.mock.method(recheckModule, "recheckEditedChapterQuality", async () => {
+    events.push("review");
+    return buildReviewResult();
+  });
+  const createReport = t.mock.method(reviewModule, "createQualityReport", async () => {
+    events.push("score");
+    return {};
+  });
+  const recordAssessment = t.mock.method(chapterQualityLoopService, "recordAssessment", async () => {
+    events.push("quality-loop");
+    return {};
+  });
+  const service = new ChapterEditorWorkspaceService({}, {}, async () => ({ output: { cards: [] } }));
+  service.getWorkspace = async () => {
+    events.push("diagnosis");
+    return { refreshed: true };
+  };
+
+  const result = await service.reanalyzeWorkspace("novel-1", "chapter-1", { provider: "deepseek" });
+
+  assert.deepEqual(result, { refreshed: true });
+  assert.deepEqual(events, ["review", "score", "quality-loop", "diagnosis"]);
+  assert.deepEqual(recheck.mock.calls[0].arguments, [
+    "novel-1", "chapter-1", "alpha", { provider: "deepseek" }, { persistAssessment: true },
+  ]);
+  assert.equal(createReport.mock.calls.length, 1);
+  assert.equal(recordAssessment.mock.calls[0].arguments[0].terminalAction, "defer_and_continue");
+});
+
+test("explicit workspace reanalysis does not invent a score when acceptance is unavailable", async (t) => {
+  const recheckModule = require("../dist/services/novel/production/qualityClosure/recheckEditedChapterQuality.js");
+  const reviewModule = require("../dist/services/novel/novelCoreReviewService.js");
+  const { chapterQualityLoopService } = require("../dist/services/novel/quality/ChapterQualityLoopService.js");
+  mockChapterFindFirst(t, { id: "chapter-1", order: 7, content: "alpha" });
+  t.mock.method(recheckModule, "recheckEditedChapterQuality", async () => buildReviewResult({ reviewExecuted: false }));
+  const createReport = t.mock.method(reviewModule, "createQualityReport", async () => ({}));
+  const recordAssessment = t.mock.method(chapterQualityLoopService, "recordAssessment", async () => ({}));
+  const service = new ChapterEditorWorkspaceService({}, {}, async () => ({ output: { cards: [] } }));
+  service.getWorkspace = async () => ({ refreshed: true });
+
+  await service.reanalyzeWorkspace("novel-1", "chapter-1", {});
+
+  assert.equal(createReport.mock.calls.length, 0);
+  assert.equal(recordAssessment.mock.calls.length, 0);
+});
+
+function mockAcceptanceRun(t, content) {
+  const auditContext = require("../dist/services/novel/runtime/repair/chapterAuditContext.js");
+  const { ChapterQualityGateService } = require("../dist/services/novel/runtime/ChapterQualityGateService.js");
+  t.mock.method(auditContext, "assembleChapterAuditContextPackage", async () => ({}));
+  mockChapterFindFirst(t, { content });
+  const run = t.mock.method(ChapterQualityGateService.prototype, "runAcceptanceGate", async () => ({
+    assessment: { status: "accepted", continuePolicy: "continue", repairability: "none", riskTags: [] },
+    score: { overall: 82 },
+    issues: [],
+  }));
+  const persist = t.mock.method(ChapterQualityGateService.prototype, "persistAcceptanceResult", async () => ({}));
+  return { run, persist };
+}
+
+test("recheck persists an explicit assessment only after confirming the saved content is unchanged", async (t) => {
+  const { recheckEditedChapterQuality } = require("../dist/services/novel/production/qualityClosure/recheckEditedChapterQuality.js");
+  const { run, persist } = mockAcceptanceRun(t, "alpha");
+
+  await recheckEditedChapterQuality("novel-1", "chapter-1", "alpha", {}, { persistAssessment: true });
+
+  assert.equal(run.mock.calls[0].arguments[0].persistAssessment, false);
+  assert.equal(persist.mock.calls.length, 1);
+});
+
+test("recheck never persists a stale assessment when the saved content changes during review", async (t) => {
+  const { recheckEditedChapterQuality } = require("../dist/services/novel/production/qualityClosure/recheckEditedChapterQuality.js");
+  const { persist } = mockAcceptanceRun(t, "edited elsewhere");
+
+  await assert.rejects(
+    recheckEditedChapterQuality("novel-1", "chapter-1", "alpha", {}, { persistAssessment: true }),
+    /正文在检查期间发生变化/,
+  );
+  assert.equal(persist.mock.calls.length, 0);
 });

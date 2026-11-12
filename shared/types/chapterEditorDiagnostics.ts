@@ -5,12 +5,12 @@
  * 已经处理过的同一问题换个说法再次报出（打地鼠循环），用户被迫反复优化。
  *
  * 决策：问题卡被完整处理（AI 候选全部接受并保存正文，或作者手动确认完成）后，
- * 在 chapter.riskFlags.editorHandledDiagnostics 记录标题指纹。之后的诊断投影里，
- * 标题指纹匹配的卡片不再出现；同时把已处理标题注入诊断 prompt，
- * 让 AI 知道这些问题已经处理过，不要重复报告。
+ * 在 chapter.riskFlags.editorHandledDiagnostics 记录标题与摘要，并注入后续诊断
+ * prompt。AI 用结构化字段标明卡片关联的已处理问题；投影层只验证这个关联和
+ * 当前段落内的连续原文复发证据，证据不足时收起关联卡。
  *
- * 边界：这里只做标题级指纹匹配，不追踪锚定文本。宁可在文本被作者改回后
- * 漏报一次（可手动重新说明问题），也不让同一问题无限循环消耗作者。
+ * 边界：标题指纹只用于核对 AI 给出的关联对象，不能单独决定卡片是否过滤。
+ * 没有结构化关联的相近标题或独立新问题必须保留；真实复发必须带可核对的正文证据。
  */
 
 export interface ChapterEditorHandledDiagnostic {
@@ -131,6 +131,7 @@ export function appendChapterEditorHandledDiagnostic(
   return JSON.stringify({ ...root, editorHandledDiagnostics: next });
 }
 
+/** 仅供核对 AI 的已处理问题关联；不得仅凭此结果过滤新诊断卡。 */
 export function isChapterEditorDiagnosticHandled(
   title: string | null | undefined,
   records: ChapterEditorHandledDiagnostic[],

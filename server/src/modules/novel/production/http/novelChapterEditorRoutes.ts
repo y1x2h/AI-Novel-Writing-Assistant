@@ -9,6 +9,7 @@ interface RegisterNovelChapterEditorRoutesInput {
   router: Router;
   novelService: Pick<NovelApplicationServices,
     | "getChapterEditorWorkspace"
+    | "reanalyzeChapterEditorWorkspace"
     | "markChapterDiagnosticHandled"
     | "previewChapterAiRevision"
     | "previewChapterCursorContinuation"
@@ -17,6 +18,7 @@ interface RegisterNovelChapterEditorRoutesInput {
   >;
   chapterParamsSchema: z.ZodType<{ id: string; chapterId: string }>;
   chapterDiagnosticHandledSchema: z.ZodTypeAny;
+  reviewSchema: z.ZodTypeAny;
   rewritePreviewSchema: z.ZodTypeAny;
   aiRevisionPreviewSchema: z.ZodTypeAny;
   sceneDirectedPreviewSchema: z.ZodTypeAny;
@@ -30,6 +32,7 @@ export function registerNovelChapterEditorRoutes(input: RegisterNovelChapterEdit
     novelService,
     chapterParamsSchema,
     chapterDiagnosticHandledSchema,
+    reviewSchema,
     rewritePreviewSchema,
     aiRevisionPreviewSchema,
     sceneDirectedPreviewSchema,
@@ -54,6 +57,37 @@ export function registerNovelChapterEditorRoutes(input: RegisterNovelChapterEdit
           return;
         }
         if (error instanceof Error && ["小说不存在。", "章节不存在。"].includes(error.message)) {
+          next(new AppError(error.message, 400));
+          return;
+        }
+        next(error);
+      }
+    },
+  );
+
+  router.post(
+    "/:id/chapters/:chapterId/editor/reanalyze",
+    validate({ params: chapterParamsSchema, body: reviewSchema }),
+    async (req, res, next) => {
+      try {
+        const { id, chapterId } = req.params as z.infer<typeof chapterParamsSchema>;
+        const data = await novelService.reanalyzeChapterEditorWorkspace(id, chapterId, req.body);
+        res.status(200).json({
+          success: true,
+          data,
+          message: "Chapter editor workspace reanalyzed.",
+        } satisfies ApiResponse<typeof data>);
+      } catch (error) {
+        if (forwardBusinessError(error, next)) {
+          return;
+        }
+        if (error instanceof Error && [
+          "小说不存在。",
+          "章节不存在。",
+          "当前章节正文为空，无法重新分析。请先写下至少一段正文。",
+          "正文在检查期间发生变化，请从保存进度继续处理新正文。",
+          "本章修订需要调整后续规划，请保存规划后继续。",
+        ].includes(error.message)) {
           next(new AppError(error.message, 400));
           return;
         }
