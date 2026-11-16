@@ -13,6 +13,7 @@ import type {
 } from "@ai-novel/shared/types/marketRadar";
 import {
   canStartMarketRadarAnalysis,
+  isMarketNewBookListKey,
   MARKET_RADAR_ANALYSIS_STARTABLE_STATUSES,
   MARKET_RADAR_PLATFORMS,
 } from "@ai-novel/shared/types/marketRadar";
@@ -37,6 +38,7 @@ import {
   hasPrivateUseCharacters,
   MARKET_RADAR_SOURCES,
 } from "../infrastructure/marketRadarSources";
+import { buildPlatformAggregationText } from "./marketRadarAggregation";
 
 const REFRESH_GUARD_MS = 30 * 60 * 1000;
 const FRESH_REPORT_MS = 24 * 60 * 60 * 1000;
@@ -99,6 +101,9 @@ function toRankingItem(row: {
   tagsJson: string | null;
   synopsis: string | null;
   heatLabel: string | null;
+  heatMetric: string | null;
+  heatValue: number | null;
+  wordCount: number | null;
   serialStatus: string | null;
   sourceUrl: string;
   snapshot: { platform: string; listKey: string };
@@ -114,6 +119,9 @@ function toRankingItem(row: {
     tags: parseJson<string[]>(row.tagsJson, []),
     synopsis: row.synopsis,
     heatLabel: row.heatLabel,
+    heatMetric: row.heatMetric,
+    heatValue: row.heatValue,
+    wordCount: row.wordCount,
     serialStatus: row.serialStatus,
     sourceUrl: row.sourceUrl,
   };
@@ -148,7 +156,7 @@ function formatRankingItems(items: MarketRankingItem[]): string {
     const key = `${item.title}::${item.author ?? ""}`;
     groups.set(key, [...(groups.get(key) ?? []), item]);
   }
-  const isPrimary = (appearances: MarketRankingItem[]) => appearances.some((item) => item.listKey === "new_book" || item.listKey === "new_author");
+  const isPrimary = (appearances: MarketRankingItem[]) => appearances.some((item) => isMarketNewBookListKey(item.listKey));
   return [...groups.values()].sort((left, right) => Number(isPrimary(right)) - Number(isPrimary(left))).map((appearances) => {
     const item = appearances.sort((left, right) => left.rank - right.rank)[0];
     return [
@@ -159,6 +167,7 @@ function formatRankingItems(items: MarketRankingItem[]): string {
     item.category ? `分类=${item.category}` : "",
     item.tags.length ? `公开标签=${item.tags.join("、")}` : "",
     item.heatLabel ? `公开热度=${item.heatLabel}` : "",
+    item.wordCount ? `字数=${(item.wordCount / 10_000).toFixed(1)}万字` : "",
     item.serialStatus ? `状态=${item.serialStatus}` : "",
     item.synopsis ? `公开简介=${item.synopsis.slice(0, 320)}` : "",
     ].filter(Boolean).join(" | ");
@@ -312,14 +321,7 @@ export function selectMarketAnalysisSnapshots<T extends { platform: string; list
     const selectedKeys = new Set(selectedLists.map(marketSourceKey));
     return snapshots.filter((snapshot) => selectedKeys.has(marketSourceKey(snapshot)));
   }
-  const newBookPlatforms = new Set(snapshots
-    .filter((snapshot) => snapshot.listKey === "new_book" || snapshot.listKey === "new_author")
-    .map((snapshot) => snapshot.platform));
-  return snapshots.filter((snapshot) => (
-    !newBookPlatforms.has(snapshot.platform)
-    || snapshot.listKey === "new_book"
-    || snapshot.listKey === "new_author"
-  ));
+  return snapshots;
 }
 
 export function selectMarketAnalysisItems<T extends { id: string }>(items: T[], selectedItemIds?: string[]): T[] {
@@ -344,7 +346,7 @@ export class MarketRadarService {
     });
   }
 
-  async startScan(platforms?: MarketRadarPlatform[]): Promise<MarketScanRun> {
+  async startScan(platforms?: MarketRadarPlatform[], options: { force?: boolean } = {}): Promise<MarketScanRun> {
     const requestedPlatforms = normalizePlatforms(platforms);
     const recent = await prisma.marketScanRun.findFirst({
       where: { createdAt: { gte: new Date(Date.now() - REFRESH_GUARD_MS) }, status: { in: ["queued", "running", "ready", "analyzing", "succeeded", "partial"] } },
@@ -353,8 +355,9 @@ export class MarketRadarService {
     });
     const hasObfuscatedFanqieData = recent?.snapshots.some((snapshot) => snapshot.platform === "fanqie"
       && snapshot.items.some((item) => hasPrivateUseCharacters(item.title) || hasPrivateUseCharacters(item.author)));
+    const hasFailedSnapshots = recent?.snapshots.some((snapshot) => snapshot.status === "failed");
     const hasLegacyCompletedProgress = recent && ["ready", "partial", "succeeded"].includes(recent.status) && recent.progress < 1;
-    if (recent && samePlatforms(recent.requestedPlatformsJson, requestedPlatforms) && !hasObfuscatedFanqieData && !hasLegacyCompletedProgress) {
+    if (!options.force && recent && samePlatforms(recent.requestedPlatformsJson, requestedPlatforms) && !hasObfuscatedFanqieData && !hasFailedSnapshots && !hasLegacyCompletedProgress) {
       return this.getScan(recent.id) as Promise<MarketScanRun>;
     }
 
@@ -578,6 +581,9 @@ export class MarketRadarService {
               tagsJson: JSON.stringify(item.tags),
               synopsis: item.synopsis,
               heatLabel: item.heatLabel,
+              heatMetric: item.heatMetric,
+              heatValue: item.heatValue,
+              wordCount: item.wordCount,
               serialStatus: item.serialStatus,
               sourceUrl: item.sourceUrl,
             })) },
@@ -626,9 +632,15 @@ export class MarketRadarService {
     const platformDigests = await Promise.all(requested.map(async (platform) => {
       const items = allItems.filter((item) => item.platform === platform);
       if (items.length === 0) return null;
+      const aggregationText = buildPlatformAggregationText(
+        platformLabel(platform),
+        analysisSnapshots
+          .filter((snapshot) => snapshot.platform === platform)
+          .map((snapshot) => ({ listKey: snapshot.listKey, listLabel: snapshot.listLabel, items: snapshot.items })),
+      );
       const result = await runStructuredPrompt({
         asset: marketPlatformDigestPrompt,
-        promptInput: { platformLabel: platformLabel(platform), rankingText: formatRankingItems(items) },
+        promptInput: { platformLabel: platformLabel(platform), aggregationText, rankingText: formatRankingItems(items) },
         options: { temperature: 0.2, maxTokens: 3_000, taskId: runId, stage: "market_radar", itemKey: `digest_${platform}`, entrypoint: "market_radar" },
       });
       return { platform, ...result.output };

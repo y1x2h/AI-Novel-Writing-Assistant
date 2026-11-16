@@ -9,6 +9,7 @@ import {
 
 interface PlatformDigestInput {
   platformLabel: string;
+  aggregationText: string;
   rankingText: string;
 }
 
@@ -32,14 +33,16 @@ const analystSystem = [
   "语义分类、套路归纳和机会判断必须由你完成；不能只按标题关键词机械计数。",
   "只根据输入中的公开榜单元数据归纳热门题材和市场信号；对输入未提供的信息不要臆测。",
   "重点分析：热门题材组合、主角身份、金手指机制、开篇危机、关系卖点、标题句式、拥挤套路和差异化机会。",
-  "输入有新书榜或新晋作者榜时只分析这些新书证据；成熟榜单只会在没有可用新书榜时作为回退数据。",
+  "新书榜和新晋作者榜是主要证据；成熟榜单用于验证需求是否持续、判断题材容量，不能当作新书方向的直接依据。",
+  "题材分布、热度中位、字数中位和多榜重合等确定性统计可以直接引用；不同平台的热度口径不同，禁止把两个平台的数值直接比较大小。",
+  "平台没有提供热度数字时，只根据本数、题材和作品证据判断，不要编造热度。",
   "kind 只能使用 genre、protagonist、advantage、opening、relationship、title_pattern、opportunity、crowding；不得创造近义枚举值。",
   "榜单高频不等于适合照搬。机会建议必须说明读者满足点，同时避开直接复制具体作品。",
 ].join("\n");
 
 export const marketPlatformDigestPrompt: PromptAsset<PlatformDigestInput, z.infer<typeof marketPlatformDigestSchema>> = {
   id: "market_radar.platform_digest",
-  version: "v3",
+  version: "v4",
   taskType: "planner",
   mode: "structured",
   language: "zh",
@@ -54,6 +57,10 @@ export const marketPlatformDigestPrompt: PromptAsset<PlatformDigestInput, z.infe
       "请归纳这个平台当前榜单的市场信号。首次横截面分析的 direction 一律使用 current。",
       "每类只保留有多条证据或商业意义明确的信号，总计输出5到10项；id 使用简短稳定的英文短横线格式。",
       "",
+      "确定性统计（可直接引用）：",
+      input.aggregationText || "无",
+      "",
+      "作品证据：",
       input.rankingText,
     ].join("\n")),
   ],
@@ -63,7 +70,7 @@ export const marketPlatformDigestPrompt: PromptAsset<PlatformDigestInput, z.infe
 
 export const marketTrendSynthesisPrompt: PromptAsset<TrendReportInput, z.infer<typeof marketTrendReportSchema>> = {
   id: "market_radar.cross_platform_synthesis",
-  version: "v4",
+  version: "v5",
   taskType: "planner",
   mode: "structured",
   language: "zh",
@@ -75,7 +82,8 @@ export const marketTrendSynthesisPrompt: PromptAsset<TrendReportInput, z.infer<t
     new SystemMessage(analystSystem),
     new HumanMessage([
       "请综合各平台归纳结果，保留平台差异，不要把男频、女频和免费阅读市场混成一个结论。",
-      "输入是各平台已经压缩的新书信号；只做跨平台合并、取舍和差异判断，不要逐条复制平台结果。",
+      "输入是各平台已经压缩的市场信号（新书榜为主、成熟榜用于验证）；只做跨平台合并、取舍和差异判断，不要逐条复制平台结果。",
+      "各平台热度口径不同，禁止直接比较数值大小；跨平台只比较题材方向、题材空白和拥挤程度。",
       input.hasComparableHistory
         ? "可根据历史比较判断 rising、stable、falling；证据不足时仍使用 current。"
         : "没有可比较历史，所有信号 direction 必须使用 current，禁止声称升温或退潮。",

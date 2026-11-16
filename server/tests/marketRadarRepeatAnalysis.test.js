@@ -49,6 +49,9 @@ sqlite.exec(`
     "tagsJson" TEXT,
     "synopsis" TEXT,
     "heatLabel" TEXT,
+    "heatMetric" TEXT,
+    "heatValue" INTEGER,
+    "wordCount" INTEGER,
     "serialStatus" TEXT,
     "sourceUrl" TEXT NOT NULL,
     CONSTRAINT "MarketRankingItem_snapshotId_fkey" FOREIGN KEY ("snapshotId") REFERENCES "MarketRankingSnapshot" ("id") ON DELETE CASCADE ON UPDATE CASCADE

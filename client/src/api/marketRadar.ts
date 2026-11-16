@@ -16,8 +16,8 @@ export async function getMarketRadarSources() {
   return data;
 }
 
-export async function startMarketRadarScan(platforms: MarketRadarPlatform[]) {
-  const { data } = await apiClient.post<ApiResponse<MarketScanRun>>("/market-radar/scans", { platforms });
+export async function startMarketRadarScan(platforms: MarketRadarPlatform[], force = false) {
+  const { data } = await apiClient.post<ApiResponse<MarketScanRun>>("/market-radar/scans", { platforms, force });
   return data;
 }
 

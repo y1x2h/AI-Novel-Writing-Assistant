@@ -12,7 +12,10 @@ import { marketRadarService } from "../application/MarketRadarService";
 
 const router = Router();
 const idParamsSchema = z.object({ id: z.string().trim().min(1) });
-const scanSchema = z.object({ platforms: z.array(z.enum(MARKET_RADAR_PLATFORMS)).min(1).max(3).optional() });
+const scanSchema = z.object({
+  platforms: z.array(z.enum(MARKET_RADAR_PLATFORMS)).min(1).max(3).optional(),
+  force: z.boolean().optional(),
+});
 const analysisSchema = z.object({
   selectedLists: z.array(z.object({
     platform: z.enum(MARKET_RADAR_PLATFORMS),
@@ -51,7 +54,7 @@ router.delete("/saved-topics/:id", validate({ params: idParamsSchema }), async (
 
 router.post("/scans", validate({ body: scanSchema }), async (req, res, next) => {
   try {
-    const run = await marketRadarService.startScan(req.body.platforms);
+    const run = await marketRadarService.startScan(req.body.platforms, { force: req.body.force });
     res.status(run.status === "queued" || run.status === "running" ? 202 : 200).json(ok(run, "扫榜任务已准备。"));
   } catch (error) { next(error); }
 });

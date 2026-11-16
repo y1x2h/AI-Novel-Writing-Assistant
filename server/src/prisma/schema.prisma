@@ -4200,6 +4200,9 @@ model MarketRankingItem {
   tagsJson     String?
   synopsis     String?
   heatLabel    String?
+  heatMetric   String?
+  heatValue    Int?
+  wordCount    Int?
   serialStatus String?
   sourceUrl    String
   snapshot     MarketRankingSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)

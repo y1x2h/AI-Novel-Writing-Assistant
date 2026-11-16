@@ -71,6 +71,9 @@ export interface MarketRankingItem {
   tags: string[];
   synopsis?: string | null;
   heatLabel?: string | null;
+  heatMetric?: string | null;
+  heatValue?: number | null;
+  wordCount?: number | null;
   serialStatus?: string | null;
   sourceUrl: string;
 }
@@ -180,6 +183,11 @@ export interface MarketCreativeBrief {
 
 export interface CreateMarketScanRequest {
   platforms?: MarketRadarPlatform[];
+  force?: boolean;
+}
+
+export function isMarketNewBookListKey(listKey: string): boolean {
+  return listKey === "new_book" || listKey.startsWith("new_book_") || listKey === "new_author";
 }
 
 export interface MarketRadarAnalysisListSelection {

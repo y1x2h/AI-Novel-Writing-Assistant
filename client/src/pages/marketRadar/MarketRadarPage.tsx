@@ -115,7 +115,7 @@ export default function MarketRadarPage() {
   }, [report?.id]);
 
   const scanMutation = useMutation({
-    mutationFn: () => startMarketRadarScan(platforms),
+    mutationFn: (force: boolean) => startMarketRadarScan(platforms, force),
     onSuccess: (response) => {
       const run = response.data;
       if (!run) return;
@@ -175,7 +175,7 @@ export default function MarketRadarPage() {
   useEffect(() => {
     if (initialScanStarted.current || latestScanQuery.isPending) return;
     initialScanStarted.current = true;
-    if (!latestRun) scanMutation.mutate();
+    if (!latestRun) scanMutation.mutate(false);
   }, [latestScanQuery.isPending, latestRun?.id]);
 
   const switchingToNewRun = Boolean(activeRunId && activeRunId !== latestRun?.id);
@@ -287,7 +287,7 @@ export default function MarketRadarPage() {
           {Object.entries(PLATFORM_LABELS).map(([key, label]) => (
             <button key={key} type="button" onClick={() => togglePlatform(key as MarketRadarPlatform)} className={cn("rounded-full border px-3 py-1.5 text-sm transition", platforms.includes(key as MarketRadarPlatform) ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground")}>{label}</button>
           ))}
-          <Button onClick={() => scanMutation.mutate()} disabled={scanMutation.isPending || scanning || sourcesQuery.isPending} variant="outline">
+          <Button onClick={() => scanMutation.mutate(true)} disabled={scanMutation.isPending || scanning || sourcesQuery.isPending} variant="outline">
             {scanning ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
             {scanning ? `正在获取榜单 ${scanningProgress}%` : "重新扫榜"}
           </Button>
@@ -347,9 +347,10 @@ export default function MarketRadarPage() {
             const itemIds = items.map((item) => item.id);
             const selectedCount = itemIds.filter((id) => selectedAnalysisItemIds.includes(id)).length;
             const allSelected = selectedCount === itemIds.length;
+            const capturedAt = activeRun?.platformStatuses.find((status) => status.platform === items[0].platform)?.capturedAt;
             return <Card key={key} className="flex h-[34rem] flex-col">
             <CardHeader className="flex-row items-start justify-between gap-3 border-b border-border/40 px-4 pb-4 pt-4">
-              <div><CardTitle className="text-base">{PLATFORM_LABELS[items[0].platform]} · {sourceLabels.get(key) ?? items[0].listKey}</CardTitle><CardDescription className="mt-1">本次识别 {items.length} 条公开上榜记录（最多 30 条）</CardDescription></div>
+              <div><CardTitle className="text-base">{PLATFORM_LABELS[items[0].platform]} · {sourceLabels.get(key) ?? items[0].listKey}</CardTitle><CardDescription className="mt-1">本次识别 {items.length} 条公开上榜记录{capturedAt ? ` · 采集于 ${new Date(capturedAt).toLocaleString()}` : ""}</CardDescription></div>
               <Button type="button" variant="ghost" size="sm" aria-pressed={allSelected} disabled={analysisAvailability.selectionDisabled} onClick={() => toggleAnalysisList(itemIds)} className="shrink-0">
                 {allSelected ? "取消全选" : "全选"}{selectedCount > 0 && !allSelected ? ` ${selectedCount}/${items.length}` : ""}
               </Button>
@@ -363,7 +364,7 @@ export default function MarketRadarPage() {
                 <span className="font-mono text-muted-foreground">#{item.rank}</span>
                 <button type="button" disabled={analysisAvailability.selectionDisabled} onClick={() => toggleAnalysisItem(item.id)} className="min-w-0 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 disabled:cursor-not-allowed">
                   <span className="block truncate font-medium">{item.title}</span>
-                  <span className="block truncate text-xs text-muted-foreground">{item.author || "作者未公开"}{item.category ? ` · ${item.category}` : ""}</span>
+                  <span className="block truncate text-xs text-muted-foreground">{item.author || "作者未公开"}{item.category ? ` · ${item.category}` : ""}{item.heatLabel ? ` · ${item.heatLabel}` : ""}{item.wordCount ? ` · ${(item.wordCount / 10_000).toFixed(1)}万字` : ""}</span>
                 </button>
                 <a href={item.sourceUrl} target="_blank" rel="noreferrer" aria-label={`查看${item.title}的公开来源`} className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"><ExternalLink className="h-3.5 w-3.5" /></a>
               </div>;
