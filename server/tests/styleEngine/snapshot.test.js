@@ -19,5 +19,5 @@ test('historical missing or unknown scanner policy cannot silently acquire new d
   }
 });
 test('invalid runtime policy cannot be persisted as a valid snapshot', () => {
-  assert.throws(() => stringifyPipelinePayload({ styleSignalPolicy: { ...createStyleSignalPolicy(), maxFindings: 1000 } }), /12/);
+  assert.throws(() => stringifyPipelinePayload({ styleSignalPolicy: { ...createStyleSignalPolicy(), maxFindings: 1000 } }), /24/);
 });

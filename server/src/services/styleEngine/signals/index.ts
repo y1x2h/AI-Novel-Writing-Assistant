@@ -114,8 +114,207 @@ export function scanStyleSignals(content: string, policy: StyleSignalPolicy): St
     emit("surface.dialogue-tag-density", dialogueUnits[0].from, dialogueUnits[0].to,
       tagMatches.map(item => item.term), tagHits, dialogueUnits.length);
   }
+  for (const span of shortSentenceRuns(units, text, effective.shortSentenceCharacters, effective.shortSentenceRunCount)) {
+    emit("rhythm.short-sentence-run", span.from, span.to, [], span.hits, span.characters);
+  }
+  const narration = maskNarration(text);
+  const narrationCharacters = characters(narration);
+  if (narrationCharacters >= effective.connectiveMinCharacters) {
+    const matched = [...new Set(effective.connectiveTerms)]
+      .map(term => ({ term, count: positions(narration, term).length }))
+      .filter(item => item.count > 0);
+    const connectiveHits = matched.reduce((sum, item) => sum + item.count, 0);
+    // Density is measured on narration only: dialogue carries its own rhythm and would
+    // otherwise hide a narration that reads like an outline.
+    if (connectiveHits / narrationCharacters < effective.connectiveRatioMin) {
+      emit("discourse.low-connective-density", 0, Math.min(text.length, effective.excerptCharacters),
+        matched.map(item => item.term).slice(0, 8), connectiveHits, narrationCharacters);
+    }
+  }
+  const comparisonPatterns: Array<RegExp> = [
+    /不是[^。！？；]{1,24}，?而是/u,
+    /(?:并非|并不是)[^。！？；]{1,24}，?而是/u,
+    /是[^，。！？；]{1,24}，不是/u,
+  ];
+  for (const span of units) {
+    const sentence = text.slice(span.from, span.to);
+    // Dialogue is judged with its speaker's intent, not by surface pattern.
+    if (/[「」『』“”"]/u.test(sentence)) continue;
+    for (const pattern of comparisonPatterns) {
+      const match = pattern.exec(sentence);
+      if (!match) continue;
+      emit("syntax.not-is-comparison", span.from, span.to, [match[0]], 1, characters(sentence));
+      break;
+    }
+    // Count every 没 so "没有A，没有B" and "没A，没B" share one threshold.
+    const negations = positions(sentence, "没").length;
+    if (negations >= effective.negationParadeCount) {
+      const terms = ["没有", "没"].filter(term => sentence.includes(term));
+      emit("syntax.negation-parade", span.from, span.to, terms, negations, characters(sentence));
+    }
+  }
+  const trailerWindowStart = Math.max(0, text.length - effective.trailerWindowCharacters);
+  const trailerTail = text.slice(trailerWindowStart);
+  const trailerPatterns: Array<RegExp> = [
+    /没人知道/u, /谁也不知道/u, /没有人知道/u, /才刚刚开始/u,
+    /真正的[^，。！？]{0,8}(?:才|刚刚)[^，。！？]{0,4}开始/u,
+    /但这只是开始/u, /正朝着[^，。！？]{0,12}(?:压|走|来)过去/u,
+  ];
+  for (const pattern of trailerPatterns) {
+    const match = pattern.exec(trailerTail);
+    if (!match) continue;
+    emit("discourse.trailer-ending", trailerWindowStart + match.index, text.length,
+      [match[0]], 1, characters(trailerTail));
+    break;
+  }
+  for (const span of actionListRuns(text, effective.actionListSegments, effective.actionSegmentMaxCharacters)) {
+    emit("syntax.action-list", span.from, span.to, [], span.hits, span.characters);
+  }
+  for (const span of paragraphs(text)) {
+    const body = text.slice(span.from, span.to);
+    const masked = maskNarration(body);
+    const dashes = positions(masked, "——");
+    if (dashes.length >= effective.emDashCount) {
+      emit("surface.em-dash", span.from + dashes[0], span.to, ["——"], dashes.length, characters(body));
+    }
+    const visible = characters(body);
+    if (visible >= effective.longParagraphCharacters) {
+      emit("discourse.long-paragraph", span.from, span.to, [], 1, visible);
+    }
+  }
   return { policy: effective, sourceContentHash: createHash("sha256").update(text).digest("hex"),
     coordinateSystem: "utf16-crlf-normalized", findings };
+}
+
+const QUOTE_PAIRS: Array<[string, string]> = [["「", "」"], ["『", "』"], ["“", "”"], ["‘", "’"]];
+
+/**
+ * Replaces quoted segments with a placeholder of the same length so offsets stay valid.
+ * Signals that judge narration only (dashes, comparisons, negation) must not read dialogue.
+ */
+function maskNarration(text: string): string {
+  let result = "";
+  let closer: string | null = null;
+  for (const char of text) {
+    if (closer === null) {
+      const pair = QUOTE_PAIRS.find(([open]) => open === char);
+      if (pair) {
+        closer = pair[1];
+        result += "＊";
+        continue;
+      }
+      result += char;
+      continue;
+    }
+    if (char === closer) closer = null;
+    result += "＊";
+  }
+  return result;
+}
+
+function paragraphs(text: string): Array<{ from: number; to: number }> {
+  const result: Array<{ from: number; to: number }> = [];
+  let from = 0;
+  for (const match of text.matchAll(/\n+/gu)) {
+    if (match.index > from) result.push({ from, to: match.index });
+    from = match.index + match[0].length;
+  }
+  if (from < text.length) result.push({ from, to: text.length });
+  return result;
+}
+
+/**
+ * Finds runs of consecutive short narration sentences. Short dialogue lines and new
+ * paragraphs break the run: they are deliberate rhythm, not a telegraphic report.
+ */
+function shortSentenceRuns(
+  units: Array<{ from: number; to: number }>,
+  text: string,
+  maxCharacters: number,
+  minRun: number,
+): Array<{ from: number; to: number; hits: number; characters: number }> {
+  const result: Array<{ from: number; to: number; hits: number; characters: number }> = [];
+  let runStart = -1;
+  let runHits = 0;
+  let runCharacters = 0;
+  for (const span of units) {
+    const sentence = text.slice(span.from, span.to);
+    const isBoundary = /\n/u.test(sentence) || /[「」『』“”"]/u.test(sentence);
+    const count = characters(sentence);
+    if (isBoundary || count > maxCharacters || count === 0) {
+      runStart = -1;
+      runHits = 0;
+      runCharacters = 0;
+      continue;
+    }
+    if (runStart < 0) runStart = span.from;
+    runHits += 1;
+    runCharacters += count;
+    if (runHits >= minRun) {
+      result.push({ from: runStart, to: span.to, hits: runHits, characters: runCharacters });
+      runStart = -1;
+      runHits = 0;
+      runCharacters = 0;
+    }
+  }
+  return result;
+}
+
+const ACTION_OPENERS = ["拿", "放", "推", "拉", "转", "走", "站", "坐", "看", "抬", "低", "伸", "收", "握", "松",
+  "开", "关", "点", "按", "擦", "摸", "拽", "扯", "扔", "捡", "递", "接", "掀", "踢", "蹲", "起", "回", "退",
+  "进", "出", "拍", "敲", "拧", "塞", "掏", "翻"];
+const ACTION_CLAUSE = new RegExp(
+  `^(?:他|她|它|我|你|两人|众人)?(?:${ACTION_OPENERS.join("|")})`,
+  "u",
+);
+
+/**
+ * Short action clauses stacked in one paragraph read like a camera log. Only clauses
+ * that open with a body verb count, so description and reflection are not swept in.
+ */
+function actionListRuns(
+  text: string,
+  minSegments: number,
+  maxClauseCharacters: number,
+): Array<{ from: number; to: number; hits: number; characters: number }> {
+  const result: Array<{ from: number; to: number; hits: number; characters: number }> = [];
+  for (const span of paragraphs(text)) {
+    const body = text.slice(span.from, span.to);
+    let runStart = -1;
+    let runHits = 0;
+    let runCharacters = 0;
+    const reset = () => {
+      runStart = -1;
+      runHits = 0;
+      runCharacters = 0;
+    };
+    for (const match of body.matchAll(/[^，,。！？；\n]+[，,。！？；]?/gu)) {
+      const raw = match[0];
+      const clause = raw.replace(/[，,。！？；]$/u, "").trim();
+      const count = characters(clause);
+      const terminal = /[。！？；]$/u.test(raw);
+      if (!clause || /[「」『』“”"]/u.test(clause) || !ACTION_CLAUSE.test(clause)
+        || count > maxClauseCharacters) {
+        reset();
+        continue;
+      }
+      if (runStart < 0) runStart = span.from + (match.index ?? 0);
+      runHits += 1;
+      runCharacters += count;
+      if (runHits >= minSegments) {
+        result.push({
+          from: runStart,
+          to: span.from + (match.index ?? 0) + raw.length,
+          hits: runHits,
+          characters: runCharacters,
+        });
+        reset();
+        continue;
+      }
+      if (terminal) reset();
+    }
+  }
+  return result;
 }
 
 export { StyleSignalPolicyResolver } from "./StyleSignalPolicyResolver";

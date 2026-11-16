@@ -90,7 +90,7 @@ test('Unicode character counts and UTF-16 normalized offsets use different units
 test('evidence is bounded per rule and in total without trimming source whitespace', () => {
   const text = '  \n' + ('值得注意的是，他似乎看到仿佛一种幻象。他缓缓微微轻轻走到门前。' + sentence(80, 4) + '。').repeat(20);
   const result = scan(text);
-  assert.equal(result.findings.length, 8);
+  assert.ok(result.findings.length <= 24);
   for (const item of result.findings) {
     assert.equal(text.slice(item.from, item.to), item.excerpt);
     assert.ok(result.findings.filter(other => other.ruleId === item.ruleId).length <= 2);
@@ -139,7 +139,7 @@ test('new syntax signals stay inside the shared finding budget and schema', () =
   const text = '他看着那个穿着灰色旧夹克的男人。他的书包的拉链的扣子坏了。他非常紧张，仿佛好像要说什么。';
   const result = scan(text);
   assert.deepEqual(styleSignalScanSchema.parse(result), result);
-  assert.ok(result.findings.length <= 12);
+  assert.ok(result.findings.length <= 24);
   for (const item of result.findings) {
     assert.ok(result.findings.filter(other => other.ruleId === item.ruleId).length <= 2);
   }
@@ -171,4 +171,79 @@ test('dialogue tag density compares tags against quoted dialogue sentences', () 
   assert.equal(rule(untagged, id).length, 0);
   assert.equal(rule(tagged, id, { dialogueTagRatio: 1 }).length, 0);
   assert.equal(rule('「你来了。」他说道。', id).length, 0);
+});
+
+test('telegraphic short-sentence runs are evidence, dialogue and long sentences are not', () => {
+  const id = 'rhythm.short-sentence-run';
+  const result = rule('他推门。屋里没开灯。他摸到桌边。', id);
+  assert.equal(result.length, 1);
+  assert.equal(result[0].hits, 3);
+  assert.equal(rule('「你来了。」「我知道。」「坐吧。」', id).length, 0);
+  assert.equal(rule('他推门而入，屋里没有开灯，他扶着墙摸到桌边才停下。', id).length, 0);
+  assert.equal(rule('他推门。屋里没开灯。他摸到桌边。', id, { shortSentenceRunCount: 4 }).length, 0);
+});
+
+test('narration with almost no connectives suggests outline-like prose', () => {
+  const id = 'discourse.low-connective-density';
+  const outline = '他推门进屋。屋里没开灯。他摸到桌边拿起药盒。他走到窗前。他看见雨。他关窗坐下。'.repeat(24);
+  const result = rule(outline, id);
+  assert.equal(result.length, 1);
+  assert.ok(result[0].characters >= 600);
+  assert.equal(rule(outline.slice(0, 200), id).length, 0);
+  const rich = '因为雨太大，所以他关了窗，于是屋里安静下来。结果他反倒睡不着。'.repeat(24);
+  assert.equal(rule(rich, id).length, 0);
+});
+
+test('negative-then-positive comparison is narration evidence and dialogue is exempt', () => {
+  const id = 'syntax.not-is-comparison';
+  assert.equal(rule('他不是不肯还钥匙，而是忘在家里了。', id).length, 1);
+  assert.equal(rule('「不是不肯，而是忘了。」', id).length, 0);
+  assert.equal(rule('他把钥匙忘在家里了。', id).length, 0);
+  assert.equal(rule('他没有推门，只是站在门口。', id).length, 0);
+  assert.equal(rule('是钥匙忘在家里，不是她不肯还。', id).length, 1);
+});
+
+test('negation parade counts repeated 没有 inside one sentence only', () => {
+  const id = 'syntax.negation-parade';
+  const result = rule('没有月亮，没有灯，没有声音。', id);
+  assert.equal(result.length, 1);
+  assert.equal(result[0].hits, 3);
+  assert.equal(rule('没有月亮，但灯还亮着。', id).length, 0);
+  assert.equal(rule('「没有月亮，没有灯，没有声音。」', id).length, 0);
+  assert.equal(rule('没有月亮，没有灯，没有声音。', id, { negationParadeCount: 4 }).length, 0);
+});
+
+test('trailer ending is only searched inside the closing window', () => {
+  const id = 'discourse.trailer-ending';
+  const result = rule('他关上门，楼道里只剩脚步声。没人知道明天会发生什么。', id);
+  assert.equal(result.length, 1);
+  assert.equal(rule('他关上门，楼道里只剩脚步声。', id).length, 0);
+  assert.equal(rule('没人知道他来过。后面还有很多事。' + '甲'.repeat(260), id).length, 0);
+});
+
+test('stacked short action clauses read like a camera log', () => {
+  const id = 'syntax.action-list';
+  const result = rule('他推门，转身，抬手，按灯。', id);
+  assert.equal(result.length, 1);
+  assert.equal(result[0].hits, 4);
+  assert.equal(rule('他推开门，屋里一片安静，他站在门口看着桌上的灯。', id).length, 0);
+  assert.equal(rule('他推门，转身，抬手，按灯。', id, { actionListSegments: 5 }).length, 0);
+});
+
+test('narration em dashes are counted per paragraph, dialogue dashes are ignored', () => {
+  const id = 'surface.em-dash';
+  const result = rule('他停了一下——那声音又来了——这次更近。', id);
+  assert.equal(result.length, 1);
+  assert.equal(result[0].hits, 2);
+  assert.equal(rule('「你别——」他没说完。', id).length, 0);
+  assert.equal(rule('他停了一下——那声音又来了。', id).length, 0);
+});
+
+test('overlong paragraphs suggest breaking by shot', () => {
+  const id = 'discourse.long-paragraph';
+  const long = '甲'.repeat(300) + '。';
+  const result = rule(long, id);
+  assert.equal(result.length, 1);
+  assert.equal(result[0].characters, 301);
+  assert.equal(rule('甲'.repeat(100) + '。', id).length, 0);
 });

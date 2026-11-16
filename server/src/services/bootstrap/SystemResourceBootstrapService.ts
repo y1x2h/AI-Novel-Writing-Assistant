@@ -421,6 +421,66 @@ function buildStarterStyleProfileSourceRef(definition: DefaultStarterStyleProfil
   return `${STARTER_STYLE_PROFILE_SOURCE_PREFIX}${definition.key}`;
 }
 
+/**
+ * 已修订的基线规则旧指纹。
+ *
+ * `missing_only` 只补建缺失规则，不会覆盖既有数据库里的同名规则。以下三条基线
+ * 规则的默认内容已修订（情绪可直写、旁白破折号单列、二分对照按纠错功能判断），
+ * 因此只升级仍然完全等于旧默认值的行；用户编辑过的规则保持原样。
+ */
+const SUPERSEDED_ANTI_AI_RULE_FINGERPRINTS: Record<string, {
+  type: DefaultAntiAiRuleDefinition["type"];
+  severity: DefaultAntiAiRuleDefinition["severity"];
+  autoRewrite: boolean;
+  promptInstruction: string;
+}> = {
+  "forbid-explicit-psychology": {
+    type: "forbidden",
+    severity: "high",
+    autoRewrite: true,
+    promptInstruction: "禁止直接解释人物心理，人物状态必须通过行为、动作、语气或环境反应体现。",
+  },
+  "risk-punctuation-decoration": {
+    type: "risk",
+    severity: "low",
+    autoRewrite: false,
+    promptInstruction: "标点按语义使用：一段里不要堆叠冒号、分号、破折号、感叹号、省略号或顿号做语气装饰；功能性的问号与少量感叹号保留，犹豫、打断、拖长改用动作、短句或句号。",
+  },
+  "risk-contrast-shell": {
+    type: "risk",
+    severity: "medium",
+    autoRewrite: false,
+    promptInstruction: "警惕二分对照壳（不是……而是……／不仅……更是……）：同一段里不要连续使用，拆成直陈句更自然。",
+  },
+};
+
+async function syncSupersededAntiAiRules(tx: Prisma.TransactionClient): Promise<number> {
+  let updated = 0;
+  for (const rule of DEFAULT_ANTI_AI_RULES) {
+    const superseded = SUPERSEDED_ANTI_AI_RULE_FINGERPRINTS[rule.key];
+    if (!superseded) {
+      continue;
+    }
+    const existing = await tx.antiAiRule.findUnique({
+      where: { key: rule.key },
+      select: { type: true, severity: true, autoRewrite: true, promptInstruction: true },
+    });
+    if (!existing
+      || existing.type !== superseded.type
+      || existing.severity !== superseded.severity
+      || existing.autoRewrite !== superseded.autoRewrite
+      || existing.promptInstruction !== superseded.promptInstruction) {
+      continue;
+    }
+    await tx.antiAiRule.update({
+      where: { key: rule.key },
+      data: buildAntiAiRuleWriteData(rule),
+    });
+    updated += 1;
+  }
+  return updated;
+}
+
 function buildStarterStyleProfileWriteData(input: {
   definition: DefaultStarterStyleProfileDefinition;
   template: DefaultTemplateDefinition;
@@ -549,6 +609,12 @@ export async function seedStyleEngineStarterData(
         },
       });
       report = mergeStyleEngineReport(report, { antiAiRulesCreated: 1 });
+    }
+
+    if (mode === "missing_only") {
+      report = mergeStyleEngineReport(report, {
+        antiAiRulesUpdated: await syncSupersededAntiAiRules(tx),
+      });
     }
 
     for (const template of DEFAULT_STYLE_TEMPLATES) {

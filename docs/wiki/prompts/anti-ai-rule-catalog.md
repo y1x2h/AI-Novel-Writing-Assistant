@@ -13,18 +13,43 @@
 ## Decision
 
 - 规则类型只有三种语义：`forbidden`（明确禁止，通常可自动改写修复）、`risk`（需要注意的倾向，不做硬禁）、`encourage`（鼓励采用的正向写法）。新增规则必须归入其中之一，不引入新的判断分支。
-- 中文 AI 句式指纹是一个必须持续补充的**层**，而不是一次性任务。它包含七类：
+- 中文 AI 句式指纹是一个必须持续补充的**层**，而不是一次性任务。它包含八类：
   1. 句尾伪诗意补语（象征着 / 诉说着 / 仿佛在暗示 / 充满了……的气息）；
   2. 说明文连接词（此外 / 值得注意的是 / 总而言之 / 由此可见 / 不难看出）；
   3. 公关广告腔大词（彰显 / 赋能 / 助力 / 完美诠释 / 淋漓尽致 / 叹为观止）；
   4. 二分对照壳（不是……而是…… / 不仅……更是…… / 与其说……不如说……）；
   5. 标点装饰性堆叠（把冒号、分号、破折号、感叹号、省略号、顿号当语气用）；
   6. 表层句法堆砌（名词前超过 6 个字的定语、一个分句里三个以上「的」、同一句叠用程度副词与「仿佛/好像/似乎」这类模糊词、填充虚词）；
-  7. 对话与修辞（对话标签密度过高、解释性台词、套式微动作、比喻超量与「如……般」万能画面）。
-- 前 3 类判为 `forbidden`：它们在小说正文里几乎没有正当用法。第 4、5 类判为 `risk`：二分句式和标点在中文里本身合法，问题出在「密集与对仗」，所以只提示、不硬禁。第 6 类里，程度副词与模糊词叠用几乎没有正当用法（`forbidden / medium / autoRewrite: true`，删掉多余程度词即正确）；而长定语、多个「的」、填充虚词在中文里合法（`risk / medium / autoRewrite: false`），问题只在过长与密集，交给修复链路判断而不是自动改写。第 7 类全部是 `risk / medium / autoRewrite: false`：对话与修辞的修法需要判断内容与人物视角，机械替换会把正确表达改坏。
+  7. 对话与修辞（对话标签密度过高、解释性台词、套式微动作、比喻超量与「如……般」万能画面）；
+  8. 语篇与句法腔调（起跑式铺垫「接下来，让我们」「随着……的发展」、对假想敌的辩护「不要误会」「我并不是说」、强凑三段式、被字句堆叠与施事缺失、复杂系动词与名词化「作为……而存在」「进行了一次」、四字词排比与同义堆叠）。
+- 前 3 类判为 `forbidden`：它们在小说正文里几乎没有正当用法。第 4、5 类判为 `risk`：二分句式和标点在中文里本身合法，问题出在「密集与对仗」，所以只提示、不硬禁。第 6 类里，程度副词与模糊词叠用几乎没有正当用法（`forbidden / medium / autoRewrite: true`，删掉多余程度词即正确）；而长定语、多个「的」、填充虚词在中文里合法（`risk / medium / autoRewrite: false`），问题只在过长与密集，交给修复链路判断而不是自动改写。第 7 类全部是 `risk / medium / autoRewrite: false`：对话与修辞的修法需要判断内容与人物视角，机械替换会把正确表达改坏。第 8 类同样全部是 `risk / medium / autoRewrite: false`：背景交代、被动句、四字词和「是／有」在中文里都合法，只有空泛、同义堆叠或密度过高才是问题，且修法需要保留施事、限定与剧情功能，不能靠固定替换。
 - 标点类规则的边界必须写进 `promptInstruction`：质问里的问号、爆发峰值少量的感叹号、犹豫与打断的功能性省略号是正常写法，只清理无功能的堆叠。story-deslop 的标点原则与本节一致。
 - `detectPatterns` 只是给人和 AI 编辑看的线索，**不参与运行时匹配**；检测始终由 LLM 结合聚集度、信息增量与作品写法判断，不允许「命中单词即判违规」。
 - 自动改写（`autoRewrite`）只给「删掉即正确」的规则：伪诗意补语、说明文连接词。需要判断替换内容的（公关大词、二分句式、标点）一律为 `false`，避免自动改写把句子改坏。
+- 「解释型心理描写」不能按 forbidden 处理：情绪直写本身合法，问题只在于同一状态已经由动作、语气或结果演出来后，再补一句「他感到／他意识到」命名。该规则因此是 `risk / medium / autoRewrite: false`，只在「这句命名没有新增信息」时提示删除。
+- 标点类规则必须彼此分域，否则同一处标点会被两条规则重复计数：「旁白破折号」单独成条，只统计叙述里的「——」；「标点装饰性堆叠」不再包含破折号，只管感叹号、问号、省略号与顿号的密集堆叠。
+- 「否定对比壳」（不是……而是……）必须保留必要的对比：纠错、辩解、排除他人猜测时，对比承载信息，不能因为句式像模板就删。规则提示先判断否定对象是不是无人在意的靶子。
+
+## 表达层补充规则
+
+### Background
+
+story-deslop 的表达层检查里，除了原有的词簇与标点问题，还有几类高频的「读起来像机器写的」结构：电报体短碎句、否定排比、章末预告、章末状态总结、动作清单、旁白破折号、引号强调、长段落跨镜头。它们都是中文里合法的写法，只有密度或位置失控时才成问题，因此不能做成自动改写，也不能塞进既有的词表规则。
+
+### Current Rule
+
+- 新增 8 条全局基线规则，全部 `risk`、`autoRewrite: false`、`globalBaselineEnabled: true`：
+  - `risk-telegraphic-fragments`（`risk/high`）：连续三条以上极短叙述句。
+  - `risk-negation-parade`（`risk/medium`）：同一句内连续否定。
+  - `risk-trailer-ending`（`risk/high`）：章末用「没人知道」「这只是开始」预告后续。
+  - `risk-chapter-summary-tail`（`risk/medium`）：章末用一句状态总结收尾。
+  - `risk-action-list`（`risk/medium`）：同一段连续短动作分句，像镜头清单。
+  - `risk-narration-em-dash`（`risk/medium`）：旁白里成对或密集使用破折号。
+  - `risk-quote-emphasis`（`risk/low`）：用引号给普通词加并不存在的强调。
+  - `risk-long-paragraph`（`risk/low`）：单段过长、跨多个镜头却没有分段。
+- 严重度只影响提示排序，不进入阻塞判定；章节验收仍由 AI 结合上下文判断是否计入 violation。
+- 既有数据库的规则种子是 `missing_only`，不会覆盖用户已编辑的规则；但旧版本写入的三条规则需要窄升级：`forbid-explicit-psychology`（forbidden → risk）、`risk-punctuation-decoration`（移除破折号）、`risk-contrast-shell`（补充保留必要对比）。升级通过 `SystemResourceBootstrapService` 里的「旧指纹匹配」完成：只有当前记录仍与旧版字段完全一致时才覆盖，用户手动改过的规则保持不动。
+- 逐字重复的「旧指纹」匹配是确定性收尾处理，不是新的规则路由：它只修复已知的历史默认值，不参与任何运行时判定。
 
 ## Current Rule
 
@@ -36,8 +61,9 @@
 - 因为两条路径都没有条数上限，新增基线规则会直接增加正文 prompt 与检测 prompt 的长度。**补充规则时必须控制表述长度，并优先合并语义重叠的规则。**
 - 检测 prompt 的「检测范围」里显式列出中文 AI 指纹类别（`style.prompts.ts`），与规则目录配合；只加规则不改检测说明，检测召回会明显偏低。
 - 写作侧的自检清单（`StyleCompiler` 的 `selfCheck` 段）同步列出这些指纹，让模型在返回草稿前先自查。
-- 表层句法类指纹同时有确定性统计证据：`scanStyleSignals` 输出 `syntax.attributive-stack`（名词前修饰语长度）、`syntax.particle-overload`（一个句子里的「的」数量）、`surface.degree-adverb-stack`（程度副词与模糊词同句聚集，且必须至少出现一个真正的程度副词）、`surface.filler-stack`（填充虚词同句聚集）、`surface.punctuation-density`（句子单元内装饰性标点数量）、`surface.dialogue-tag-density`（对话标签数 ÷ 带引号的对白句数，默认 ≥0.5）。这些信号只是候选证据，**不是** 上述规则的 `ruleId`，也不授予修文许可；检测仍然由 LLM 结合聚集度与信息增量判断。阈值与词表维护在 `shared/types/styleEngine/signals.ts`。
-- 统计信号的总量上限是 12 条、每条规则最多 2 条（`maxFindings` / `maxPerRule`）。新增信号排在既有信号之后 emit，避免挤占已有信号的配额；上限随信号种类增加而同步调整，否则后置信号会在 AI 味最重的文本里被饿死。
+- 表层句法类指纹同时有确定性统计证据：`scanStyleSignals` 输出 `syntax.attributive-stack`（名词前修饰语长度）、`syntax.particle-overload`（一个句子里的「的」数量）、`surface.degree-adverb-stack`（程度副词与模糊词同句聚集，且必须至少出现一个真正的程度副词）、`surface.filler-stack`（填充虚词同句聚集）、`surface.punctuation-density`（句子单元内装饰性标点数量）、`surface.dialogue-tag-density`（对话标签数 ÷ 带引号的对白句数，默认 ≥0.5）。表达层补充规则对应另外八类信号：`rhythm.short-sentence-run`、`discourse.low-connective-density`、`syntax.not-is-comparison`、`syntax.negation-parade`、`discourse.trailer-ending`、`syntax.action-list`、`surface.em-dash`、`discourse.long-paragraph`。这些信号只是候选证据，**不是** 上述规则的 `ruleId`，也不授予修文许可；检测仍然由 LLM 结合聚集度与信息增量判断。阈值与词表维护在 `shared/types/styleEngine/signals.ts`。
+- 统计信号的总量上限是 24 条、每条规则最多 2 条（`maxFindings` / `maxPerRule`）。新增信号排在既有信号之后 emit，避免挤占已有信号的配额；上限随信号种类增加而同步调整，否则后置信号会在 AI 味最重的文本里被饿死。
+- 叙述类信号必须先遮罩对白再统计：破折号只数旁白，连接密度只看旁白，否定对比句整句跳过对白，否则会把人物的说话方式误判成叙述问题。
 
 ## Examples
 
@@ -49,9 +75,20 @@
 - 套式微动作 → `risk / medium / autoRewrite: false`。「深吸一口气」「眼中闪过一丝」「嘴角勾起一抹」需要换成角色当下真实的动作。
 - 比喻超量与套式修辞 → `risk / medium / autoRewrite: false`。比喻保持低频并贴合人物视角，删除「如……般」「宛如」「犹如」这类万能画面。
 - 解释性台词 → `risk / medium / autoRewrite: false`。把替读者解释设定、动机、前情的台词改成动作、冲突或信息缺口。
+- 起跑式铺垫与万能背景开头 → `risk / medium / autoRewrite: false`。「接下来，让我们看看」「随着……的发展」只预告不提供信息时删掉直接进现场；「随着文件数量增加，检索时间也在增长」承载真实变化关系，保留。
+- 与假想敌辩论 → `risk / medium / autoRewrite: false`。「不要误会，我并不是在制造焦虑」这类没有具体对象的自我辩护可以删除；「这项措施不能防止断电，但能减少数据损失」是真实限制，保留。
+- 强凑三段式排比 → `risk / medium / autoRewrite: false`。三项只重复同一层意思时合并；「导出、搜索和批量重命名」是三个独立功能，不因避开三段式删项。
+- 被字句堆叠与施事缺失 → `risk / medium / autoRewrite: false`。施事者可指时改主动句；「样本已被污染，原因尚未确认」施事未知，保留被动，也不补造主语。
+- 复杂系动词与名词化表达 → `risk / medium / autoRewrite: false`。「作为展览场地而存在，设有四个展区」可还原成「是展览场地，有四个展区」；数量、范围、时态必须保留。
+- 四字词排比与同义堆叠 → `risk / medium / autoRewrite: false`。「气势磅礴、波澜壮阔、惊心动魄」语义重叠时只留一个；「数量不变、顺序不变、权限不变」是三项独立约束，保留。
 - 长定语堆砌 → `risk / medium / autoRewrite: false`。「那个穿着灰色旧夹克的男人」在中文里合法，只有修饰语过长或连续堆砌才是问题，所以不自动改写。
 - 「的」字过载 → `risk / medium / autoRewrite: false`。一个分句里三个以上「的」读起来拖沓，但修法是把修饰结构动词化、拆成短句，需要判断内容。
 - 程度副词与模糊词堆叠 → `forbidden / medium / autoRewrite: true`。「非常……仿佛……好像」同句叠用几乎没有正当用法，删掉多余程度词就成立。
+- 解释型心理描写 → `risk / medium / autoRewrite: false`。「他推开门，手停在半空」已经演出犹豫，后面再补「他感到很犹豫」只是重复解释；若前文没有任何演出，直接写情绪可以保留。
+- 电报体短碎句 → `risk / high / autoRewrite: false`。连续三条极短叙述句读起来像镜头清单；对白短句、刻意的节奏停顿不在提示范围。
+- 章末预告式收尾 → `risk / high / autoRewrite: false`。「没人知道明天会发生什么」「这一切才刚刚开始」只预告不交付信息；已经落地的悬念与具体动作保留。
+- 动作清单式描写 → `risk / medium / autoRewrite: false`。「他推门，进屋，拉椅，坐下」四连短动作像分镜表；需要补充动作之间的因果或感受，而不是机械合并。
+- 长段落跨镜头 → `risk / low / autoRewrite: false`。单段超过约 260 字且跨多个镜头时提示按镜头断段；信息密度高但镜头统一的段落可保留。
 
 ## 统计学校准（calibration）
 
@@ -61,10 +98,10 @@
 
 ### Decision
 
-- 在 `server/src/services/styleEngine/calibration/` 下建立可复算的校准基线，语料以 `.txt` 提交进仓库，规模刻意保持小（当前 AI 语料 316 字、真人语料 179 字），保证任何人本地都能复现。
+- 在 `server/src/services/styleEngine/calibration/` 下建立可复算的校准基线，语料以 `.txt` 提交进仓库，规模刻意保持小（当前 AI 语料 1154 字、真人语料 179 字），保证任何人本地都能复现。
 - 基线只记录事实：每条规则的 `hits`、`perKilo`（AI 语料每千字命中条数）与 `falsePositiveRate`（命中里来自真人语料的比例，作为误报代理指标）。
-- 基线用 `signalRevision` 与信号策略 revision 绑定。改动 `shared/types/styleEngine/signals.ts` 的阈值、词表或新增信号后，必须同步提升 revision 并刷新基线，否则 `calibration.test.js` 直接失败。
-- AI 语料必须覆盖全部 10 条信号；检测到某条规则在 AI 语料里零命中时，测试提示补样本，避免基线在无声中失效。
+- 基线用 `signalRevision` 与信号策略 revision 绑定。改动 `shared/types/styleEngine/signals.ts` 的阈值、词表或新增信号后，必须刷新基线，否则 `calibration.test.js` 直接失败。
+- AI 语料必须覆盖全部 18 条信号；检测到某条规则在 AI 语料里零命中时，测试提示补样本，避免基线在无声中失效。叙述类信号需要足够的连续正文（连接密度要求单文件叙述 ≥600 字），语料样本不能是孤句拼接。
 
 ### Current Rule
 
@@ -206,7 +243,7 @@
 - 阈值来源：`StyleSignalPolicy` 的 `dialogueRatioMin / dialogueRatioMax / talkLoopRounds / dialogueRatioMinCharacters`；未传策略时回退 `createStyleSignalPolicy()` 的全局默认。写法档案可通过 `LanguageRules.signalCalibration` 覆盖。
 - 保护性下限：正文可见字数低于 `dialogueRatioMinCharacters` 时不评估占比，避免片段、极短文本与测试夹具误报。
 - 严重度固定为 low（占比失衡）与 medium（话疗），**不进入** `hasBlockingFindings`，因此不会触发候选预检拦截，也不阻塞全局链；结果作为验收证据进入 `chapterAcceptance`，是否计入由 AI 判断。
-- 提示词侧：`style.detection`（`v13`）在「检测范围」补「对白密度」一条，要求结合本章位置与写法要求判断，只在确实削弱可读性或节奏时才计入 violation。
+- 提示词侧：`style.detection`（`v13` 起）在「检测范围」补「对白密度」一条，要求结合本章位置与写法要求判断，只在确实削弱可读性或节奏时才计入 violation；`v14` 起同段补「语篇与句法腔调」一类，覆盖起跑式铺垫、假想敌辩护、强凑三段式、被字句堆叠、名词化表达与四字词排比，并显式要求保留功能性背景、被动句和四字词。
 
 ### Failure Modes
 
@@ -220,7 +257,7 @@
 - 度量实现：`server/src/services/novel/runtime/proseQuality/ProseQualityDetector.ts`。
 - 阈值定义：`shared/types/styleEngine/signals.ts`（`StyleSignalPolicy`）。
 - 接入点：`server/src/services/novel/runtime/ChapterAcceptanceAssessmentService.ts`、`ChapterContentFinalizationService.ts`。
-- 提示词：`server/src/prompting/prompts/style/style.prompts.ts`（`style.detection@v13`）。
+- 提示词：`server/src/prompting/prompts/style/style.prompts.ts`（`style.detection@v14`）。
 
 ## Failure Modes
 
@@ -249,3 +286,4 @@
 
 - 写法引擎总览：[平台写法配置与正文 Prompt 可编辑合同](./platform-writing-profiles.md)
 - 质量守卫：[小说生成质量守卫机制](./novel-generation-quality-guards.md)
+- 中文去 AI 味参考：[Humanizer-zh](https://github.com/op7418/Humanizer-zh)（MIT）。本项目只吸收其第 A–F 类检查点中适用于小说正文的部分，并沿用其两条边界：模式命中不是违规证据；改写不得新增事实，也不得删除承担判断、限定、归因或剧情功能的句子。
