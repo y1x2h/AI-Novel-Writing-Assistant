@@ -314,6 +314,7 @@ export class StyleCompiler {
         "- Check modifier length, 「的」 density and stacked degree words: keep modifiers before a noun under about six characters, use at most two 「的」 in a clause, and do not stack degree adverbs (非常, 十分, 极其, 特别) with vague words (仿佛, 好像, 似乎) in the same sentence.",
         "- Check decorative punctuation stacking (！！！, 省略号, 顿号 used as tone), filler words (说到底, 说白了, 反正, 毕竟), formulaic micro-actions (深吸一口气, 眼中闪过一丝, 嘴角勾起) and metaphor overload with generic imagery (如……般, 宛如, 犹如).",
         "- Check dialogue: keep tags varied and sparse, let characters answer sideways or with plain speech (including colloquial words), interleave action beats, and delete lines that explain setting, motive or backstory to the reader.",
+        "- Check discourse-level tics: no prefatory throat-clearing (接下来让我们, 随着……的发展, 在……的时代背景下) that only announces or sets the scene, no straw-man defense (不要误会, 我并不是说), no padded three-item lists, no stacked passives (被认为, 被视为, 被赋予) when the actor is known, no nominalized copulas (作为……而存在, 构成了, 进行了一次), and no four-character word parades (气势磅礴, 波澜壮阔, 惊心动魄) that repeat the same meaning. Keep functional background, passives and four-character phrases.",
         "- If AI flavor remains, revise before returning the final draft.",
       ],
     });
