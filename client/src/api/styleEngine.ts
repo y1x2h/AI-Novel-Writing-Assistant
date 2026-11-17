@@ -10,6 +10,7 @@ import type {
   StyleRewriteScope,
   StyleExtractionDraft,
   StyleExtractionSourceProcessingMode,
+  StyleExtractionSourceRange,
   StyleFeatureDecision,
   StyleFragmentRule,
   StyleProfileFeature,
@@ -121,6 +122,7 @@ export async function createStyleExtractionTaskFromKnowledgeDocument(payload: {
   temperature?: number;
   presetKey?: "imitate" | "balanced" | "transfer";
   sourceProcessingMode?: StyleExtractionSourceProcessingMode;
+  sourceRange?: StyleExtractionSourceRange;
 }) {
   const { data } = await apiClient.post<ApiResponse<UnifiedTaskDetail>>(
     "/style-extraction-tasks/from-knowledge-document",

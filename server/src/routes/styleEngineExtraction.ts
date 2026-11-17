@@ -6,6 +6,7 @@ import { authMiddleware } from "../middleware/auth";
 import { AppError } from "../middleware/errorHandler";
 import { validate } from "../middleware/validate";
 import { KnowledgeService } from "../services/knowledge/KnowledgeService";
+import { resolveDocumentSourceRange } from "../services/knowledge/DocumentSourceRange";
 import { StyleProfileService } from "../services/styleEngine/StyleProfileService";
 import { styleExtractionTaskService } from "../services/styleEngine/StyleExtractionTaskService";
 import { taskCenterService } from "../services/task/TaskCenterService";
@@ -31,6 +32,15 @@ const fromTextTaskSchema = fromTextSchema.extend({
 
 const sourceProcessingModeSchema = z.enum(["full_text", "representative_sample"]);
 
+const sourceRangeSchema = z
+  .object({
+    startChapterIndex: z.number().int().min(0),
+    endChapterIndex: z.number().int().min(0),
+  })
+  .refine((value) => value.endChapterIndex >= value.startChapterIndex, {
+    message: "结束章节不能早于起始章节。",
+  });
+
 const fromKnowledgeDocumentTaskSchema = z.object({
   documentId: z.string().trim().min(1),
   name: z.string().trim().min(1),
@@ -40,6 +50,7 @@ const fromKnowledgeDocumentTaskSchema = z.object({
   temperature: z.number().min(0).max(2).optional(),
   presetKey: z.enum(["imitate", "balanced", "transfer"]).optional(),
   sourceProcessingMode: sourceProcessingModeSchema.optional(),
+  sourceRange: sourceRangeSchema.optional(),
 });
 
 const styleRulePatchSchema = z.object({
@@ -153,13 +164,31 @@ router.post(
         throw new AppError("知识库文档活动版本内容为空，不能用于创建写法。", 400);
       }
 
+      let scopedSourceText = sourceText;
+      let sourceScope: { startChapterIndex: number; endChapterIndex: number; label: string } | undefined;
+      if (body.sourceRange) {
+        const resolved = await resolveDocumentSourceRange({
+          documentId: document.id,
+          documentVersionId: activeVersion.id,
+          content: sourceText,
+          range: body.sourceRange,
+        });
+        scopedSourceText = resolved.text;
+        sourceScope = {
+          startChapterIndex: resolved.startChapterIndex,
+          endChapterIndex: resolved.endChapterIndex,
+          label: resolved.label,
+        };
+      }
+
       const task = await styleExtractionTaskService.createTask({
         name: body.name,
         category: body.category,
-        sourceText,
+        sourceText: scopedSourceText,
         sourceType: "from_knowledge_document",
         sourceRefId: document.id,
         sourceProcessingMode: body.sourceProcessingMode ?? "representative_sample",
+        sourceScope,
         provider: body.provider,
         model: body.model,
         temperature: body.temperature,

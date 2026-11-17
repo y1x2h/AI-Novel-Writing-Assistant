@@ -1,3 +1,4 @@
+import type { DocumentSourceRange } from "./knowledge";
 import type { LLMProvider } from "./llm";
 import type { StyleSignalPolicyOverride } from "./styleEngine/signals.js";
 
@@ -8,6 +9,8 @@ export type StyleSourceType =
   | "from_knowledge_document"
   | "from_current_work";
 export type StyleExtractionSourceProcessingMode = "full_text" | "representative_sample";
+/** 写法提取读取原文的章节范围。 */
+export type StyleExtractionSourceRange = DocumentSourceRange;
 export type StyleProfileStatus = "active" | "archived";
 export type StyleBindingTargetType = "novel" | "chapter" | "task";
 export type AntiAiRuleType = "forbidden" | "risk" | "encourage";

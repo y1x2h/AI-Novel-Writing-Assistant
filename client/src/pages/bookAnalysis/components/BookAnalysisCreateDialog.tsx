@@ -7,7 +7,7 @@ import {
 } from "@ai-novel/shared/types/bookAnalysis";
 import type { DocumentChapter, KnowledgeDocumentDetail, KnowledgeDocumentSummary } from "@ai-novel/shared/types/knowledge";
 import LLMSelector from "@/components/common/LLMSelector";
-import BookAnalysisSourceRangePicker from "./BookAnalysisSourceRangePicker";
+import DocumentSourceRangePicker from "@/components/knowledge/DocumentSourceRangePicker";
 import { Button } from "@/components/ui/button";
 import { AppDialogContent, Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -306,7 +306,7 @@ export default function BookAnalysisCreateDialog(props: BookAnalysisCreateDialog
                   </SelectControl>
                 </div>
               </div>
-                <BookAnalysisSourceRangePicker
+                <DocumentSourceRangePicker
                   selectedRange={selectedSourceRange}
                   sourceChapters={sourceChapters}
                   sourceCharCount={sourceCharCount}

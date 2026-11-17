@@ -13,12 +13,12 @@ import type {
   BookAnalysisCharacterGenerationDepth,
 } from "@ai-novel/shared/types/bookAnalysisCharacter";
 import type { CharacterProfile } from "@ai-novel/shared/types/characterProfile";
-import type { DocumentChapter, KnowledgeDocumentDetail, KnowledgeDocumentSummary } from "@ai-novel/shared/types/knowledge";
+import type { DocumentChapter, DocumentSourceRange, KnowledgeDocumentDetail, KnowledgeDocumentSummary } from "@ai-novel/shared/types/knowledge";
 import type { AggregatedEvidenceItem, LLMConfigState, SectionDraft } from "../bookAnalysis.types";
 
 export type ExportFormat = "markdown" | "json";
 export type BookAnalysisMode = "reference" | "diagnosis";
-export type BookAnalysisSourceRangeDraft = { startChapterIndex: number; endChapterIndex: number } | null;
+export type BookAnalysisSourceRangeDraft = DocumentSourceRange | null;
 
 export interface NovelOption {
   id: string;
@@ -131,7 +131,7 @@ export interface BookAnalysisWorkspace {
   saveSection: (section: BookAnalysisSection) => void;
   downloadSelectedAnalysis: (format: ExportFormat) => Promise<void>;
   publishSelectedAnalysis: () => Promise<void>;
-  createStyleProfileFromAnalysis: () => Promise<void>;
+  createStyleProfileFromAnalysis: (name?: string) => Promise<void>;
   updateBudget: (budgetTokens: number | null) => Promise<void>;
   resumeWithBudget: (budgetTokens: number) => Promise<void>;
   generateCharacters: (input: {

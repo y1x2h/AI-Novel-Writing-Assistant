@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ListChecks, Plus, RefreshCw } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import {
   WorkspaceHeader,
   WorkspaceNextAction,
@@ -12,6 +13,7 @@ import BookAnalysisCharacterPanel from "./components/BookAnalysisCharacterPanel"
 import BookAnalysisCreateDialog from "./components/BookAnalysisCreateDialog";
 import BookAnalysisDiagnosisTipBanner from "./components/BookAnalysisDiagnosisTipBanner";
 import BookAnalysisDetailPanel from "./components/BookAnalysisDetailPanel";
+import BookAnalysisDistillDialog from "./components/BookAnalysisDistillDialog";
 import BookAnalysisSidebar from "./components/BookAnalysisSidebar";
 import BookAnalysisWorkbenchViewTabs from "./components/BookAnalysisWorkbenchViewTabs";
 import BookAnalysisWorkspaceToolbar from "./components/BookAnalysisWorkspaceToolbar";
@@ -26,7 +28,9 @@ export default function BookAnalysisPage() {
   const dualPanePreference = useBookAnalysisDualPanePreference();
   const chapterReader = useBookAnalysisChapterReader();
   const { activeView, setActiveView } = useBookAnalysisActiveView();
+  const navigate = useNavigate();
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [distillDialogOpen, setDistillDialogOpen] = useState(false);
   const [budgetDialogMode, setBudgetDialogMode] = useState<"adjust" | "resume" | null>(null);
   const [referenceCreateOpen, setReferenceCreateOpen] = useState(false);
   const pendingResultFocusIdRef = useRef("");
@@ -178,6 +182,22 @@ export default function BookAnalysisPage() {
             fixedAnalysis={workspace.selectedAnalysis}
             onOpenChange={setReferenceCreateOpen}
           />
+          <BookAnalysisDistillDialog
+            open={distillDialogOpen}
+            onOpenChange={setDistillDialogOpen}
+            analysis={workspace.selectedAnalysis}
+            chapters={workspace.documentChapters}
+            chaptersLoading={workspace.queryState.chaptersLoading}
+            chaptersError={workspace.queryState.chaptersError}
+            llmConfig={workspace.llmConfig}
+            syncPending={workspace.pending.createStyleProfile}
+            syncFeedback={workspace.styleProfileFeedback}
+            onUseAnalysisConclusion={workspace.createStyleProfileFromAnalysis}
+            onDistilled={(profileId) => {
+              setDistillDialogOpen(false);
+              navigate(`/style-engine?profileId=${profileId}&source=book-analysis`);
+            }}
+          />
         </>
       ) : null}
       {!workspace.selectedAnalysisId ? (
@@ -296,7 +316,7 @@ export default function BookAnalysisPage() {
                 onRebuild={workspace.rebuildAnalysis}
                 onArchive={workspace.archiveAnalysis}
                 onPublish={() => void workspace.publishSelectedAnalysis()}
-                onCreateStyleProfile={() => void workspace.createStyleProfileFromAnalysis()}
+                onCreateStyleProfile={() => setDistillDialogOpen(true)}
                 onCreateFromReference={() => setReferenceCreateOpen(true)}
                 onDownload={(format) => void workspace.downloadSelectedAnalysis(format)}
                 onDualPaneChange={dualPanePreference.setDualPaneEnabled}
@@ -337,6 +357,7 @@ export default function BookAnalysisPage() {
                       optimizePreview: workspace.pending.optimizePreview,
                       saveSection: workspace.pending.saveSection,
                       publish: workspace.pending.publish,
+                      createStyleProfile: workspace.pending.createStyleProfile,
                     }}
                     onActiveChapterChange={chapterReader.setCurrentChapterIndex}
                     onSelectChapter={chapterReader.scrollToChapter}
@@ -345,6 +366,7 @@ export default function BookAnalysisPage() {
                     onRetryChapters={workspace.retryChapters}
                     onSelectedNovelChange={workspace.setSelectedNovelId}
                     onPublish={() => void workspace.publishSelectedAnalysis()}
+                    onCreateStyleProfile={() => setDistillDialogOpen(true)}
                     onRegenerateSection={(section) => workspace.regenerateSection(section.sectionKey)}
                     onOptimizeSection={(section) => void workspace.optimizeSectionPreview(section)}
                     onApplyOptimizePreview={workspace.applySectionOptimizePreview}

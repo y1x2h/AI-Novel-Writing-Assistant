@@ -1359,6 +1359,9 @@ model StyleExtractionTask {
     sourceInputText       String?
     sourceInputCharLimit  Int?
     sourceInputCharCount  Int?
+    sourceStartChapterIndex Int?
+    sourceEndChapterIndex   Int?
+    sourceScopeLabel        String?
     provider              String
   model                 String?
   temperature           Float?

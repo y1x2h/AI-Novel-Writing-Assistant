@@ -73,6 +73,7 @@ interface PendingState {
   optimizePreview: boolean;
   saveSection: boolean;
   publish: boolean;
+  createStyleProfile: boolean;
 }
 
 interface BookAnalysisDetailPanelProps {
@@ -104,6 +105,7 @@ interface BookAnalysisDetailPanelProps {
   onRetryChapters: () => void;
   onSelectedNovelChange: (novelId: string) => void;
   onPublish: () => void;
+  onCreateStyleProfile: () => void;
   onRegenerateSection: (section: BookAnalysisSection) => void;
   onOptimizeSection: (section: BookAnalysisSection) => void;
   onApplyOptimizePreview: (section: BookAnalysisSection) => void;
@@ -143,6 +145,7 @@ export default function BookAnalysisDetailPanel(props: BookAnalysisDetailPanelPr
     onRetryChapters,
     onSelectedNovelChange,
     onPublish,
+    onCreateStyleProfile,
     onRegenerateSection,
     onOptimizeSection,
     onApplyOptimizePreview,
@@ -334,11 +337,6 @@ export default function BookAnalysisDetailPanel(props: BookAnalysisDetailPanelPr
                   该分析基于旧版源文档，当前激活文档版本为 v{selectedAnalysis.currentDocumentVersionNumber}。
                 </div>
               ) : null}
-              {styleProfileFeedback ? (
-                <div className="rounded-md border border-primary/20 bg-primary/5 p-3 text-sm text-muted-foreground">
-                  {styleProfileFeedback}
-                </div>
-              ) : null}
               <div className="rounded-xl bg-muted/25 p-4 text-sm">
                 <div className="mb-2 font-medium">发布到小说知识库</div>
                 <div className="flex flex-wrap items-center gap-2">
@@ -365,6 +363,22 @@ export default function BookAnalysisDetailPanel(props: BookAnalysisDetailPanelPr
                 {publishFeedback ? <div className="mt-2 text-xs text-muted-foreground">{publishFeedback}</div> : null}
                 {lastPublishResult ? (
                   <div className="mt-1 text-xs text-muted-foreground">发布时间：{formatDate(lastPublishResult.publishedAt)}</div>
+                ) : null}
+              </div>
+              <div className="rounded-xl bg-muted/25 p-4 text-sm">
+                <div className="mb-2 font-medium">蒸馏为写法档案</div>
+                <div className="mb-3 text-xs text-muted-foreground">
+                  把这份拆书里的文风与技法提炼成可复用的写法。可以直接使用拆书结论，也可以只重读其中一段原文。
+                </div>
+                <Button
+                  size="sm"
+                  onClick={onCreateStyleProfile}
+                  disabled={pending.createStyleProfile || selectedAnalysis.status === "archived"}
+                >
+                  {pending.createStyleProfile ? "生成写法中..." : "生成写法"}
+                </Button>
+                {styleProfileFeedback ? (
+                  <div className="mt-2 text-xs text-muted-foreground">{styleProfileFeedback}</div>
                 ) : null}
               </div>
               <div className="grid gap-3 md:grid-cols-2">

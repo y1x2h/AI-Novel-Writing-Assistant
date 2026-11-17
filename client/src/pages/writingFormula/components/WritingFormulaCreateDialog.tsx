@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { BookOpenText, MessageCircleMore, Sparkles, WandSparkles } from "lucide-react";
 import type { BookAnalysis } from "@ai-novel/shared/types/bookAnalysis";
-import type { KnowledgeDocumentDetail, KnowledgeDocumentSummary } from "@ai-novel/shared/types/knowledge";
+import type { DocumentChapter, DocumentSourceRange, KnowledgeDocumentDetail, KnowledgeDocumentSummary } from "@ai-novel/shared/types/knowledge";
 import type { StyleExtractionSourceProcessingMode, StyleTemplate } from "@ai-novel/shared/types/styleEngine";
 import type { UnifiedTaskDetail } from "@ai-novel/shared/types/task";
+import DocumentSourceRangePicker from "@/components/knowledge/DocumentSourceRangePicker";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { TaskRecordActions } from "@/components/taskQueue/TaskRecordActions";
@@ -133,6 +134,11 @@ interface WritingFormulaCreateDialogProps {
   knowledgeDocumentsLoading: boolean;
   selectedKnowledgeDocument: KnowledgeDocumentDetail | null;
   selectedKnowledgeDocumentLoading: boolean;
+  knowledgeSourceRange: DocumentSourceRange | null;
+  knowledgeSourceChapters: DocumentChapter[];
+  knowledgeChaptersRequested: boolean;
+  knowledgeChaptersLoading: boolean;
+  knowledgeChaptersError?: string;
   bookAnalyses: BookAnalysis[];
   bookAnalysesLoading: boolean;
   selectedPresetKey: "imitate" | "balanced" | "transfer";
@@ -142,6 +148,8 @@ interface WritingFormulaCreateDialogProps {
   onPresetChange: (value: "imitate" | "balanced" | "transfer") => void;
   onSubmitExtractionTask: () => void;
   onOpenTaskCenter?: (task: UnifiedTaskDetail) => void;
+  onKnowledgeSourceRangeChange: (range: DocumentSourceRange | null) => void;
+  onRequestKnowledgeChapters: () => void;
 }
 
 export default function WritingFormulaCreateDialog(props: WritingFormulaCreateDialogProps) {
@@ -160,6 +168,11 @@ export default function WritingFormulaCreateDialog(props: WritingFormulaCreateDi
     knowledgeDocumentsLoading,
     selectedKnowledgeDocument,
     selectedKnowledgeDocumentLoading,
+    knowledgeSourceRange,
+    knowledgeSourceChapters,
+    knowledgeChaptersRequested,
+    knowledgeChaptersLoading,
+    knowledgeChaptersError,
     bookAnalyses,
     bookAnalysesLoading,
     selectedPresetKey,
@@ -169,6 +182,8 @@ export default function WritingFormulaCreateDialog(props: WritingFormulaCreateDi
     onPresetChange,
     onSubmitExtractionTask,
     onOpenTaskCenter,
+    onKnowledgeSourceRangeChange,
+    onRequestKnowledgeChapters,
   } = props;
   const [activeTab, setActiveTab] = useState<"quick_start" | "blank" | "extract">("quick_start");
 
@@ -436,6 +451,17 @@ export default function WritingFormulaCreateDialog(props: WritingFormulaCreateDi
                         );
                       })}
                     </div>
+                    <DocumentSourceRangePicker
+                      selectedRange={knowledgeSourceRange}
+                      sourceChapters={knowledgeSourceChapters}
+                      sourceCharCount={activeKnowledgeVersion?.charCount ?? activeKnowledgeVersion?.content.length ?? 0}
+                      sourceSelected={Boolean(form.knowledgeDocumentId)}
+                      chaptersRequested={knowledgeChaptersRequested}
+                      chaptersLoading={knowledgeChaptersLoading}
+                      chaptersError={knowledgeChaptersError}
+                      onRangeChange={onKnowledgeSourceRangeChange}
+                      onRequestChapters={onRequestKnowledgeChapters}
+                    />
                     <div className="space-y-2 rounded-xl border bg-white p-3">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="text-sm font-medium text-slate-950">原文处理方式</div>
@@ -474,11 +500,15 @@ export default function WritingFormulaCreateDialog(props: WritingFormulaCreateDi
                       </div>
                       {form.knowledgeSourceProcessingMode === "representative_sample" ? (
                         <div className="text-xs leading-5 text-slate-500">
-                          写法资产会继续保留完整来源预览；模型只读取代表性样本，避免长篇全文一次性超出模型承载能力。
+                          {knowledgeSourceRange
+                            ? "先截取所选章节范围，再在范围内按开篇、中段、后段抽取代表性样本。"
+                            : "写法资产会继续保留完整来源预览；模型只读取代表性样本，避免长篇全文一次性超出模型承载能力。"}
                         </div>
                       ) : (
                         <div className="text-xs leading-5 text-amber-700">
-                          全文提取会把活动版本全文交给模型。长篇原文建议先使用智能抽样。
+                          {knowledgeSourceRange
+                            ? "先截取所选章节范围，再把范围内的正文交给模型。范围较长时建议使用智能抽样。"
+                            : "全文提取会把活动版本全文交给模型。长篇原文建议先使用智能抽样。"}
                         </div>
                       )}
                     </div>

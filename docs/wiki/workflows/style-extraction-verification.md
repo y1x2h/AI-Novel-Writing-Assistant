@@ -41,6 +41,14 @@
 - 否则按空行分段，段落数超过上限时按顺序合并成固定份数；
 - 最多 8 份样本，每份截断到 1400 字，序号从 1 开始，供模型用 `sampleIndexes` 回指证据。
 
+### 原文读取范围
+
+- 从知识库文档提取写法支持可选 `sourceRange`（起止 `chapterIndex`）。范围解析统一走 `server/src/services/knowledge/DocumentSourceRange.ts`，按 `DocumentChapter` 的 offset 截取正文；截取发生在抽样之前，`sourceProcessingMode` 只作用于截取后的文本。
+- 任务创建时冻结截取后的 `sourceText`；失败重试复用这份冻结文本，不会按最新章节缓存重新计算范围，避免同一任务前后读取不同的原文。
+- 范围本身写入 `sourceStartChapterIndex`、`sourceEndChapterIndex`、`sourceScopeLabel`，与 `sourceText` 分开保存。运行记录和任务投影可展示本次读取范围，便于解释为什么只用了长篇资料的一部分。
+- 章节标签由共享的 `buildDocumentSourceRangeLabel` 生成，拆书和写法提取共用同一份规则，避免两个入口对同一范围显示不同文案。
+- 拆书蒸馏写法时若选择「缩小范围重读原文」，同样走知识库文档写法提取任务，并把范围限制在原拆书覆盖的章节内；默认路径仍使用拆书结论，不触发原文重读。
+
 ### 结果与落库
 
 - 验证结论写在 `feature.verification`（可选字段），随 `StyleProfile.extractedFeaturesJson` 一起落库，因此**不需要数据库迁移**，老写法数据保持兼容。

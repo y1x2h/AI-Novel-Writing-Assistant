@@ -106,6 +106,21 @@ const REQUIRED_COLUMN_BACKFILLS = [
     columnName: "sourceInputCharCount",
     columnDefinition: `"sourceInputCharCount" INTEGER`,
   },
+  {
+    tableName: "StyleExtractionTask",
+    columnName: "sourceStartChapterIndex",
+    columnDefinition: `"sourceStartChapterIndex" INTEGER`,
+  },
+  {
+    tableName: "StyleExtractionTask",
+    columnName: "sourceEndChapterIndex",
+    columnDefinition: `"sourceEndChapterIndex" INTEGER`,
+  },
+  {
+    tableName: "StyleExtractionTask",
+    columnName: "sourceScopeLabel",
+    columnDefinition: `"sourceScopeLabel" TEXT`,
+  },
 ] as const;
 
 function resolveSqliteDatabasePath(): string | null {

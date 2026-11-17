@@ -49,6 +49,12 @@ export interface DocumentChapterSplitResult {
   chapters: DocumentChapter[];
 }
 
+/** 文档读取范围：只读取指定章节区间内的原文。 */
+export interface DocumentSourceRange {
+  startChapterIndex: number;
+  endChapterIndex: number;
+}
+
 export interface KnowledgeBinding {
   id: string;
   targetType: KnowledgeBindingTargetType;

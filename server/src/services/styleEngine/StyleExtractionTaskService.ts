@@ -27,6 +27,11 @@ interface CreateStyleExtractionTaskInput {
   sourceType?: StyleExtractionTaskSourceType;
   sourceRefId?: string;
   sourceProcessingMode?: StyleExtractionSourceProcessingMode;
+  sourceScope?: {
+    startChapterIndex: number;
+    endChapterIndex: number;
+    label: string;
+  };
   category?: string;
   provider?: LLMProvider;
   model?: string;
@@ -197,6 +202,9 @@ export class StyleExtractionTaskService {
         sourceInputText: sourceInput.sourceInputText,
         sourceInputCharLimit: sourceInput.sourceInputCharLimit,
         sourceInputCharCount: sourceInput.sourceInputCharCount,
+        sourceStartChapterIndex: input.sourceScope?.startChapterIndex ?? null,
+        sourceEndChapterIndex: input.sourceScope?.endChapterIndex ?? null,
+        sourceScopeLabel: input.sourceScope?.label.trim() || null,
         provider: input.provider ?? "deepseek",
         model: input.model?.trim() || null,
         temperature: input.temperature ?? 0.5,
@@ -224,6 +232,7 @@ export class StyleExtractionTaskService {
       temperature: task.temperature,
       sourceTextChars: task.sourceText.length,
       sourceInputChars: task.sourceInputCharCount,
+      sourceScopeLabel: task.sourceScopeLabel,
       presetKey: task.presetKey,
       timeoutMs: runtimeSettings.styleExtractionTimeoutMs,
     });

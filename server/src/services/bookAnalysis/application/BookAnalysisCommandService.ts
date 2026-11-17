@@ -9,6 +9,7 @@ import type { LLMProvider } from "@ai-novel/shared/types/llm";
 import { prisma } from "../../../db/prisma";
 import { AppError } from "../../../middleware/errorHandler";
 import { DocumentChapterService } from "../../knowledge/DocumentChapterService";
+import { buildDocumentSourceRangeLabel } from "../../knowledge/DocumentSourceRange";
 import {
   BOOK_ANALYSIS_BUDGET_EXCEEDED_CODE,
   normalizeBookAnalysisBudgetTokens,
@@ -58,18 +59,6 @@ interface ResolvedBookAnalysisSourceRange extends BookAnalysisSourceRangeInput {
   startOffset: number;
   endOffset: number;
   label: string;
-}
-
-function buildSourceRangeLabel(input: {
-  startChapterIndex: number;
-  endChapterIndex: number;
-  startTitle: string;
-  endTitle: string;
-}): string {
-  if (input.startChapterIndex === input.endChapterIndex) {
-    return `第 ${input.startChapterIndex + 1} 章：${input.startTitle}`;
-  }
-  return `第 ${input.startChapterIndex + 1}-${input.endChapterIndex + 1} 章：${input.startTitle} 至 ${input.endTitle}`;
 }
 
 export class BookAnalysisCommandService {
@@ -667,7 +656,7 @@ export class BookAnalysisCommandService {
       endChapterIndex: endChapter.chapterIndex,
       startOffset: startChapter.startOffset,
       endOffset: endChapter.endOffset,
-      label: buildSourceRangeLabel({
+      label: buildDocumentSourceRangeLabel({
         startChapterIndex: startChapter.chapterIndex,
         endChapterIndex: endChapter.chapterIndex,
         startTitle: startChapter.title,

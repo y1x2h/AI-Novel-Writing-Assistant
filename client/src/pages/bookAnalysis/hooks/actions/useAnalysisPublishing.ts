@@ -97,13 +97,13 @@ export function useAnalysisPublishing(input: {
     });
   };
 
-  const createStyleProfileFromAnalysis = async () => {
+  const createStyleProfileFromAnalysis = async (name?: string) => {
     if (!selectedAnalysis) {
       return;
     }
     await createStyleProfileMutation.mutateAsync({
       bookAnalysisId: selectedAnalysis.id,
-      name: `${selectedAnalysis.title}-写法资产`,
+      name: name?.trim() || `${selectedAnalysis.title}-写法资产`,
     });
   };
 

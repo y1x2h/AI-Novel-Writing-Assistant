@@ -44,11 +44,14 @@ Prompt 合同、结构化后处理和 UI / 导出字段标签必须共享同一�
 - `structuredData` 是程序读取层，不是 Markdown 正文的复制。字段应短、稳、可筛选；缺少依据时字符串返回空字符串，数组返回空数组。
 - `structuredData` 的普通数组字段最多保留 12 项，时间线节点数组最多保留 30 项。Prompt 应要求模型按重要度和叙事顺序保留最值得复用的条目；后端归一化发现模型仍返回超长数组时，只保留上限内条目，并把字段名写入 `normalizationWarnings`，让 UI 提示用户。
 - 时间线小节的 `timeNodes` 与 `eventOrder` 应使用结构化节点数组，每个节点至少包含 `label`，可选 `timeHint`、`phase` 和 `sourceRefs`。旧字符串数组必须在归一化层自动包装为 `{ label }`，避免历史拆书在 UI、导出或续写引用中变空。
+- 剧情结构小节的 `emotionCurve` 使用情绪节点数组（`emotionNodeArray`），每个节点至少包含 `label`，可选 `emotionType`、`intensity`（-9 到 9 整数，负值压抑/虐感、正值爽感/释放）、`technique` 和 `sourceRefs`。该字段用于把短篇/开篇的情绪推进拆成可复用节点，供反转设计与爽点节奏参考；节点必须能在 source notes 中找到对应情节，不允许虚构。兼容归一化收口在 `shared/utils/bookAnalysisEmotion.ts`，上限 40 项，超出部分写入 `normalizationWarnings`。
 - 拆书结构化字段规格、中文标签、后端归一化和 Prompt 固定结构示例应来自 `shared/types/bookAnalysis.ts`，不得在前端、导出服务或 Prompt 中另起一份字段表。
 - 时间线节点的兼容归一化和按阶段分组应走 `shared/utils/bookAnalysisTimeline.ts`。UI 摘要、导出发布和续写参考不得各自复制 `normalizeTimelineNode`，避免历史字符串节点、`sourceRefs` 截断和未分阶段兜底行为分叉。
 - 新生成的 section evidence 应尽量绑定到 `structuredData` 的具体字段。`fieldKey` 必须来自当前小节字段规格；数组字段可以用 `fieldIndex` 指向具体数组项。归一化层遇到非法字段名时只清空绑定信息，不删除证据本身，以保证历史数据和模型偶发脏值仍可读。
 - evidence 的 `fieldIndex` 必须在归一化后的字段数组长度内；如果模型指向了被截断的下标，应清空 `fieldIndex` 但保留 evidence item 和合法 `fieldKey`。
 - evidence 可以携带 `chapterIndex` 与 `excerptOffsetRange` 指向原文章节和摘录位置。生成后应优先用 evidence 摘录在源文档中做确定性匹配补齐定位；匹配失败时保留 evidence 本身，不因为缺少章节定位而丢弃证据。
+- `style_technique` 小节的文风判断必须以客观文风统计为锚点。生成前由 `computeObjectiveStyleStats` 对原文范围计算字数、段落数、句数、平均句长、句长标准差、对话占比、标点密度、感叹/疑问占比、平均段落长度和高频标点；统计结果以文本块注入 section prompt，要求模型用这些客观指标校准语言风格、节奏控制和对话特征判断，避免只凭主观印象下结论。客观统计只用正则，不引入分词等新依赖。
+- `style_technique` 的 `structuredData` 按写作认知层次分层：`languageDna`（L1 语言 DNA：用词偏好、句式节奏、标点习惯等可直接复用的语言指纹）、`structureTemplate`（L2 结构模板：钩子设计、冲突循环、章节节奏等可迁移的叙事骨架）、`cognitiveFramework`（L3-L5 认知框架：主题表达、世界观构建、读者爽点设计等需要理解才能复用的高层策略）。Prompt 必须按三层分别引导输出，后端归一化保留三类字段，UI 摘要按层次展示，避免把语言指纹和高层认知混在同一条结论里。
 - UI 证据面板应兼容两类证据：有章节定位时提供原文章节预览和摘录高亮；历史 evidence 没有 `chapterIndex` 或 offset 时仍展示原证据摘录。
 - `character_system` 小节是拆书报告的一部分，负责给用户快速理解人物系统、关系张力和可复用人物设计；它不应承载所有深度角色材料。
 - 深度角色档案使用独立的 `BookAnalysisCharacter` / `BookAnalysisCharacterArc` / `BookAnalysisCharacterScene` 实体，与 `character_system` 小节并存。用户需要研究人物塑造时主动生成或手动维护角色档案；全量拆书默认不自动生成深度角色档案，避免基础拆书成本被隐式放大。
@@ -86,6 +89,8 @@ Prompt 合同、结构化后处理和 UI / 导出字段标签必须共享同一�
 - 拆书发布到知识库必须使用独立来源通道。用户上传资料使用 `KnowledgeDocument.kind = user_upload`；拆书发布资料使用 `KnowledgeDocument.kind = analysis_published`，并写入唯一的 `sourceAnalysisId`。普通上传可以继续按标题追加版本，但不能合并到拆书发布文档；拆书发布必须按 `sourceAnalysisId` 复用同一知识文档并追加新版本。
 - 拆书发布版进入知识库索引时，应把结构化关键结论转成 RAG facet 分块：题材、卖点、目标读者、优势、短板、人物功能和章节锚点必须进入 chunk metadata / Qdrant payload。Markdown 正文仍用于阅读和普通检索，但结构化分块用于后续按维度精确召回。
 - 同一拆书重复发布到同一本小说知识库时，应替换该拆书来源的旧绑定，只让最新发布版进入小说 RAG 绑定集合；旧发布文档本体不级联删除，避免破坏其他引用或历史审计。绑定更新应以 `sourceAnalysisId` 和发布文档 ID 清理旧绑定，避免手动绑定过同一发布文档时触发重复绑定。
+- 从拆书结果生成写法档案走已注册的 LLM 文风抽取链路 `POST /style-profiles/from-book-analysis`（`StyleSourceType = from_book_analysis`），由写法引擎服务根据拆书的 `style_technique` 与 `character_system` 小节全量抽取可复用写法。拆书详情页的「蒸馏为写法档案」按钮和顶部工具栏的「生成写法」都打开同一个蒸馏弹窗：默认继续调用该链路使用拆书结论；用户选择「缩小范围重读原文」时，改为从知识库活动版本按所选章节范围截取原文并提交写法提取任务，可选范围限制在原拆书覆盖的章节内。不要在拆书服务里另起一份确定性字段拼装逻辑，避免与写法引擎的 LLM 抽取结果产生两份不一致的写法资产。
+- 蒸馏弹窗的「重读原文」不是重新分析整本书：重读只用于纠正或补充写法特征，范围应在拆书范围内继续缩小（例如只重读前 50 章）。缺少章节缓存时弹窗应引导用户继续使用拆书结论或先补建章节，不能退回整本全文提取。
 - “照着一本书写”属于开书主入口，必须出现在小说列表和自动导演起始页；拆书详情只能提供就近快捷入口，不能要求新手先理解并进入拆书模块。用户选择已有参考小说后，再选择两种明确意图：`续写原作` 自动携带来源文档、拆书分析与写法资产，保留角色、世界、时间线和未完线索；`参考创作新书` 自动携带拆书分析与写法资产，但只把结构、节奏和技法作为一级参考，不把原作专名、角色、世界事实或具体剧情注入新书正文。
 - “参考创作新书”的拆书关联属于小说级结构参考合同，应持久化在小说上，并在候选方向、故事宏观规划、大纲、卷章和节拍规划阶段优先注入。它不等同于知识库绑定，也不进入章节事实 RAG；这样既能稳定继承结构方法，又能避免原作事实污染和近似复制。`续写原作` 继续使用续写来源合同和 `continuation_constraints`，两条路线不能由自动导演静默互换。
 - “一句话开书想法”只表达用户本次想写什么，不承担保存参考小说关系的职责。参考拆书 ID、选用小节、来源文档和写法绑定必须作为独立结构化字段进入候选方向请求、自动导演任务快照和小说记录；后续规划按小说级参考合同继续读取，不能依赖把拆书结论压缩进一句话后再猜测还原。
@@ -137,6 +142,9 @@ Prompt 合同、结构化后处理和 UI / 导出字段标签必须共享同一�
 - 总览之后的小节口径不一致：检查 `overview` 是否先于其他小节生成、`BookAnalysisOverviewContext` 是否传入后续 section prompt，以及 overview 失败时是否按预期降级为 `null` context。
 - 小节内容泛泛：检查该 section 的 notes 是否缺少相关信号；如果缺少，应回到 source note 抽取 prompt 或文档分段策略，而不是让小节 writer 自行虚构。
 - 结构化摘要为空：检查 Prompt 固定结构示例、`BOOK_ANALYSIS_STRUCTURED_FIELD_SPECS`、后处理归一和测试 fixture 是否一致。
+- 文风结论与原文客观特征矛盾：检查 `style_technique` 的 section prompt 是否注入了 `computeObjectiveStyleStats` 产出的客观统计块，模型是否被要求用统计校准判断；若统计缺失，优先核对 `bookAnalysis.generation.ts` 是否把 `sourceText` 传给 `generateSection`，以及 `objectiveStyleStats.ts` 是否被正确调用。
+- 生成的写法档案与拆书文风结论不一致：检查前端调用的是否是 `POST /style-profiles/from-book-analysis`（LLM 抽取链路），而不是拆书服务内部的确定性拼装；写法资产必须由写法引擎统一抽取，拆书服务只负责提供小节内容，不直接拼 ruleSet。
+- 蒸馏重读的章节范围与原拆书对不上：检查弹窗是否把 `analysis.sourceRange` 作为可选范围边界，以及 `analysis.documentVersionId` 是否仍是知识文档的活动版本。重读接口按 `documentId` 读取活动版本；版本变化时弹窗只能提示用户确认章节，不能静默按旧偏移截取。
 - 拆书显示成功但没有结果：先检查 `usedTokens`、`summary`、各 section 的正文与结构化信号，再检查 LLM 日志中的 provider/model 错误。若 source notes 只包含原文截断且所有维度为空，说明命中了旧兜底缓存；应由缓存有效性判断触发重建，不要手工删除数据库。若新调用失败，应确认异常是否被 writer 向上抛出、section 是否写为 `failed`、查询与任务中心是否把历史空成功投影为失败。
 - 结构化结论被静默截断：检查生成结果是否写入 `normalizationWarningsJson`，序列化是否返回 `normalizationWarnings`，以及前端是否在关键结论区展示对应字段名。
 - 历史时间线不显示：检查旧字符串数组是否经过 timeline node wrapper；UI、导出和续写引用都应容忍 `{ label }` 单字段节点。
@@ -172,6 +180,7 @@ Prompt 合同、结构化后处理和 UI / 导出字段标签必须共享同一�
 - `server/src/routes/bookAnalysis.ts`
 - `server/src/modules/bookAnalysis/http/`
 - `server/src/services/bookAnalysis/`
+- `server/src/services/bookAnalysis/shared/objectiveStyleStats.ts`
 - `server/src/services/bookAnalysis/bookAnalysisCharacter/`
 - `server/src/services/image/`
 - `server/src/modules/export/`

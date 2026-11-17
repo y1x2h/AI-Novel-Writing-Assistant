@@ -1,12 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import type { BookAnalysis } from "@ai-novel/shared/types/bookAnalysis";
-import type { KnowledgeDocumentDetail, KnowledgeDocumentSummary } from "@ai-novel/shared/types/knowledge";
+import type { DocumentSourceRange, KnowledgeDocumentDetail, KnowledgeDocumentSummary } from "@ai-novel/shared/types/knowledge";
 import type { StyleExtractionSourceProcessingMode, StyleProfile } from "@ai-novel/shared/types/styleEngine";
 import type { UnifiedTaskDetail } from "@ai-novel/shared/types/task";
 import { listBookAnalyses } from "@/api/bookAnalysis";
-import { getKnowledgeDocument, listKnowledgeDocuments } from "@/api/knowledge";
-import { getTaskDetail } from "@/api/tasks";
+import { getKnowledgeDocument, getKnowledgeDocumentVersionChapters, listKnowledgeDocuments } from "@/api/knowledge";
 import {
   createManualStyleProfile,
   createStyleExtractionTaskFromKnowledgeDocument,
@@ -16,6 +15,7 @@ import {
   createStyleProfileFromTemplate,
 } from "@/api/styleEngine";
 import { queryKeys } from "@/api/queryKeys";
+import { useStyleExtractionTaskWatcher } from "@/hooks/useStyleExtractionTaskWatcher";
 
 export type WritingFormulaMaterialSource = "direct_text" | "knowledge_document" | "book_analysis";
 
@@ -68,10 +68,6 @@ interface UseWritingFormulaCreateFlowOptions {
   onFlowMessage: (message: string) => void;
 }
 
-function isActiveTask(task: UnifiedTaskDetail | null | undefined): boolean {
-  return task?.status === "queued" || task?.status === "running";
-}
-
 function readCreatedProfileId(task: UnifiedTaskDetail | null | undefined): string {
   const value = task?.meta?.createdStyleProfileId;
   return typeof value === "string" ? value : "";
@@ -95,30 +91,41 @@ export function useWritingFormulaCreateFlow({
 }: UseWritingFormulaCreateFlowOptions) {
   const [form, setForm] = useState<WritingFormulaCreateFormState>(INITIAL_WRITING_FORMULA_CREATE_FORM);
   const [selectedPresetKey, setSelectedPresetKey] = useState<"imitate" | "balanced" | "transfer">("balanced");
-  const [pendingExtractionTaskId, setPendingExtractionTaskId] = useState("");
-  const handledTerminalTaskIdRef = useRef("");
+  const [knowledgeSourceRange, setKnowledgeSourceRange] = useState<DocumentSourceRange | null>(null);
+  const [knowledgeChaptersRequested, setKnowledgeChaptersRequested] = useState(false);
 
   const resetCreateFlow = () => {
     setForm(INITIAL_WRITING_FORMULA_CREATE_FORM);
     setSelectedPresetKey("balanced");
+    setKnowledgeSourceRange(null);
+    setKnowledgeChaptersRequested(false);
   };
 
   const handleFormChange = (patch: Partial<WritingFormulaCreateFormState>) => {
+    if (patch.knowledgeDocumentId !== undefined && patch.knowledgeDocumentId !== form.knowledgeDocumentId) {
+      setKnowledgeSourceRange(null);
+      setKnowledgeChaptersRequested(false);
+    }
     setForm((prev) => ({ ...prev, ...patch }));
   };
 
-  const extractionTaskQuery = useQuery({
-    queryKey: queryKeys.tasks.detail("style_extraction", pendingExtractionTaskId || "none"),
-    queryFn: () => getTaskDetail("style_extraction", pendingExtractionTaskId),
-    enabled: Boolean(pendingExtractionTaskId),
-    refetchInterval: (query) => {
-      const task = query.state.data?.data ?? null;
-      return isActiveTask(task) ? 3000 : false;
+  const extractionWatcher = useStyleExtractionTaskWatcher({
+    onMissing: () => onFlowMessage("写法提取任务不存在或已被清理，请重新提交。"),
+    onSucceeded: (task) => {
+      const profileId = readCreatedProfileId(task);
+      const profileName = readCreatedProfileName(task) || form.extractName.trim() || "新写法";
+      if (!profileId) {
+        onFlowMessage("写法提取任务已完成，但没有拿到自动保存结果。");
+        return;
+      }
+      resetCreateFlow();
+      void refreshStyleData().then(() => {
+        onAutoSavedProfileReady(profileId, `写法“${profileName}”已自动保存，已经为你打开当前写法编辑。`);
+      });
     },
-    retry: false,
+    onFailed: (message) => onFlowMessage(message),
   });
-
-  const activeExtractionTask = extractionTaskQuery.data?.data ?? null;
+  const activeExtractionTask = extractionWatcher.task;
 
   const knowledgeKeyword = form.knowledgeSearchKeyword.trim();
   const knowledgeDocumentsQuery = useQuery({
@@ -131,6 +138,20 @@ export function useWritingFormulaCreateFlow({
     queryFn: () => getKnowledgeDocument(form.knowledgeDocumentId),
     enabled: form.materialSource === "knowledge_document" && Boolean(form.knowledgeDocumentId),
   });
+  const activeKnowledgeVersion =
+    selectedKnowledgeDocumentQuery.data?.data?.versions.find((version) => version.isActive) ?? null;
+  const knowledgeChaptersQuery = useQuery({
+    queryKey: queryKeys.knowledge.chapters(
+      form.knowledgeDocumentId || "none",
+      activeKnowledgeVersion?.id || "none",
+    ),
+    queryFn: () => getKnowledgeDocumentVersionChapters(form.knowledgeDocumentId, activeKnowledgeVersion?.id ?? ""),
+    enabled:
+      form.materialSource === "knowledge_document"
+      && Boolean(form.knowledgeDocumentId)
+      && Boolean(activeKnowledgeVersion?.id)
+      && knowledgeChaptersRequested,
+  });
   const bookAnalysisKeyword = form.bookAnalysisSearchKeyword.trim();
   const bookAnalysesQuery = useQuery({
     queryKey: queryKeys.bookAnalysis.list(JSON.stringify({ keyword: bookAnalysisKeyword, status: "succeeded" })),
@@ -140,67 +161,6 @@ export function useWritingFormulaCreateFlow({
     }),
     enabled: form.materialSource === "book_analysis",
   });
-
-  useEffect(() => {
-    if (!pendingExtractionTaskId) {
-      handledTerminalTaskIdRef.current = "";
-      return;
-    }
-
-    if (extractionTaskQuery.status !== "success") {
-      return;
-    }
-
-    const task = extractionTaskQuery.data?.data ?? null;
-    if (!task) {
-      if (handledTerminalTaskIdRef.current === pendingExtractionTaskId) {
-        return;
-      }
-      handledTerminalTaskIdRef.current = pendingExtractionTaskId;
-      setPendingExtractionTaskId("");
-      onFlowMessage("写法提取任务不存在或已被清理，请重新提交。");
-      return;
-    }
-
-    if (task.status === "queued" || task.status === "running") {
-      return;
-    }
-
-    if (handledTerminalTaskIdRef.current === task.id) {
-      return;
-    }
-    handledTerminalTaskIdRef.current = task.id;
-    setPendingExtractionTaskId("");
-
-    if (task.status === "succeeded") {
-      const profileId = readCreatedProfileId(task);
-      const profileName = readCreatedProfileName(task) || form.extractName.trim() || "新写法";
-      if (!profileId) {
-        onFlowMessage("写法提取任务已完成，但没有拿到自动保存结果。");
-        return;
-      }
-      resetCreateFlow();
-      void refreshStyleData().then(() => {
-        onAutoSavedProfileReady(profileId, `写法“${profileName}”已自动保存，已经为你打开当前写法编辑。`);
-      });
-      return;
-    }
-
-    const failureMessage = task.failureSummary
-      ?? task.lastError
-      ?? (task.status === "cancelled"
-        ? "写法提取任务已取消。"
-        : "写法提取任务失败，请稍后重试。");
-    onFlowMessage(failureMessage);
-  }, [
-    extractionTaskQuery.data,
-    extractionTaskQuery.status,
-    form.extractName,
-    onAutoSavedProfileReady,
-    onFlowMessage,
-    pendingExtractionTaskId,
-    refreshStyleData,
-  ]);
 
   const createManualMutation = useMutation({
     mutationFn: () => createManualStyleProfile({ name: form.manualName }),
@@ -264,8 +224,7 @@ export function useWritingFormulaCreateFlow({
         onFlowMessage("写法提取任务提交成功，但没有拿到任务详情。");
         return;
       }
-      handledTerminalTaskIdRef.current = "";
-      setPendingExtractionTaskId(task.id);
+      extractionWatcher.watch(task);
       onExtractionTaskQueued(task);
     },
   });
@@ -280,6 +239,7 @@ export function useWritingFormulaCreateFlow({
       temperature: llm.temperature,
       presetKey: selectedPresetKey,
       sourceProcessingMode: form.knowledgeSourceProcessingMode,
+      sourceRange: knowledgeSourceRange ?? undefined,
     }),
     onSuccess: (response) => {
       const task = response.data;
@@ -287,8 +247,7 @@ export function useWritingFormulaCreateFlow({
         onFlowMessage("写法提取任务提交成功，但没有拿到任务详情。");
         return;
       }
-      handledTerminalTaskIdRef.current = "";
-      setPendingExtractionTaskId(task.id);
+      extractionWatcher.watch(task);
       onExtractionTaskQueued(task);
     },
   });
@@ -332,6 +291,11 @@ export function useWritingFormulaCreateFlow({
     knowledgeDocumentsLoading: knowledgeDocumentsQuery.isFetching,
     selectedKnowledgeDocument: (selectedKnowledgeDocumentQuery.data?.data ?? null) as KnowledgeDocumentDetail | null,
     selectedKnowledgeDocumentLoading: selectedKnowledgeDocumentQuery.isFetching,
+    knowledgeSourceRange,
+    knowledgeSourceChapters: knowledgeChaptersQuery.data?.data?.chapters ?? [],
+    knowledgeChaptersRequested,
+    knowledgeChaptersLoading: knowledgeChaptersQuery.isFetching,
+    knowledgeChaptersError: knowledgeChaptersQuery.error instanceof Error ? knowledgeChaptersQuery.error.message : undefined,
     bookAnalyses: (bookAnalysesQuery.data?.data ?? []) as BookAnalysis[],
     bookAnalysesLoading: bookAnalysesQuery.isFetching,
     createManualPending: createManualMutation.isPending,
@@ -340,10 +304,12 @@ export function useWritingFormulaCreateFlow({
     extractTaskSubmitting: createExtractionTaskMutation.isPending
       || createKnowledgeExtractionTaskMutation.isPending
       || createFromBookAnalysisMutation.isPending,
-    hasActiveExtractionTask: isActiveTask(activeExtractionTask),
+    hasActiveExtractionTask: extractionWatcher.isActive,
     resetCreateFlow,
     onFormChange: handleFormChange,
     onPresetChange: setSelectedPresetKey,
+    onKnowledgeSourceRangeChange: setKnowledgeSourceRange,
+    onRequestKnowledgeChapters: () => setKnowledgeChaptersRequested(true),
     onCreateManual: () => createManualMutation.mutate(),
     onCreateFromBrief: () => createFromBriefMutation.mutate(),
     onCreateFromTemplate: (templateId: string) => createFromTemplateMutation.mutate(templateId),

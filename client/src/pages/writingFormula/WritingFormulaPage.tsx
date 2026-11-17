@@ -557,6 +557,11 @@ export default function WritingFormulaPage() {
         knowledgeDocumentsLoading={createFlow.knowledgeDocumentsLoading}
         selectedKnowledgeDocument={createFlow.selectedKnowledgeDocument}
         selectedKnowledgeDocumentLoading={createFlow.selectedKnowledgeDocumentLoading}
+        knowledgeSourceRange={createFlow.knowledgeSourceRange}
+        knowledgeSourceChapters={createFlow.knowledgeSourceChapters}
+        knowledgeChaptersRequested={createFlow.knowledgeChaptersRequested}
+        knowledgeChaptersLoading={createFlow.knowledgeChaptersLoading}
+        knowledgeChaptersError={createFlow.knowledgeChaptersError}
         bookAnalyses={createFlow.bookAnalyses}
         bookAnalysesLoading={createFlow.bookAnalysesLoading}
         selectedPresetKey={createFlow.selectedPresetKey}
@@ -566,6 +571,8 @@ export default function WritingFormulaPage() {
         onPresetChange={createFlow.onPresetChange}
         onSubmitExtractionTask={createFlow.onSubmitExtractionTask}
         onOpenTaskCenter={(task) => navigate(`/tasks?kind=style_extraction&id=${task.id}`)}
+        onKnowledgeSourceRangeChange={createFlow.onKnowledgeSourceRangeChange}
+        onRequestKnowledgeChapters={createFlow.onRequestKnowledgeChapters}
       />
 
       <Dialog

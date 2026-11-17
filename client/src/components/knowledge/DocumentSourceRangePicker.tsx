@@ -1,23 +1,26 @@
 import { useEffect, useMemo, useState } from "react";
-import type { DocumentChapter } from "@ai-novel/shared/types/knowledge";
+import type { DocumentChapter, DocumentSourceRange } from "@ai-novel/shared/types/knowledge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import type { BookAnalysisSourceRangeDraft } from "../hooks/bookAnalysisWorkspace.types";
 import SelectControl from "@/components/common/SelectControl";
 
 type RangeMode = "full" | "chapter" | "chars";
 
-interface BookAnalysisSourceRangePickerProps {
-  selectedRange: BookAnalysisSourceRangeDraft;
+interface DocumentSourceRangePickerProps {
+  selectedRange: DocumentSourceRange | null;
   sourceChapters: DocumentChapter[];
   sourceCharCount: number;
   sourceSelected: boolean;
   chaptersRequested: boolean;
   chaptersLoading: boolean;
   chaptersError?: string;
-  onRangeChange: (range: BookAnalysisSourceRangeDraft) => void;
+  onRangeChange: (range: DocumentSourceRange | null) => void;
   onRequestChapters: () => void;
+  /** 可选：只允许在该章节区间内选择，例如拆书已覆盖的章节范围。 */
+  rangeBounds?: DocumentSourceRange | null;
+  /** 可选：限制范围时「全文」入口的展示名。 */
+  fullRangeLabel?: string;
 }
 
 const CHAR_PRESETS = [
@@ -73,11 +76,12 @@ function findChapterByIndex(chapters: DocumentChapter[], chapterIndex: number): 
 
 function mapCharRangeToChapterRange(
   chapters: DocumentChapter[],
-  sourceCharCount: number,
+  rangeStartOffset: number,
+  rangeCharCount: number,
   startInput: string,
   endInput: string,
-): BookAnalysisSourceRangeDraft {
-  if (chapters.length <= 1 || sourceCharCount <= 0) {
+): DocumentSourceRange | null {
+  if (chapters.length <= 1 || rangeCharCount <= 0) {
     return null;
   }
   const parsedStart = parseCharInput(startInput);
@@ -85,19 +89,18 @@ function mapCharRangeToChapterRange(
   if (parsedStart === null || parsedEnd === null) {
     return null;
   }
-  const startOffset = clamp(parsedStart, 0, sourceCharCount);
-  const endOffset = clamp(parsedEnd, 0, sourceCharCount);
+  const startOffset = rangeStartOffset + clamp(parsedStart, 0, rangeCharCount);
+  const endOffset = rangeStartOffset + clamp(parsedEnd, 0, rangeCharCount);
   if (endOffset <= startOffset) {
     return null;
   }
 
-  const first = chapters[0];
   const last = chapters[chapters.length - 1];
   const startChapter = chapters.find((chapter) => chapter.endOffset > startOffset) ?? last;
   const endChapter =
     chapters.find((chapter) => chapter.startOffset < endOffset && chapter.endOffset >= endOffset) ?? last;
 
-  if (!first || !last || !startChapter || !endChapter) {
+  if (!last || !startChapter || !endChapter) {
     return null;
   }
 
@@ -107,7 +110,7 @@ function mapCharRangeToChapterRange(
   };
 }
 
-function getInitialRange(chapters: DocumentChapter[]): BookAnalysisSourceRangeDraft {
+function getInitialRange(chapters: DocumentChapter[]): DocumentSourceRange | null {
   const first = chapters[0];
   const last = chapters[chapters.length - 1];
   if (!first || !last) {
@@ -119,7 +122,7 @@ function getInitialRange(chapters: DocumentChapter[]): BookAnalysisSourceRangeDr
   };
 }
 
-export default function BookAnalysisSourceRangePicker({
+export default function DocumentSourceRangePicker({
   selectedRange,
   sourceChapters,
   sourceCharCount,
@@ -129,10 +132,26 @@ export default function BookAnalysisSourceRangePicker({
   chaptersError,
   onRangeChange,
   onRequestChapters,
-}: BookAnalysisSourceRangePickerProps) {
+  rangeBounds,
+  fullRangeLabel = "全文",
+}: DocumentSourceRangePickerProps) {
   const [mode, setMode] = useState<RangeMode>(selectedRange ? "chapter" : "full");
   const sortedChapters = useMemo(() => sortChapters(sourceChapters), [sourceChapters]);
-  const canUseChapterRange = sortedChapters.length > 1;
+  const visibleChapters = useMemo(() => {
+    if (!rangeBounds) {
+      return sortedChapters;
+    }
+    return sortedChapters.filter(
+      (chapter) =>
+        chapter.chapterIndex >= rangeBounds.startChapterIndex &&
+        chapter.chapterIndex <= rangeBounds.endChapterIndex,
+    );
+  }, [rangeBounds, sortedChapters]);
+  const canUseChapterRange = visibleChapters.length > 1;
+  const rangeStartOffset = visibleChapters[0]?.startOffset ?? 0;
+  const rangeEndOffset = visibleChapters[visibleChapters.length - 1]?.endOffset ?? sourceCharCount;
+  const rangeCharCount = Math.max(0, rangeEndOffset - rangeStartOffset);
+  const boundedFullRange = rangeBounds && visibleChapters.length > 0 ? getInitialRange(visibleChapters) : null;
   const selectedStartChapter = selectedRange
     ? findChapterByIndex(sortedChapters, selectedRange.startChapterIndex)
     : undefined;
@@ -140,23 +159,26 @@ export default function BookAnalysisSourceRangePicker({
     ? findChapterByIndex(sortedChapters, selectedRange.endChapterIndex)
     : undefined;
   const [charStartInput, setCharStartInput] = useState("0");
-  const [charEndInput, setCharEndInput] = useState(() => String(sourceCharCount || ""));
+  const [charEndInput, setCharEndInput] = useState(() => String(rangeCharCount || sourceCharCount || ""));
 
-  const selectedStartOffset = selectedStartChapter?.startOffset ?? 0;
-  const selectedEndOffset = selectedEndChapter?.endOffset ?? sourceCharCount;
+  const selectedStartOffset = selectedStartChapter?.startOffset ?? rangeStartOffset;
+  const selectedEndOffset = selectedEndChapter?.endOffset ?? rangeEndOffset;
   const selectedCharCount = Math.max(0, selectedEndOffset - selectedStartOffset);
   const selectedStartPosition = selectedStartChapter
-    ? sortedChapters.findIndex((chapter) => chapter.chapterIndex === selectedStartChapter.chapterIndex)
+    ? visibleChapters.findIndex((chapter) => chapter.chapterIndex === selectedStartChapter.chapterIndex)
     : 0;
   const selectedEndPosition = selectedEndChapter
-    ? sortedChapters.findIndex((chapter) => chapter.chapterIndex === selectedEndChapter.chapterIndex)
-    : Math.max(0, sortedChapters.length - 1);
-  const selectedChapterCount = selectedRange && selectedStartPosition >= 0 && selectedEndPosition >= selectedStartPosition
+    ? visibleChapters.findIndex((chapter) => chapter.chapterIndex === selectedEndChapter.chapterIndex)
+    : Math.max(0, visibleChapters.length - 1);
+  const selectedChapterCount = selectedStartPosition >= 0 && selectedEndPosition >= selectedStartPosition
     ? selectedEndPosition - selectedStartPosition + 1
-    : sortedChapters.length;
-  const percent = sourceCharCount > 0 ? clamp((selectedCharCount / sourceCharCount) * 100, 0, 100) : 0;
-  const barLeft = sourceCharCount > 0 ? clamp((selectedStartOffset / sourceCharCount) * 100, 0, 100) : 0;
-  const barWidth = sourceCharCount > 0 ? clamp((selectedCharCount / sourceCharCount) * 100, 0, 100 - barLeft) : 0;
+    : visibleChapters.length;
+  const percent = rangeCharCount > 0 ? clamp((selectedCharCount / rangeCharCount) * 100, 0, 100) : 0;
+  const barLeft = rangeCharCount > 0
+    ? clamp(((selectedStartOffset - rangeStartOffset) / rangeCharCount) * 100, 0, 100)
+    : 0;
+  const barWidth = rangeCharCount > 0 ? clamp((selectedCharCount / rangeCharCount) * 100, 0, 100 - barLeft) : 0;
+  const hasVisibleRange = Boolean(selectedRange && selectedStartChapter && selectedEndChapter);
 
   useEffect(() => {
     if (!selectedRange && mode !== "full") {
@@ -169,26 +191,26 @@ export default function BookAnalysisSourceRangePicker({
     if (mode !== "chars" || !selectedStartChapter || !selectedEndChapter) {
       return;
     }
-    setCharStartInput(String(selectedStartChapter.startOffset));
-    setCharEndInput(String(selectedEndChapter.endOffset));
-  }, [mode, selectedStartChapter, selectedEndChapter]);
+    setCharStartInput(String(Math.max(0, selectedStartChapter.startOffset - rangeStartOffset)));
+    setCharEndInput(String(Math.max(0, selectedEndChapter.endOffset - rangeStartOffset)));
+  }, [mode, rangeStartOffset, selectedStartChapter, selectedEndChapter]);
 
   useEffect(() => {
     if (mode === "full" || selectedRange || !canUseChapterRange) {
       return;
     }
-    onRangeChange(getInitialRange(sortedChapters));
-  }, [canUseChapterRange, mode, onRangeChange, selectedRange, sortedChapters]);
+    onRangeChange(getInitialRange(visibleChapters));
+  }, [canUseChapterRange, mode, onRangeChange, selectedRange, visibleChapters]);
 
   const selectMode = (nextMode: RangeMode) => {
     setMode(nextMode);
     if (nextMode === "full") {
-      onRangeChange(null);
+      onRangeChange(boundedFullRange);
       return;
     }
     onRequestChapters();
     if (canUseChapterRange && !selectedRange) {
-      onRangeChange(getInitialRange(sortedChapters));
+      onRangeChange(getInitialRange(visibleChapters));
     }
   };
 
@@ -200,7 +222,13 @@ export default function BookAnalysisSourceRangePicker({
   };
 
   const applyCharRange = (nextStartInput: string, nextEndInput: string) => {
-    const nextRange = mapCharRangeToChapterRange(sortedChapters, sourceCharCount, nextStartInput, nextEndInput);
+    const nextRange = mapCharRangeToChapterRange(
+      visibleChapters,
+      rangeStartOffset,
+      rangeCharCount,
+      nextStartInput,
+      nextEndInput,
+    );
     if (nextRange) {
       onRangeChange(nextRange);
     }
@@ -210,7 +238,7 @@ export default function BookAnalysisSourceRangePicker({
     if (!canUseChapterRange) {
       return;
     }
-    const total = sortedChapters.length;
+    const total = visibleChapters.length;
     let startPosition = 0;
     let endPosition = total - 1;
     if (preset === "first5") {
@@ -225,8 +253,8 @@ export default function BookAnalysisSourceRangePicker({
     } else if (preset === "backThird") {
       startPosition = Math.floor((total * 2) / 3);
     }
-    const start = sortedChapters[startPosition];
-    const end = sortedChapters[endPosition];
+    const start = visibleChapters[startPosition];
+    const end = visibleChapters[endPosition];
     if (start && end) {
       applyChapterRange(start.chapterIndex, end.chapterIndex);
     }
@@ -234,19 +262,19 @@ export default function BookAnalysisSourceRangePicker({
 
   const applyCharPreset = (charCount: number) => {
     const nextStart = "0";
-    const nextEnd = String(Math.min(charCount, sourceCharCount || charCount));
+    const nextEnd = String(Math.min(charCount, rangeCharCount || charCount));
     setCharStartInput(nextStart);
     setCharEndInput(nextEnd);
     applyCharRange(nextStart, nextEnd);
   };
 
-  const rangeTitle = selectedRange && selectedStartChapter && selectedEndChapter
+  const rangeTitle = hasVisibleRange && selectedStartChapter && selectedEndChapter
     ? `第 ${selectedStartChapter.chapterIndex + 1} 章 ~ 第 ${selectedEndChapter.chapterIndex + 1} 章`
-    : "全文";
-  const rangeDetail = selectedRange && selectedStartChapter && selectedEndChapter
-    ? `${selectedChapterCount} 章 · 约 ${formatCount(selectedCharCount)} 字 · 占全文 ${Math.round(percent)}%`
-    : `${sortedChapters.length > 0 ? `${sortedChapters.length} 章 · ` : ""}约 ${formatCount(sourceCharCount)} 字`;
-  const charModeHint = selectedRange && selectedStartChapter && selectedEndChapter
+    : fullRangeLabel;
+  const rangeDetail = hasVisibleRange
+    ? `${selectedChapterCount} 章 · 约 ${formatCount(selectedCharCount)} 字 · ${rangeBounds ? "占所选范围" : "占全文"} ${Math.round(percent)}%`
+    : `${visibleChapters.length > 0 ? `${visibleChapters.length} 章 · ` : ""}约 ${formatCount(rangeCharCount || sourceCharCount)} 字`;
+  const charModeHint = hasVisibleRange && selectedStartChapter && selectedEndChapter
     ? `按章节边界覆盖第 ${selectedStartChapter.chapterIndex + 1} 章 ~ 第 ${selectedEndChapter.chapterIndex + 1} 章`
     : "输入字数后会自动换算为章节范围";
 
@@ -256,7 +284,7 @@ export default function BookAnalysisSourceRangePicker({
         <div className="text-sm font-medium">原文范围</div>
         <div className="inline-flex rounded-md bg-muted/40 p-1">
           {([
-            ["full", "全文"],
+            ["full", fullRangeLabel],
             ["chapter", "按章节"],
             ["chars", "按字数"],
           ] as const).map(([key, label]) => (
@@ -283,14 +311,15 @@ export default function BookAnalysisSourceRangePicker({
             <>
               <SelectControl
                 className="h-9 w-full rounded-md border bg-background px-2 text-xs"
-                value={selectedRange?.startChapterIndex ?? sortedChapters[0]?.chapterIndex ?? 0}
+                value={selectedRange?.startChapterIndex ?? visibleChapters[0]?.chapterIndex ?? 0}
                 onChange={(event) => {
                   const startChapterIndex = Number(event.target.value);
-                  const fallbackEnd = selectedRange?.endChapterIndex ?? sortedChapters[sortedChapters.length - 1]?.chapterIndex ?? startChapterIndex;
+                  const fallbackEnd =
+                    selectedRange?.endChapterIndex ?? visibleChapters[visibleChapters.length - 1]?.chapterIndex ?? startChapterIndex;
                   applyChapterRange(startChapterIndex, Math.max(startChapterIndex, fallbackEnd));
                 }}
               >
-                {sortedChapters.map((chapter) => (
+                {visibleChapters.map((chapter) => (
                   <option key={chapter.id} value={chapter.chapterIndex}>
                     起：第 {chapter.chapterIndex + 1} 章 · {shortTitle(chapter.title)}
                   </option>
@@ -298,15 +327,15 @@ export default function BookAnalysisSourceRangePicker({
               </SelectControl>
               <SelectControl
                 className="h-9 w-full rounded-md border bg-background px-2 text-xs"
-                value={selectedRange?.endChapterIndex ?? sortedChapters[sortedChapters.length - 1]?.chapterIndex ?? 0}
+                value={selectedRange?.endChapterIndex ?? visibleChapters[visibleChapters.length - 1]?.chapterIndex ?? 0}
                 onChange={(event) => {
                   const endChapterIndex = Number(event.target.value);
-                  const fallbackStart = selectedRange?.startChapterIndex ?? sortedChapters[0]?.chapterIndex ?? endChapterIndex;
+                  const fallbackStart = selectedRange?.startChapterIndex ?? visibleChapters[0]?.chapterIndex ?? endChapterIndex;
                   applyChapterRange(fallbackStart, endChapterIndex);
                 }}
               >
-                {sortedChapters
-                  .filter((chapter) => chapter.chapterIndex >= (selectedRange?.startChapterIndex ?? sortedChapters[0]?.chapterIndex ?? 0))
+                {visibleChapters
+                  .filter((chapter) => chapter.chapterIndex >= (selectedRange?.startChapterIndex ?? visibleChapters[0]?.chapterIndex ?? 0))
                   .map((chapter) => (
                     <option key={chapter.id} value={chapter.chapterIndex}>
                       止：第 {chapter.chapterIndex + 1} 章 · {shortTitle(chapter.title)}
@@ -386,8 +415,8 @@ export default function BookAnalysisSourceRangePicker({
           <div
             className="h-full rounded-full bg-success"
             style={{
-              marginLeft: `${selectedRange ? barLeft : 0}%`,
-              width: `${selectedRange ? barWidth : 100}%`,
+              marginLeft: `${hasVisibleRange ? barLeft : 0}%`,
+              width: `${hasVisibleRange ? barWidth : 100}%`,
             }}
           />
         </div>
@@ -415,13 +444,13 @@ function RangeLoadHint({
   error?: string;
   sourceSelected: boolean;
 }) {
-  let message = "选择文档后可按章节或字数限制本次分析输入。";
+  let message = "选择文档后可按章节或字数限制本次读取范围。";
   if (sourceSelected && loading) {
     message = "正在加载章节范围...";
   } else if (sourceSelected && error) {
-    message = "章节范围加载失败，可先按全文创建拆书。";
+    message = "章节范围加载失败，可先按全文继续。";
   } else if (sourceSelected && requested) {
-    message = "当前文档章节不足，可按全文创建拆书。";
+    message = "当前文档章节不足，可按全文继续。";
   } else if (sourceSelected) {
     message = "切换到范围模式后会加载章节范围。";
   }
