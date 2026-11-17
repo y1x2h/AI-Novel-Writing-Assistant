@@ -356,10 +356,48 @@ export class NovelCorePipelineService {
 
       if (options.directorNext) {
         const jobs = await prisma.generationJob.findMany({where: {novelId, startOrder: options.startOrder, endOrder: options.endOrder}, orderBy: {createdAt: "desc"}});
-        for (const job of jobs) {
-          const owner = this.parsePipelinePayload(job.payload).directorNext?.runId;
-          if (owner !== options.directorNext.runId && (job.status === "queued" || job.status === "running")) throw new Error("同一章节范围存在其他运行的正文作业，请从原创作页面处理。");
+        // 冲突检测只拦截"归属运行仍活跃"的作业。归属导演运行已进入终态（或运行记录缺失）的
+        // 遗留作业没有执行者恢复（watchdog 不接管 directorNext 作业），会永久阻塞同范围新创作，
+        // 因此识别为孤儿作业并自动取消后放行；归属运行仍活跃（running/paused/waiting_gate/queued）
+        // 或非导演来源的作业保持阻塞，提示用户回到原创作页面处理。
+        const foreignJobs = jobs.filter(job => {
+          if (job.status !== "queued" && job.status !== "running") return false;
+          return this.parsePipelinePayload(job.payload).directorNext?.runId !== options.directorNext?.runId;
+        });
+        const orphanJobIds: string[] = [];
+        let hasActiveForeignJob = false;
+        for (const job of foreignJobs) {
+          const ownerRunId = this.parsePipelinePayload(job.payload).directorNext?.runId;
+          if (!ownerRunId) {
+            hasActiveForeignJob = true;
+            continue;
+          }
+          const ownerControl = await prisma.directorNextRunControl.findUnique({where: {runId: ownerRunId}, select: {status: true}});
+          if (ownerControl && ownerControl.status !== "completed" && ownerControl.status !== "failed" && ownerControl.status !== "cancelled") {
+            hasActiveForeignJob = true;
+          } else {
+            orphanJobIds.push(job.id);
+          }
         }
+        if (orphanJobIds.length > 0) {
+          const cancelledAt = new Date();
+          await prisma.generationJob.updateMany({
+            where: {id: {in: orphanJobIds}, status: {in: ["queued", "running"]}},
+            data: {
+              status: "cancelled",
+              error: "所属创作运行已结束，遗留正文作业自动清理。",
+              cancelRequestedAt: cancelledAt,
+              heartbeatAt: cancelledAt,
+              finishedAt: cancelledAt,
+            },
+          });
+          logPipelineWarn("清理已结束创作运行遗留的正文作业", {
+            novelId,
+            range: `${options.startOrder}-${options.endOrder}`,
+            cancelledJobIds: orphanJobIds.join(","),
+          });
+        }
+        if (hasActiveForeignJob) throw new Error("同一章节范围存在其他运行的正文作业，请从原创作页面处理。");
         const owned = jobs.find(job => this.parsePipelinePayload(job.payload).directorNext?.runId === options.directorNext?.runId);
         if (owned) {
           if (!owned.pendingManualRecovery && (owned.status === "queued" || owned.status === "running")) this.schedulePipelineExecution(owned.id, novelId, runtimeOptions);

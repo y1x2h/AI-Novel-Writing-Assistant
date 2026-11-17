@@ -456,6 +456,8 @@ export interface ChapterEditorAiRevisionRequest {
   presetOperation?: ChapterEditorOperation;
   instruction?: string;
   repairBrief?: ChapterEditorRepairBrief;
+  /** 多张诊断卡合并修复时传入；服务端会合并为单一修复约定。优先于 repairBrief。 */
+  repairBriefs?: ChapterEditorRepairBrief[];
   contentSnapshot: string;
   selection?: ChapterEditorTargetRange;
   context?: ChapterEditorContextWindow;

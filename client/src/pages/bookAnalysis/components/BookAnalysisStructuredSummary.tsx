@@ -1,6 +1,7 @@
 import {
   BOOK_ANALYSIS_STRUCTURED_FIELD_SPECS,
   BOOK_ANALYSIS_STRUCTURED_FIELD_LABELS,
+  type BookAnalysisEmotionNode,
   type BookAnalysisEvidenceItem,
   type BookAnalysisSection,
   type BookAnalysisTimelineNode,
@@ -9,6 +10,7 @@ import {
   groupBookAnalysisTimelineNodesByPhase,
   normalizeBookAnalysisTimelineNodes,
 } from "@ai-novel/shared/utils/bookAnalysisTimeline";
+import { normalizeBookAnalysisEmotionNodes } from "@ai-novel/shared/utils/bookAnalysisEmotion";
 import { Info } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import type { BookAnalysisMode } from "../hooks/bookAnalysisWorkspace.types";
@@ -18,6 +20,7 @@ interface SummaryRow {
   label: string;
   values: string[];
   timelineNodes: BookAnalysisTimelineNode[];
+  emotionNodes: BookAnalysisEmotionNode[];
   evidence: BookAnalysisEvidenceItem[];
 }
 
@@ -46,16 +49,19 @@ function buildSummaryRows(section: BookAnalysisSection, evidenceItems?: BookAnal
 
   return Object.entries(structuredData)
     .map(([key, value]) => {
-      const isTimelineNodeArray = fieldSpecs.get(key) === "timelineNodeArray";
+      const fieldType = fieldSpecs.get(key);
+      const isTimelineNodeArray = fieldType === "timelineNodeArray";
+      const isEmotionNodeArray = fieldType === "emotionNodeArray";
       return {
         key,
         label: BOOK_ANALYSIS_STRUCTURED_FIELD_LABELS[key] ?? key,
-        values: isTimelineNodeArray ? [] : normalizeStructuredValue(value),
+        values: isTimelineNodeArray || isEmotionNodeArray ? [] : normalizeStructuredValue(value),
         timelineNodes: isTimelineNodeArray ? normalizeBookAnalysisTimelineNodes(value, 6) : [],
+        emotionNodes: isEmotionNodeArray ? normalizeBookAnalysisEmotionNodes(value, 24) : [],
         evidence: evidenceSource.filter((item) => item.fieldKey === key),
       };
     })
-    .filter((row) => row.values.length > 0 || row.timelineNodes.length > 0)
+    .filter((row) => row.values.length > 0 || row.timelineNodes.length > 0 || row.emotionNodes.length > 0)
     .slice(0, 8);
 }
 
@@ -95,6 +101,40 @@ function TimelineNodeList({ nodes }: { nodes: BookAnalysisTimelineNode[] }) {
           ))}
         </div>
       ))}
+    </div>
+  );
+}
+
+function EmotionNodeList({ nodes }: { nodes: BookAnalysisEmotionNode[] }) {
+  return (
+    <div className="mt-2 space-y-1.5">
+      {nodes.map((node, index) => {
+        const intensity = typeof node.intensity === "number" ? node.intensity : null;
+        const intensityLabel = intensity === null ? "" : intensity > 0 ? `+${intensity}` : `${intensity}`;
+        const toneClass = intensity === null
+          ? "text-muted-foreground"
+          : intensity > 0
+            ? "text-emerald-600 dark:text-emerald-400"
+            : intensity < 0
+              ? "text-rose-600 dark:text-rose-400"
+              : "text-muted-foreground";
+        return (
+          <div key={`${node.label}-${index}`} className="rounded-lg bg-background/75 px-2.5 py-2 text-xs">
+            <div className="flex items-baseline gap-2 leading-5">
+              <span className="shrink-0 text-[11px] text-muted-foreground">{index + 1}.</span>
+              <span className="text-foreground">{node.label}</span>
+              {intensityLabel ? <span className={`shrink-0 font-medium ${toneClass}`}>{intensityLabel}</span> : null}
+            </div>
+            {node.emotionType || node.technique || node.sourceRefs?.length ? (
+              <div className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
+                {node.emotionType ? <span>情绪：{node.emotionType}</span> : null}
+                {node.technique ? <span>手法：{node.technique}</span> : null}
+                {node.sourceRefs?.length ? <span>来源：{node.sourceRefs.join("、")}</span> : null}
+              </div>
+            ) : null}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -148,6 +188,8 @@ export default function BookAnalysisStructuredSummary({
             </div>
             {row.timelineNodes.length > 0 ? (
               <TimelineNodeList nodes={row.timelineNodes} />
+            ) : row.emotionNodes.length > 0 ? (
+              <EmotionNodeList nodes={row.emotionNodes} />
             ) : (
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {row.values.map((value, index) => {

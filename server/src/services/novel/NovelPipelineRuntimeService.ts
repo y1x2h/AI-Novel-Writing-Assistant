@@ -1,5 +1,5 @@
 import type { NovelCorePipelineService } from "./novelCorePipelineService";
-import {canRecoverLegacyPipelineJob} from "../../modules/novel/director-routing";
+import {canFinalizeCancelledPipelineJob, canRecoverLegacyPipelineJob} from "../../modules/novel/director-routing";
 
 const SERVER_RESTART_RECOVERY_MESSAGE = "章节流水线任务因服务重启中断，正在尝试恢复。";
 const STALE_PIPELINE_RECOVERY_MESSAGE = "章节流水线任务心跳超时，正在尝试恢复。";
@@ -29,9 +29,11 @@ export class NovelPipelineRuntimeService {
 
   private readonly pipelineService: PipelineRecoveryPort & PipelineResumePort;
   private readonly canRecover: (id: string) => Promise<boolean>;
+  private readonly canFinalizeCancelled: (id: string) => Promise<boolean>;
   constructor(pipelineService?: PipelineRecoveryPort & PipelineResumePort) {
     this.pipelineService = pipelineService ?? createPipelineService();
     this.canRecover = pipelineService ? async () => true : canRecoverLegacyPipelineJob;
+    this.canFinalizeCancelled = pipelineService ? async () => true : canFinalizeCancelledPipelineJob;
   }
 
   async resumePendingPipelineJobs(): Promise<void> {
@@ -102,7 +104,7 @@ export class NovelPipelineRuntimeService {
 
   private async finalizeCancelledJobs(rows: Array<{ id: string; status: string }>): Promise<void> {
     for (const row of rows) {
-      if (!await this.canRecover(row.id)) continue;
+      if (!await this.canFinalizeCancelled(row.id)) continue;
       try {
         await this.pipelineService.markPipelineJobCancelled(row.id);
       } catch (error) {

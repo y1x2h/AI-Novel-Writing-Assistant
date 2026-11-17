@@ -71,6 +71,7 @@ export interface ChapterEditorRequestBuilderInput {
   presetOperation?: ChapterEditorOperation;
   instruction?: string;
   repairBrief?: ChapterEditorAiRevisionRequest["repairBrief"];
+  repairBriefs?: ChapterEditorAiRevisionRequest["repairBriefs"];
   selection?: ChapterEditorSelectionRange | null;
   content: string;
   contextRange?: ChapterEditorSelectionRange | null;

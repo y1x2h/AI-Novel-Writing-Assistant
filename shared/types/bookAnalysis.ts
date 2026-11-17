@@ -14,12 +14,21 @@ export type BookAnalysisSectionKey =
   | "style_technique"
   | "market_highlights";
 export type BookAnalysisPreset = "quick" | "standard" | "complete";
-export type BookAnalysisStructuredFieldType = "string" | "stringArray" | "timelineNodeArray";
+export type BookAnalysisStructuredFieldType = "string" | "stringArray" | "timelineNodeArray" | "emotionNodeArray";
 
 export interface BookAnalysisTimelineNode {
   label: string;
   timeHint?: string;
   phase?: string;
+  sourceRefs?: string[];
+}
+
+export interface BookAnalysisEmotionNode {
+  label: string;
+  emotionType?: string;
+  /** 情绪强度，约定 -9 ~ +9：负值压抑/虐感，正值爽感/释放。 */
+  intensity?: number;
+  technique?: string;
   sourceRefs?: string[];
 }
 
@@ -80,6 +89,7 @@ export const BOOK_ANALYSIS_STRUCTURED_FIELD_LABELS: Readonly<Record<string, stri
   escalationDesigns: "冲突升级",
   highlightDesigns: "高光设计",
   paceRisks: "节奏风险",
+  emotionCurve: "情绪曲线",
   structureHighlights: "结构亮点",
   reusablePatterns: "可复用套路",
   timeNodes: "关键时间节点",
@@ -134,6 +144,7 @@ export const BOOK_ANALYSIS_STRUCTURED_FIELD_SPECS: Readonly<Record<BookAnalysisS
     { key: "escalationDesigns", type: "stringArray" },
     { key: "highlightDesigns", type: "stringArray" },
     { key: "paceRisks", type: "stringArray" },
+    { key: "emotionCurve", type: "emotionNodeArray" },
     { key: "structureHighlights", type: "stringArray" },
     { key: "reusablePatterns", type: "stringArray" },
   ],
@@ -175,6 +186,12 @@ export const BOOK_ANALYSIS_STRUCTURED_FIELD_SPECS: Readonly<Record<BookAnalysisS
     { key: "rhythmControl", type: "stringArray" },
     { key: "hookDesigns", type: "stringArray" },
     { key: "reusableTechniques", type: "stringArray" },
+    /** L1 语言 DNA：词汇、句式、标点、节奏的可复用语言指纹。 */
+    { key: "languageDna", type: "string" },
+    /** L2 结构模板：钩子、架构、转折、收束的可复用结构模式。 */
+    { key: "structureTemplate", type: "string" },
+    /** L3-L5 认知框架：世界观、价值判断、反复命题等深层写作决策。 */
+    { key: "cognitiveFramework", type: "string" },
   ],
   market_highlights: [
     { key: "hookPoints", type: "stringArray" },

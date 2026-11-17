@@ -45,6 +45,29 @@ test('diagnostic revision passes its specific brief into the registered candidat
   assert.ok(result.resolvedIntent.mustPreserve.includes('保留黑丝流入身体的发现'));
 });
 
+test('batch diagnostic revision merges selected briefs into one repair contract', async () => {
+  let captured;
+  const secondBrief = {
+    title: '情绪过满', problemSummary: '结尾感叹号过多，情绪外溢', whyItMatters: '破坏克制文风',
+    repairGoal: '收敛结尾情绪', repairApproach: '删去多余感叹号与直白抒情',
+    mustPreserve: ['保留黑石裂纹线索'],
+  };
+  const service = new NovelChapterEditorService({ loadContext: async () => createWorkspaceContext() }, async (input) => {
+    captured = input;
+    return { output: { candidates: [{ label: '紧凑', content: 'alpha紧凑' }, { label: '克制', content: 'alpha克制' }] } };
+  });
+  await service.previewAiRevision('novel-1', 'chapter-1', {
+    source: 'preset', scope: 'chapter', presetOperation: 'polish',
+    repairBriefs: [repairBrief, secondBrief],
+    contentSnapshot: 'alpha\n\nbeta',
+    constraints: { keepFacts: true, keepPov: true, noUnauthorizedSetting: true, preserveCoreInfo: true },
+  });
+  assert.equal(captured.promptInput.repairBrief.title, '综合修复（2 项）');
+  assert.ok(captured.promptInput.repairBrief.problemSummary.includes(repairBrief.title));
+  assert.ok(captured.promptInput.repairBrief.problemSummary.includes(secondBrief.title));
+  assert.deepEqual(captured.promptInput.repairBrief.mustPreserve, ['保留黑石裂纹线索', '保留黑丝流入身体的发现']);
+});
+
 test('workspace diagnosis retains AI repair goals, approach and protected information',async()=>{
   const service=new ChapterEditorWorkspaceService({}, {}, async()=>({output:{cards:[{
     ...repairBrief,recommendedAction:'compress',recommendedScope:'selection',paragraphStart:1,paragraphEnd:1,
@@ -659,7 +682,6 @@ test("GET workspace and POST ai-revision-preview routes return the new editor pa
     await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
   }
 });
-
 
 test("GET workspace stays diagnostic-only while POST reanalyze invokes the explicit quality workflow", async () => {
   const originalWorkspaceMethod = DefaultNovelApplicationServices.prototype.getChapterEditorWorkspace;

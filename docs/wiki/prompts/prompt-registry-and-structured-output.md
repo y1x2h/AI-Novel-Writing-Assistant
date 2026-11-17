@@ -47,6 +47,7 @@
 - 空模型响应不属于 JSON 或 schema 修复问题。普通和流式结构化入口在原生 JSON 模式返回空内容时，都应先用同一模型、同一 Prompt 和同一 Schema 降级到 `prompt_json`；降级后仍为空，按 `empty_response` 进入既有备用模型边界，不按网络错误反复重连。只有思考且长度耗尽、正文长度截断分别归为 `reasoning_budget_exhausted`、`output_budget_exhausted`，真实传输异常才归为 `transport_error`。repair 没有原始语义可保留，禁止用空对象补造必填业务内容。
 - 支持开关思考模式的模型执行结构化任务时，应由 provider capability profile 显式关闭思考模式，避免推理预算耗尽后没有最终 JSON。新模型别名接入时必须同步验证其思考开关、结构化 profile 和实际请求参数，不能只把模型名加入下拉列表。DeepSeek 当前官方名 `deepseek-flash` / `deepseek-pro` 与旧名 `deepseek-v4-flash` / `deepseek-v4-pro` 必须按同一套思考开关处理。
 - GLM 4.5 及以上模型在官方兼容端点执行结构化任务时，必须通过 `thinking: { type: "disabled" }` 关闭思考。`enable_thinking: false` 是 Qwen 兼容参数，不能复用于 GLM；聚合或未知代理端点仍按自身已验证的能力处理。
+- GLM 5.3 及以上的强制思考型号不接受关闭思考，思考 token 与正文共用同一次输出额度。按 `DEFAULT_MODEL_OUTPUT_TOKENS` 请求时，思考会先耗尽额度：`completion_tokens` 恰好等于额度上限、`content` 为空，最终表现为 `[STRUCTURED_OUTPUT:transport_error]` 与「模型未返回完整可用的结构化结果」。模型工厂必须对这类型号把输出额度抬到 `ALWAYS_THINKING_MODEL_OUTPUT_TOKENS` 下限，任务路由显式配置了更大额度时沿用配置值。排障时先比对 `completion_tokens` 是否等于请求上限，再判断是思考耗尽额度，不要误判为网络故障或 JSON repair 问题。
 - Semantic retry 必须把原始业务失败原因传回重试 prompt，并指明需要整体重排还是局部修正。章节列表、卷级拆章这类结果如果因为标题同构、章节功能重复、摘要空泛或结尾牵引不足被拒绝，重试指令应要求重排整组标题骨架和章节功能分配，而不是只替换被点名的一章。
 - editable slots 只能开放低风险表达层内容，不能覆盖 schema、postValidate、taskType、mode、contextPolicy、工具目录、审批边界或 required context。
 - Prompt Workbench 的「常用调整」只能把 `PromptAsset.slots` 呈现为可编辑项。`replace`、`token`、`append`、`choice` 和 `toggle` 可以映射成不同控件，但保存仍必须走 slot override；完整模板编辑只对声明 `advanced_template` 能力的正文提示词开放；contextPolicy 和 schema 始终不能自由编辑。

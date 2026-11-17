@@ -279,6 +279,7 @@ export class BookAnalysisGenerationService {
                 overviewContext,
                 userFocusInstruction: analysis.userFocusInstruction,
                 sectionFocusInstruction: section.focusInstruction,
+                sourceText: analysis.documentVersion.content,
               },
             );
             await ensureNotCancelled(analysisId);

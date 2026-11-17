@@ -1,1 +1,1 @@
-export {withExecutionSignal, executionSignal, assertExecutionActive} from "./ExecutionScope";
+export {withExecutionSignal, executionSignal, assertExecutionActive, withoutExecutionSignal} from "./ExecutionScope";

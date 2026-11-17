@@ -376,6 +376,7 @@ export function buildAiRevisionRequest(input: ChapterEditorRequestBuilderInput) 
     presetOperation: input.presetOperation,
     instruction: input.instruction?.trim() || undefined,
     repairBrief: input.repairBrief,
+    repairBriefs: input.repairBriefs,
     contentSnapshot,
     selection: selection
       ? {

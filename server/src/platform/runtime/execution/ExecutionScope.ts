@@ -16,3 +16,12 @@ export function executionSignal(upstream?: AbortSignal): AbortSignal | undefined
 export function assertExecutionActive(): void {
   executions.getStore()?.throwIfAborted();
 }
+
+/**
+ * 脱离当前执行信号运行收尾/清理逻辑。
+ * 所属运行被取消后，执行上下文中的 Prisma 与 AI 调用都会因信号已中止而失败；
+ * 作业终态收尾属于数据完整性职责，必须能在信号失效后继续完成。
+ */
+export function withoutExecutionSignal<T>(work: () => T): T {
+  return executions.exit(work) as T;
+}

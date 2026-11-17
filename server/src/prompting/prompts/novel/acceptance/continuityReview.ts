@@ -35,3 +35,37 @@ export function validateContinuityReview(output: ChapterAcceptanceAssessmentOutp
   }
   return output;
 }
+
+/**
+ * Correction attempts already asked the model for exact quotes. When they still fail,
+ * drop only the unverifiable continuity checks instead of erasing the whole chapter score.
+ */
+export function sanitizeContinuityReview(output: ChapterAcceptanceAssessmentOutput, input: ChapterAcceptancePromptInput) {
+  if (!input.previousChapterContent?.trim()) return output;
+  const compact=(value:string)=>value.replace(/\s/gu, "");
+  const previous=compact(input.previousChapterContent), current=compact(input.content);
+  const checks = output.continuityChecks ?? [];
+  const droppedIssueCodes = new Set<string>();
+  const usable: typeof checks = [];
+  for (const check of checks) {
+    const previousValid = Boolean(compact(check.previousEvidence)) && previous.includes(compact(check.previousEvidence));
+    const currentValid = Boolean(compact(check.currentEvidence)) && current.includes(compact(check.currentEvidence));
+    const conflictReferenced = check.verdict !== "conflict" || output.blockingIssues.some(issue => (
+      issue.code === check.issueCode && issue.category === "continuity"
+    ));
+    if (previousValid && currentValid && conflictReferenced) {
+      usable.push(check);
+      continue;
+    }
+    if (check.verdict === "conflict" && check.issueCode) droppedIssueCodes.add(check.issueCode);
+  }
+  if (checks.length > 0 && usable.length === checks.length) return output;
+  return {
+    ...output,
+    continuityChecks: usable,
+    blockingIssues: droppedIssueCodes.size > 0
+      ? output.blockingIssues.filter(issue => !(issue.category === "continuity" && droppedIssueCodes.has(issue.code)))
+      : output.blockingIssues,
+    riskTags: [...new Set([...output.riskTags, checks.length === 0 ? "continuity_review_missing" : "continuity_review_evidence_partial"])],
+  };
+}

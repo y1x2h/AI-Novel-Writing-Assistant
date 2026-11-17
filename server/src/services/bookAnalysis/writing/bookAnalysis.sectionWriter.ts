@@ -19,11 +19,17 @@ import {
   renderNotesForPrompt,
   selectNotesForBookAnalysisSection,
 } from "../shared/bookAnalysis.utils";
+import {
+  computeObjectiveStyleStats,
+  renderObjectiveStyleStatsForPrompt,
+} from "../shared/objectiveStyleStats";
 
 export interface GenerateBookAnalysisSectionOptions {
   overviewContext?: BookAnalysisOverviewContext | null;
   userFocusInstruction?: string | null;
   sectionFocusInstruction?: string | null;
+  /** 原文全文，仅用于 style_technique 小节计算客观文风统计基线。 */
+  sourceText?: string | null;
 }
 
 export class BookAnalysisSectionWriter {
@@ -41,6 +47,9 @@ export class BookAnalysisSectionWriter {
     const overviewContextText = sectionKey === "overview" || !options.overviewContext
       ? ""
       : renderOverviewContextForPrompt(options.overviewContext);
+    const styleStatsText = sectionKey === "style_technique" && options.sourceText
+      ? renderObjectiveStyleStatsForPrompt(computeObjectiveStyleStats(options.sourceText))
+      : undefined;
     const result = await runStructuredPrompt({
       asset: bookAnalysisSectionPrompt,
       promptInput: {
@@ -51,6 +60,7 @@ export class BookAnalysisSectionWriter {
         userFocusInstructionText: normalizeInstructionForPrompt(options.userFocusInstruction),
         sectionFocusInstructionText: normalizeInstructionForPrompt(options.sectionFocusInstruction),
         notesText,
+        styleStatsText,
       },
       options: {
         signal: analysisSignal(),

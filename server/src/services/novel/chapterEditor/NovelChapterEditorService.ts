@@ -9,6 +9,7 @@ import type {
   ChapterEditorCursorContinuationResponse,
   ChapterEditorCursorOperation,
   ChapterEditorOperation,
+  ChapterEditorRepairBrief,
   ChapterEditorRewritePreviewRequest,
   ChapterEditorRewritePreviewResponse,
   ChapterEditorSceneDirectedRequest,
@@ -47,6 +48,40 @@ import {
 } from "./context";
 
 const FULL_CHAPTER_REVISION_LIMIT = 8000;
+
+/** 合并多张诊断卡的修复约定，用于一次性生成修稿候选。 */
+function combineRepairBriefs(briefs: ChapterEditorRepairBrief[]): ChapterEditorRepairBrief {
+  const nonEmpty = briefs.filter((item) => item?.problemSummary?.trim());
+  if (nonEmpty.length === 0) {
+    throw new Error("选中的问题缺少可用的修复说明，请重新分析后再试。");
+  }
+  const problemSummary = nonEmpty
+    .map((item, index) => `${index + 1}. ${item.title?.trim() || `问题 ${index + 1}`}：${item.problemSummary.trim()}`)
+    .join("\n");
+  const whyItMatters = nonEmpty
+    .map((item) => item.whyItMatters?.trim())
+    .filter(Boolean)
+    .join("\n");
+  const repairGoal = nonEmpty
+    .map((item) => item.repairGoal?.trim())
+    .filter(Boolean)
+    .join("；");
+  const repairApproach = nonEmpty
+    .map((item) => item.repairApproach?.trim())
+    .filter(Boolean)
+    .join("；");
+  const mustPreserve = Array.from(
+    new Set(nonEmpty.flatMap((item) => item.mustPreserve ?? []).map((item) => item.trim()).filter(Boolean)),
+  );
+  return {
+    title: `综合修复（${nonEmpty.length} 项）`,
+    problemSummary,
+    whyItMatters: whyItMatters || "以上问题会同时影响本章的可读性与连贯性，需要在一次改写中一并处理。",
+    ...(repairGoal ? { repairGoal } : {}),
+    ...(repairApproach ? { repairApproach } : {}),
+    ...(mustPreserve.length ? { mustPreserve } : {}),
+  };
+}
 
 const OPERATION_LABELS: Record<ChapterEditorOperation, string> = {
   polish: "优化表达",
@@ -156,6 +191,9 @@ export class NovelChapterEditorService {
     if (!content.trim()) {
       throw new Error("当前章节正文为空，无法发起 AI 修正。");
     }
+    const effectiveRepairBrief = input.repairBriefs?.length
+      ? combineRepairBriefs(input.repairBriefs)
+      : input.repairBrief;
 
     if (input.scope === "chapter" && countEditorWords(content) > FULL_CHAPTER_REVISION_LIMIT) {
       throw new Error(`整章修正当前限制为 ${FULL_CHAPTER_REVISION_LIMIT} 个非空白字符以内，请改为片段修正。`);
@@ -165,7 +203,7 @@ export class NovelChapterEditorService {
       ? createTargetRangeForWholeChapter(content)
       : resolveSelectionTargetRange(content, input.selection);
 
-    const resolvedIntent = await this.resolveRevisionIntent(input, context.macroContext, targetRange.text);
+    const resolvedIntent = await this.resolveRevisionIntent(input, context.macroContext, targetRange.text, effectiveRepairBrief);
     const contextWindow = input.scope === "selection"
       ? input.context ?? buildParagraphWindow(content, targetRange)
       : { beforeParagraphs: [], afterParagraphs: [] };
@@ -177,7 +215,7 @@ export class NovelChapterEditorService {
         operationLabel: input.presetOperation ? OPERATION_LABELS[input.presetOperation] : "按用户要求修正",
         scope: input.scope,
         customInstruction: input.instruction?.trim() || undefined,
-        repairBrief: input.repairBrief,
+        repairBrief: effectiveRepairBrief,
         selectedText: targetRange.text,
         beforeParagraphs: contextWindow.beforeParagraphs,
         afterParagraphs: contextWindow.afterParagraphs,
@@ -395,6 +433,7 @@ export class NovelChapterEditorService {
     input: ChapterEditorAiRevisionRequest,
     macroContext: ChapterEditorMacroContext,
     selectedText: string,
+    effectiveRepairBrief?: ChapterEditorRepairBrief,
   ): Promise<ChapterEditorAiRevisionIntent> {
     if (input.source === "preset") {
       const intent = buildPresetIntent(
@@ -402,11 +441,11 @@ export class NovelChapterEditorService {
         macroContext.mustKeepConstraints,
         input.instruction,
       );
-      return input.repairBrief ? {
+      return effectiveRepairBrief ? {
         ...intent,
-        editGoal: input.repairBrief.repairGoal || input.repairBrief.problemSummary,
-        mustPreserve: Array.from(new Set([...intent.mustPreserve, ...(input.repairBrief.mustPreserve ?? [])])),
-        reasoningSummary: input.repairBrief.whyItMatters,
+        editGoal: effectiveRepairBrief.repairGoal || effectiveRepairBrief.problemSummary,
+        mustPreserve: Array.from(new Set([...intent.mustPreserve, ...(effectiveRepairBrief.mustPreserve ?? [])])),
+        reasoningSummary: effectiveRepairBrief.whyItMatters,
       } : intent;
     }
 

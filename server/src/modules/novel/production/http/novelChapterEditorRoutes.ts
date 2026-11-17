@@ -183,6 +183,7 @@ export function registerNovelChapterEditorRoutes(input: RegisterNovelChapterEdit
             "选中文本已发生变化，请重新选择后再试。",
             "请先写下你希望 AI 如何修改。",
             "AI 未返回足够的候选版本，请重试。",
+            "选中的问题缺少可用的修复说明，请重新分析后再试。",
           ].includes(error.message)
             || (error instanceof Error && error.message.includes("整章修正当前限制为"))
         ) {

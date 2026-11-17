@@ -18,6 +18,19 @@ test('a caller-owned output budget reaches physical SDK parameters without alter
   execution.withLlmTaskOutputBudgets([{provider:'custom',model:'fixture',taskType:'review',maxTokens:2048}],call),call()]);
  assert.deepEqual(result,[12000,2048,4096]);
 });
+test('强制思考的 GLM 型号在未配置输出额度时获得思考余量',async t=>{
+ const original=router.resolveModel;
+ router.resolveModel=async(task,options)=>({provider:options.provider??'glm',model:options.model??'glm-5.3-flash',temperature:0.2,
+  maxTokens:options.maxTokens??8192,requestProtocol:'openai_compatible',structuredResponseFormat:'prompt_json',routeKey:task,routeDegraded:false});
+ factory.setProviderSecretCache('glm',{key:'fixture-key',baseURL:'https://models.invalid/v1',model:'glm-5.3-flash',reasoningEnabled:true});
+ t.after(()=>{router.resolveModel=original;factory.setProviderSecretCache('glm',null);});
+ const readMaxTokens=async(model)=>{
+  const configuration=await factory.resolveLLMClientOptions('glm',{model,taskType:'planner'});
+  return factory.createLLMFromResolvedOptions(configuration).invocationParams({}).max_tokens;
+ };
+ assert.equal(await readMaxTokens('glm-5.3-flash'),32768);
+ assert.equal(await readMaxTokens('glm-4.7'),8192);
+});
 test('a task output scope rejects unknown targets even if a compatibility catch swallows the error',async()=>{
  assert.equal(typeof execution.withLlmTaskOutputBudgets,'function');
  await assert.rejects(execution.withLlmTaskOutputBudgets([{provider:'custom',model:'fixture',taskType:'review',maxTokens:8192}],async()=>{

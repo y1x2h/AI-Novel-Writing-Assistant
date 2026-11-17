@@ -29,6 +29,38 @@ import {
   assembleChapterAuditContextPackage,
 } from "./runtime/repair/chapterAuditContext";
 
+function readAcceptanceScore(raw: unknown): QualityScore | null {
+  if (!raw) return null;
+  let parsed: unknown = raw;
+  if (typeof raw === "string") {
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+  const record = parsed as Record<string, unknown>;
+  if (record.scoreAvailable === false) return null;
+  // Acceptance writes a flat score object; older reports may nest it under `score`.
+  const score = record.score && typeof record.score === "object" && !Array.isArray(record.score)
+    ? record.score as Record<string, unknown>
+    : record;
+  const read = (key: string) => {
+    const value = score?.[key];
+    return typeof value === "number" && Number.isFinite(value) ? Math.round(value) : null;
+  };
+  const normalized = {
+    coherence: read("coherence"),
+    repetition: read("repetition"),
+    pacing: read("pacing"),
+    voice: read("voice"),
+    engagement: read("engagement"),
+    overall: read("overall"),
+  };
+  return Object.values(normalized).every(value => value !== null) ? normalized as QualityScore : null;
+}
+
 export async function createQualityReport(
   novelId: string,
   chapterId: string,
@@ -197,9 +229,6 @@ export class NovelCoreReviewService {
     // Historical rule scores from an unavailable review are not AI quality grades.
     const reports = savedReports.filter(report => !report.chapterId || !unavailableAt.has(report.chapterId)
       || report.createdAt.getTime() > unavailableAt.get(report.chapterId)!);
-    if (reports.length === 0) {
-      return { novelId, summary: normalizeScore({}), chapterReports: [] };
-    }
 
     const latestByChapter = new Map<string, (typeof reports)[number]>();
     for (const report of reports) {
@@ -207,8 +236,42 @@ export class NovelCoreReviewService {
         latestByChapter.set(report.chapterId, report);
       }
     }
+
+    // Acceptance already scored the chapter in its audit report; reuse it when the
+    // closure table has no row, so the quality panel does not show an empty review.
+    const missingChapterIds = chapters.map(chapter => chapter.id).filter(id => !latestByChapter.has(id));
+    const auditFallbacks = missingChapterIds.length > 0
+      ? await prisma.auditReport.findMany({
+        where: { novelId, chapterId: { in: missingChapterIds } },
+        orderBy: { createdAt: "desc" },
+        select: { id: true, chapterId: true, createdAt: true, legacyScoreJson: true },
+      })
+      : [];
+    for (const report of auditFallbacks) {
+      if (!report.chapterId || latestByChapter.has(report.chapterId)) continue;
+      const blockedAt = unavailableAt.get(report.chapterId);
+      if (blockedAt && report.createdAt.getTime() <= blockedAt) continue;
+      const score = readAcceptanceScore(report.legacyScoreJson);
+      if (!score) continue;
+      latestByChapter.set(report.chapterId, {
+        id: report.id,
+        novelId,
+        chapterId: report.chapterId,
+        coherence: score.coherence,
+        repetition: score.repetition,
+        pacing: score.pacing,
+        voice: score.voice,
+        engagement: score.engagement,
+        overall: score.overall,
+        issues: null,
+        createdAt: report.createdAt,
+      } as (typeof reports)[number]);
+    }
     const chapterReports = Array.from(latestByChapter.values());
-    const source = chapterReports.length > 0 ? chapterReports : reports;
+    if (chapterReports.length === 0) {
+      return { novelId, summary: normalizeScore({}), chapterReports: [] };
+    }
+    const source = chapterReports;
     const total = source.length;
 
     const summary = normalizeScore({
@@ -220,7 +283,7 @@ export class NovelCoreReviewService {
       overall: source.reduce((sum, item) => sum + item.overall, 0) / total,
     });
 
-    return { novelId, summary, chapterReports: source, totalReports: reports.length };
+    return { novelId, summary, chapterReports: source, totalReports: chapterReports.length };
   }
 
   async getPayoffLedger(novelId: string, chapterOrder?: number) {

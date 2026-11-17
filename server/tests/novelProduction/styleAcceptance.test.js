@@ -207,18 +207,24 @@ test('model schema requires a style report field but allows null for disabled ch
   }), /缺失报告/);
 });
 
-test('cross-chapter semantic checks require quotes from both sources and preserve structured continuity conflicts', () => {
+test('cross-chapter semantic checks require quotes from both sources and degrade only unverifiable checks', () => {
   const args={content:'他把信封递给她。',previousChapterContent:'他展开从笔记本撕下的横格纸。',styleReviewEnabled:false};
   const check={subject:'信件载体',previousFact:'横格纸',currentFact:'信封',previousEvidence:'从笔记本撕下的横格纸',currentEvidence:'信封',
     verdict:'conflict',reason:'载体变化未交代',issueCode:'carrier_changed'};
   const raw=output({continuityChecks:[check],blockingIssues:[{code:'carrier_changed',category:'continuity',severity:'medium',
     evidence:'信封',fixSuggestion:'保持前文载体并调整本章规划'}]});
   assert.equal(prompt.chapterAcceptanceAssessmentPrompt.postValidate(raw,args).continuityChecks[0].verdict,'conflict');
-  for (const bad of [output(), {...raw,continuityChecks:[{...check,previousEvidence:'不存在的前文'}]},
-    {...raw,blockingIssues:[]}]) {
+  const missing = prompt.chapterAcceptanceAssessmentPrompt.postValidateFailureRecovery({rawOutput:output(),promptInput:args});
+  assert.equal(missing.continuityChecks.length,0);
+  assert.ok(missing.riskTags.includes('continuity_review_missing'));
+  for (const bad of [{...raw,continuityChecks:[{...check,previousEvidence:'不存在的前文'}]},{...raw,blockingIssues:[]}]) {
     assert.throws(()=>prompt.chapterAcceptanceAssessmentPrompt.postValidate(bad,args), error=>error.name==='ChapterContinuityReviewValidationError');
-    assert.throws(()=>prompt.chapterAcceptanceAssessmentPrompt.postValidateFailureRecovery({rawOutput:bad,promptInput:args}),
-      error=>error.name==='ChapterContinuityReviewValidationError');
+    // Correction attempts already ran; recovery keeps the story score and drops only the unverifiable check.
+    const recovered = prompt.chapterAcceptanceAssessmentPrompt.postValidateFailureRecovery({rawOutput:bad,promptInput:args});
+    assert.equal(recovered.continuityChecks.length,0);
+    assert.equal(recovered.blockingIssues.some(issue=>issue.code==='carrier_changed'&&issue.category==='continuity'),false);
+    assert.ok(recovered.riskTags.includes('continuity_review_evidence_partial'));
+    assert.equal(recovered.score.overall,raw.score.overall);
   }
 });
 

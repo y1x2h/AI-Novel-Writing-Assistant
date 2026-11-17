@@ -28,6 +28,23 @@ export async function assertDirectorPipelineOwner(novelId: string, payload: Dire
   }
 }
 
+/**
+ * 取消收尾与"恢复执行"是两种不同的判定：
+ * directorNext 作业没有 watchdog 执行者，只有所属创作运行能推进它；当所属运行已进入
+ * 终态（或运行记录缺失）时，等待取消的作业必须由服务侧直接收尾，否则会一直停留在
+ * 运行中并阻塞同范围新创作。仍处于活跃状态（含 paused）的运行不在此列。
+ */
+export async function canFinalizeCancelledPipelineJob(jobId: string): Promise<boolean> {
+  const job = await prisma.generationJob.findUnique({where: {id: jobId}, select: {payload: true}});
+  if (!job) return false;
+  let payload: DirectorPipelineOwner;
+  try {payload = JSON.parse(job.payload || "{}");} catch {return false;}
+  if (!payload.directorNext) return canRecoverLegacyPipelineJob(jobId);
+  if (payload.workflowTaskId) return false;
+  const control = await prisma.directorNextRunControl.findUnique({where: {runId: payload.directorNext.runId}, select: {status: true}});
+  return !control || control.status === "completed" || control.status === "failed" || control.status === "cancelled";
+}
+
 export async function canRecoverLegacyPipelineJob(jobId: string): Promise<boolean> {
   const job = await prisma.generationJob.findUnique({where: {id: jobId}, select: {payload: true}});
   if (!job) return false;

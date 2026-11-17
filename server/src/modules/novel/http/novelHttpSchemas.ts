@@ -539,6 +539,14 @@ export const aiRevisionPreviewSchema = z.object({
     repairApproach: z.string().trim().min(1).max(1000).optional(),
     mustPreserve: z.array(z.string().trim().min(1).max(400)).max(8).optional(),
   }).optional(),
+  repairBriefs: z.array(z.object({
+    title: z.string().trim().min(1).max(120),
+    problemSummary: z.string().trim().min(1).max(1000),
+    whyItMatters: z.string().trim().min(1).max(1000),
+    repairGoal: z.string().trim().min(1).max(1000).optional(),
+    repairApproach: z.string().trim().min(1).max(1000).optional(),
+    mustPreserve: z.array(z.string().trim().min(1).max(400)).max(8).optional(),
+  })).max(8).optional(),
   contentSnapshot: z.string(),
   selection: z.object({
     from: z.number().int().min(0),

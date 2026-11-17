@@ -6,21 +6,35 @@ interface Props {
   workspace: ChapterEditorWorkspaceResponse | null;
   status: "loading" | "ready" | "error";
   selectedId: string | null;
+  /** 批量修稿时勾选的问题卡 id 集合。 */
+  selectedIds: string[];
   disabled: boolean;
   isDirty: boolean;
   isResolving: boolean;
   onFocus: (card: ChapterEditorDiagnosticCard) => void;
   onRun: (card: ChapterEditorDiagnosticCard) => void;
   onResolve: (card: ChapterEditorDiagnosticCard) => void;
+  onToggleSelect: (card: ChapterEditorDiagnosticCard) => void;
 }
 
 function DiagnosticRow({ card, props }: { card: ChapterEditorDiagnosticCard; props: Props }) {
   const selected = card.id === props.selectedId;
+  const checked = props.selectedIds.includes(card.id);
   return (
     <div className={`space-y-3 rounded-xl px-3 py-3 ${selected ? "bg-primary/5 ring-1 ring-primary/20" : "bg-muted/20"}`}>
-      <div>
-        <div className="text-sm font-medium">{card.title}</div>
-        <div className="mt-1 text-xs text-muted-foreground">{card.paragraphLabel || "整章"}</div>
+      <div className="flex items-start gap-2">
+        <input
+          type="checkbox"
+          aria-label={`勾选问题「${card.title}」用于批量修稿`}
+          className="mt-1 h-4 w-4 cursor-pointer accent-primary"
+          checked={checked}
+          disabled={props.disabled}
+          onChange={() => props.onToggleSelect(card)}
+        />
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-medium">{card.title}</div>
+          <div className="mt-1 text-xs text-muted-foreground">{card.paragraphLabel || "整章"}</div>
+        </div>
       </div>
       <p className={`text-sm leading-6 text-muted-foreground ${selected ? "" : "line-clamp-2"}`}>{card.problemSummary}</p>
       <div className="flex flex-wrap gap-2">

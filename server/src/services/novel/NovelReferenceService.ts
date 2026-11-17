@@ -4,6 +4,7 @@ import {
   BOOK_ANALYSIS_STRUCTURED_FIELD_SPECS,
 } from "@ai-novel/shared/types/bookAnalysis";
 import { groupBookAnalysisTimelineNodesByPhase } from "@ai-novel/shared/utils/bookAnalysisTimeline";
+import { normalizeBookAnalysisEmotionNode } from "@ai-novel/shared/utils/bookAnalysisEmotion";
 import { prisma } from "../../db/prisma";
 import {
   listActiveKnowledgeDocumentContents,
@@ -70,9 +71,28 @@ function formatStructuredData(data: Record<string, unknown>): string {
       continue;
     }
     if (Array.isArray(value)) {
-      const items = value.filter((item) => item !== null && item !== undefined && String(item).trim());
+      const items = value
+        .map((item) => {
+          if (item === null || item === undefined) {
+            return "";
+          }
+          if (typeof item === "object") {
+            const node = normalizeBookAnalysisEmotionNode(item);
+            if (!node) {
+              return "";
+            }
+            const meta = [
+              node.emotionType ? `情绪=${node.emotionType}` : "",
+              typeof node.intensity === "number" ? `强度=${node.intensity}` : "",
+              node.technique ? `手法=${node.technique}` : "",
+            ].filter(Boolean).join("; ");
+            return meta ? `${node.label} (${meta})` : node.label;
+          }
+          return String(item).trim();
+        })
+        .filter(Boolean);
       if (items.length > 0) {
-        lines.push(`- ${key}: ${items.map((item) => String(item)).join("; ")}`);
+        lines.push(`- ${key}: ${items.join("; ")}`);
       }
       continue;
     }

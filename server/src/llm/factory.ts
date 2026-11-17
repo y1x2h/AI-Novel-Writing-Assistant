@@ -1,7 +1,12 @@
 import { loadCapability } from "./compatibility";
 import {attachLLMCacheRequestPolicy,resolveCacheCapability} from "../platform/llm/cache";
 import {attachExecutionSignal,assertLlmExecutionConfiguration,attachLlmExecutionPolicy,resolveScopedTaskOutputTokens} from "../platform/llm/execution";
-import type { LLMProvider, ProviderAuthMode, ReasoningEffort } from "@ai-novel/shared/types/llm";
+import {
+  ALWAYS_THINKING_MODEL_OUTPUT_TOKENS,
+  type LLMProvider,
+  type ProviderAuthMode,
+  type ReasoningEffort,
+} from "@ai-novel/shared/types/llm";
 import type { ModelRouteRequestProtocol } from "@ai-novel/shared/types/novel";
 import { ChatOpenAI } from "@langchain/openai";
 import type { PromptInvocationMeta } from "../prompting/core/promptTypes";
@@ -11,7 +16,7 @@ import { createAnthropicLLM } from "./anthropicClient";
 import { attachLLMDebugLogging } from "./debugLogging";
 import { attachLLMRequestLimiter } from "./requestLimiter";
 import { attachLLMRequestGuard } from "./requestGuard";
-import { resolveProviderReasoningBehavior, shouldFallBackToRouteModel } from "./reasoning";
+import { isGlmAlwaysThinkingModel, resolveProviderReasoningBehavior, shouldFallBackToRouteModel } from "./reasoning";
 import {
   resolveStructuredOutputProfile,
   type StructuredExecutionMode,
@@ -365,6 +370,11 @@ export async function resolveLLMClientOptions(
     reasoningEnabled,
     reasoningEffort: requestedReasoningEffort,
   });
+  // 强制思考模型无法关闭思考，思考 token 会先占满同一次输出额度并让正文为空。
+  // 这些模型在任务未配置额度时按常规默认值请求，必须抬到思考可用后仍能产出正文的下限。
+  if (isGlmAlwaysThinkingModel(model) && reasoningBehavior.reasoningEnabled) {
+    effectiveMaxTokens = Math.max(effectiveMaxTokens ?? 0, ALWAYS_THINKING_MODEL_OUTPUT_TOKENS);
+  }
   const modelKwargs = {
     ...(reasoningBehavior.modelKwargs ?? {}),
     ...baseModelKwargs,

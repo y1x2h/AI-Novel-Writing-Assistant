@@ -14,6 +14,7 @@ import {
 import {
   BOOK_ANALYSIS_STRUCTURED_ARRAY_LIMIT,
   BOOK_ANALYSIS_TIMELINE_NODE_LIMIT,
+  BOOK_ANALYSIS_EMOTION_NODE_LIMIT,
 } from "../../../services/bookAnalysis/shared/bookAnalysis.utils";
 
 export interface BookAnalysisSourceNotePromptInput {
@@ -29,6 +30,8 @@ export interface BookAnalysisSectionPromptInput {
   userFocusInstructionText?: string;
   sectionFocusInstructionText?: string;
   notesText: string;
+  /** 仅 style_technique 小节注入：原文客观文风统计，用于校准主观判断。 */
+  styleStatsText?: string;
 }
 
 export interface BookAnalysisOptimizeDraftPromptInput {
@@ -68,6 +71,14 @@ function buildSectionStructuredDataContract(sectionKey: BookAnalysisSectionKey):
         phase: "阶段标签，可省略",
         sourceRefs: ["片段标签，可省略"],
       }];
+    } else if (field.type === "emotionNodeArray") {
+      acc[field.key] = [{
+        label,
+        emotionType: "情绪类型，可省略",
+        intensity: 0,
+        technique: "写作手法，可省略",
+        sourceRefs: ["片段标签，可省略"],
+      }];
     } else {
       acc[field.key] = [label];
     }
@@ -76,11 +87,15 @@ function buildSectionStructuredDataContract(sectionKey: BookAnalysisSectionKey):
   const stringFields = specs.filter((field) => field.type === "string").map((field) => field.key);
   const arrayFields = specs.filter((field) => field.type === "stringArray").map((field) => field.key);
   const timelineNodeFields = specs.filter((field) => field.type === "timelineNodeArray").map((field) => field.key);
+  const emotionNodeFields = specs.filter((field) => field.type === "emotionNodeArray").map((field) => field.key);
   const typeRules = [
     stringFields.length > 0 ? `${stringFields.join("、")} 为字符串。` : "",
     arrayFields.length > 0 ? `${arrayFields.join("、")} 为字符串数组。` : "",
     timelineNodeFields.length > 0
       ? `${timelineNodeFields.join("、")} 为时间线节点数组；每项必须有 label，可选 timeHint、phase、sourceRefs。`
+      : "",
+    emotionNodeFields.length > 0
+      ? `${emotionNodeFields.join("、")} 为情绪节点数组；每项必须有 label，可选 emotionType、intensity（-9 到 9 的整数，负值压抑/虐感，正值爽感/释放）、technique、sourceRefs。`
       : "",
   ].filter(Boolean).join(" ");
   const extraRules: Partial<Record<BookAnalysisSectionKey, string[]>> = {
@@ -89,6 +104,11 @@ function buildSectionStructuredDataContract(sectionKey: BookAnalysisSectionKey):
     ],
     market_highlights: [
       "targetReaderMatches 允许基于题材、卖点与读者信号做低风险匹配判断，但不要伪装成精确人群画像。",
+    ],
+    plot_structure: [
+      "emotionCurve 使用情绪节点对象数组，不要退回字符串数组；label 写情节节点本身，emotionType 写情绪类型（如震惊、心酸、燃、甜），intensity 写 -9 到 9 的整数强度，technique 写该节点用到的写作手法（如信息差、反转、误会升级）。",
+      "emotionCurve 的每个节点必须能在 notes 的剧情要点或证据摘录中找到对应情节，不要虚构节点；短篇或开篇部分应拆得更细，长篇可按关键转折抽稀。",
+      "sourceRefs 只能填写 notes 中已经出现的 sourceLabel；如果无法确定来源片段，可省略 sourceRefs，不要虚构片段名。",
     ],
     timeline: [
       "timeNodes 与 eventOrder 使用节点对象数组，不要退回字符串数组；label 写事件或节点本身，timeHint 写相对或绝对时间提示，phase 写所属阶段。",
@@ -226,7 +246,7 @@ export const bookAnalysisSectionPrompt: PromptAsset<
   z.infer<typeof bookAnalysisSectionOutputSchema>
 > = {
   id: "bookAnalysis.section.generate",
-  version: "v1",
+  version: "v3",
   taskType: "planner",
   mode: "structured",
   language: "zh",
@@ -260,6 +280,7 @@ export const bookAnalysisSectionPrompt: PromptAsset<
       "7. markdown、structuredData、evidence 三部分必须相互一致，不得互相矛盾。",
       "8. 如果用户消息提供“整本定位（来自总览小节）”，应把它作为当前小节的口径锚点，用于保持作品定位、题材、卖点和短板判断一致；但具体结论仍必须由当前小节 notes 支撑。",
       "9. 如果用户消息提供拆书关注点，应把它作为筛选和表达优先级；但关注点不能覆盖证据约束、固定结构和当前小节职责。",
+      "10. 如果用户消息提供“客观文风统计”，这是原文的客观基线，必须用它校准你的风格判断：例如对话占比高说明对白驱动，感叹号占比高说明情绪外放，平均句长短说明节奏快。统计只是锚点，仍需结合笔记判断，不能只复述数字。",
       "",
       buildSectionMarkdownRequirements(input.sectionKey, input.sectionTitle, input.promptFocus),
       "",
@@ -269,7 +290,7 @@ export const bookAnalysisSectionPrompt: PromptAsset<
       "补充约束：",
       "1. structuredData 必须更适合作为程序读取、筛选、展示和复用的数据层，不要把 markdown 大段分析原样搬进去。",
       "2. 若某项信息依据不足，字符串字段返回空字符串，数组字段返回空数组；不要省略字段，不要返回 null，不要自造近义键名。",
-      `3. 普通字符串数组字段最多保留 ${BOOK_ANALYSIS_STRUCTURED_ARRAY_LIMIT} 项；时间线节点数组最多保留 ${BOOK_ANALYSIS_TIMELINE_NODE_LIMIT} 项；如可用信息更多，请按重要度和叙事顺序筛选保留。`,
+      `3. 普通字符串数组字段最多保留 ${BOOK_ANALYSIS_STRUCTURED_ARRAY_LIMIT} 项；时间线节点数组最多保留 ${BOOK_ANALYSIS_TIMELINE_NODE_LIMIT} 项；情绪节点数组最多保留 ${BOOK_ANALYSIS_EMOTION_NODE_LIMIT} 项；如可用信息更多，请按重要度和叙事顺序筛选保留。`,
       "4. 数组项使用简洁中文短语，避免长解释；数组内避免同义重复。",
       "5. 输出时尽量保持字段顺序与约定结构一致。",
       "",
@@ -308,6 +329,13 @@ export const bookAnalysisSectionPrompt: PromptAsset<
         ? [
             "本节特别关注：",
             input.sectionFocusInstructionText.trim(),
+            "",
+          ]
+        : []),
+      ...(input.styleStatsText?.trim()
+        ? [
+            "客观文风统计：",
+            input.styleStatsText.trim(),
             "",
           ]
         : []),

@@ -23,6 +23,9 @@ interface ChapterEditorDirectorPanelProps extends ChapterEditorActionsProps {
   onAccept: () => void;
   onReject: () => void;
   onRegenerate: () => void;
+  failedRecovery?: { operation: string; instruction: string; selectedText?: string } | null;
+  onCopyFailedRecovery?: () => void;
+  onDismissFailedRecovery?: () => void;
   onCollapse?: () => void;
 }
 
@@ -59,8 +62,27 @@ export default function ChapterEditorDirectorPanel(props: ChapterEditorDirectorP
         ) : null}
 
         {session.status === "error" ? (
-          <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900">
-            {session.errorMessage || "候选生成失败，请重试。"}
+          <div className="space-y-3">
+            <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900">
+              {session.errorMessage || "候选生成失败，请重试。"}
+            </div>
+            {props.failedRecovery ? (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-4 text-sm text-amber-900">
+                <div className="font-medium">保留这次的修改要求，方便重试</div>
+                <p className="mt-1 text-xs leading-5 text-amber-800/80">
+                  生成未完成。你可以先复制本次的修改要求，换个方式重试；不复制也不会影响正文。
+                </p>
+                {props.failedRecovery.instruction ? (
+                  <p className="mt-2 line-clamp-3 rounded-lg bg-background/60 p-2 text-xs text-amber-900/80">
+                    {props.failedRecovery.instruction}
+                  </p>
+                ) : null}
+                <div className="mt-3 flex gap-2">
+                  <Button size="sm" variant="outline" onClick={props.onCopyFailedRecovery}>复制修改要求</Button>
+                  <Button size="sm" variant="ghost" onClick={props.onDismissFailedRecovery}>放弃</Button>
+                </div>
+              </div>
+            ) : null}
           </div>
         ) : null}
 

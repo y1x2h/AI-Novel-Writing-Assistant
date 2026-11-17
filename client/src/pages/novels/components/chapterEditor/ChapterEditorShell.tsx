@@ -132,6 +132,9 @@ export default function ChapterEditorShell(props: ChapterEditorShellProps) {
   const [sceneIntent, setSceneIntent] = useState<ChapterEditorSceneIntent>("improvise");
   const [sceneGoal, setSceneGoal] = useState("");
   const [selectedDiagnosticId, setSelectedDiagnosticId] = useState<string | null>(null);
+  const [selectedDiagnosticIds, setSelectedDiagnosticIds] = useState<string[]>([]);
+  const [batchInstruction, setBatchInstruction] = useState("");
+  const [failedRecovery, setFailedRecovery] = useState<{ operation: string; instruction: string; selectedText?: string } | null>(null);
   const [focusRequestKey, setFocusRequestKey] = useState(0);
   const [isVersionDrawerOpen, setIsVersionDrawerOpen] = useState(false);
   const [loadedSnapshotId, setLoadedSnapshotId] = useState<string | null>(null);
@@ -150,6 +153,9 @@ export default function ChapterEditorShell(props: ChapterEditorShellProps) {
     setSession(EMPTY_SESSION);
     setRevisionInstruction("");
     setRevisionScope("selection");
+    setSelectedDiagnosticIds([]);
+    setBatchInstruction("");
+    setFailedRecovery(null);
     setIsVersionDrawerOpen(false);
     setLoadedSnapshotId(null);
     lastPreviewRequestRef.current = null;
@@ -162,11 +168,13 @@ export default function ChapterEditorShell(props: ChapterEditorShellProps) {
   useEffect(() => {
     if (!workspace) {
       setSelectedDiagnosticId(null);
+      setSelectedDiagnosticIds([]);
       return;
     }
     if (selectedDiagnosticId && !workspace.diagnosticCards.some((card) => card.id === selectedDiagnosticId)) {
       setSelectedDiagnosticId(null);
     }
+    setSelectedDiagnosticIds((prev) => prev.filter((id) => workspace.diagnosticCards.some((card) => card.id === id)));
   }, [selectedDiagnosticId, workspace]);
 
   const wordCount = useMemo(() => countEditorWords(contentDraft), [contentDraft]);
@@ -392,12 +400,17 @@ export default function ChapterEditorShell(props: ChapterEditorShellProps) {
       }));
       setSelection(null);
     },
-    onError: (error) => {
+    onError: (error, request) => {
       setSession((current) => ({
         ...current,
         status: "error",
         errorMessage: error instanceof Error ? error.message : "AI 修正失败，请重试。",
       }));
+      setFailedRecovery({
+        operation: "AI 修正",
+        instruction: request.instruction || "",
+        selectedText: request.selection?.text,
+      });
     },
   });
 
@@ -447,12 +460,16 @@ export default function ChapterEditorShell(props: ChapterEditorShellProps) {
       setSelection(null);
       setCursorOffset(null);
     },
-    onError: (error) => {
+    onError: (error, request) => {
       setSession((current) => ({
         ...current,
         status: "error",
         errorMessage: error instanceof Error ? error.message : "AI 续写失败，请重试。",
       }));
+      setFailedRecovery({
+        operation: "光标续写",
+        instruction: request.instruction || "",
+      });
     },
   });
 
@@ -506,12 +523,16 @@ export default function ChapterEditorShell(props: ChapterEditorShellProps) {
       }));
       setSelection(null);
     },
-    onError: (error) => {
+    onError: (error, request) => {
       setSession((current) => ({
         ...current,
         status: "error",
         errorMessage: error instanceof Error ? error.message : "AI 生成场景失败，请重试。",
       }));
+      setFailedRecovery({
+        operation: "场景生成",
+        instruction: request.sceneGoal || "",
+      });
     },
   });
 
@@ -838,6 +859,49 @@ export default function ChapterEditorShell(props: ChapterEditorShellProps) {
     });
   };
 
+  const handleToggleDiagnosticSelect = (card: ChapterEditorDiagnosticCard) => {
+    setSelectedDiagnosticIds((prev) => prev.includes(card.id)
+      ? prev.filter((id) => id !== card.id)
+      : [...prev, card.id]);
+  };
+
+  const handleRunBatchDiagnostics = () => {
+    if (isBusy || session.status !== "idle") {
+      toast.error("请先完成或拒绝当前候选，再处理其他问题。");
+      return;
+    }
+    const cards = (workspace?.diagnosticCards ?? []).filter((card) => selectedDiagnosticIds.includes(card.id));
+    if (cards.length === 0) {
+      toast.error("请先勾选需要一并修改的问题。");
+      return;
+    }
+    if (contentDraft !== savedContent || workspace?.chapterMeta.updatedAt !== draft.savedUpdatedAt) {
+      toast.error("正文已变化，请先保存并重新分析本章，确认问题位置。");
+      return;
+    }
+    const repairBriefs = cards.map((card) => ({
+      title: card.title,
+      problemSummary: card.problemSummary,
+      whyItMatters: card.whyItMatters,
+      repairGoal: card.repairGoal,
+      repairApproach: card.repairApproach,
+      mustPreserve: card.mustPreserve,
+    }));
+    const request = buildAiRevisionRequest({
+      source: "preset",
+      scope: "chapter",
+      presetOperation: "polish",
+      instruction: batchInstruction.trim() || undefined,
+      repairBriefs,
+      content: contentDraft,
+      provider: llm.provider,
+      model: llm.model,
+      temperature: llm.temperature,
+    });
+    lastPreviewDiagnosticRef.current = undefined;
+    previewMutation.mutate(request);
+  };
+
 
   const handleRunSelectedDiagnostic = () => {
     if (!assistantDiagnosticCard) {
@@ -996,6 +1060,11 @@ export default function ChapterEditorShell(props: ChapterEditorShellProps) {
             isDirty={isDirty}
             isSaving={saveMutation.isPending}
             selectedDiagnosticId={selectedDiagnosticId}
+            selectedDiagnosticIds={selectedDiagnosticIds}
+            batchInstruction={batchInstruction}
+            onBatchInstructionChange={setBatchInstruction}
+            onRunBatchDiagnostics={handleRunBatchDiagnostics}
+            isRunningBatchDiagnostics={previewMutation.isPending}
             onBack={onBack ? () => leaveEditor(onBack) : undefined}
             backLabel={props.backLabel}
             onOpenChapterVersions={() => setIsVersionDrawerOpen(true)}
@@ -1012,6 +1081,7 @@ export default function ChapterEditorShell(props: ChapterEditorShellProps) {
             }}
             isResolvingDiagnostic={resolveDiagnosticMutation.isPending}
             diagnosticsDisabled={isBusy || session.status !== "idle"}
+            onToggleDiagnosticSelect={handleToggleDiagnosticSelect}
             onCollapse={() => setPanelsCollapsed((current) => ({ ...current, left: true }))}
             qualityNotice={qualityNotice}
           />
@@ -1118,6 +1188,18 @@ export default function ChapterEditorShell(props: ChapterEditorShellProps) {
               onAccept={() => acceptMutation.mutate()}
               onReject={handleReject}
               onRegenerate={handleRegenerate}
+              failedRecovery={failedRecovery}
+              onCopyFailedRecovery={() => {
+                if (!failedRecovery) return;
+                const text = failedRecovery.selectedText
+                  ? `【${failedRecovery.operation}】\n修改要求：${failedRecovery.instruction}\n\n选中文本：\n${failedRecovery.selectedText}`
+                  : `【${failedRecovery.operation}】\n修改要求：${failedRecovery.instruction}`;
+                navigator.clipboard?.writeText(text).then(
+                  () => toast.success("已复制本次修改要求，可粘贴后重试。"),
+                  () => toast.error("复制失败，请手动选中后复制。"),
+                );
+              }}
+              onDismissFailedRecovery={() => setFailedRecovery(null)}
               onCollapse={effectiveLayout === "standard" ? () => setPanelsCollapsed((current) => ({ ...current, right: true })) : undefined}
             />
         </div>

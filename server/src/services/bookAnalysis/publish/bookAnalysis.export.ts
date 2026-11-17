@@ -10,6 +10,7 @@ import {
   normalizeBookAnalysisTimelineNode,
   normalizeBookAnalysisTimelineNodes,
 } from "@ai-novel/shared/utils/bookAnalysisTimeline";
+import { normalizeBookAnalysisEmotionNodes } from "@ai-novel/shared/utils/bookAnalysisEmotion";
 import { getEffectiveContent } from "../shared/bookAnalysis.utils";
 
 function sectionContentToMarkdown(section: BookAnalysisSection): string {
@@ -70,6 +71,23 @@ function buildTimelineSummaryRows(label: string, nodes: BookAnalysisTimelineNode
   return lines;
 }
 
+function buildEmotionSummaryRows(label: string, value: unknown): string[] {
+  const nodes = normalizeBookAnalysisEmotionNodes(value, 40);
+  if (nodes.length === 0) {
+    return [];
+  }
+  const items = nodes.map((node) => {
+    const meta = [
+      node.emotionType ? `情绪：${node.emotionType}` : "",
+      typeof node.intensity === "number" ? `强度：${node.intensity > 0 ? `+${node.intensity}` : node.intensity}` : "",
+      node.technique ? `手法：${node.technique}` : "",
+      node.sourceRefs?.length ? `来源：${node.sourceRefs.join("、")}` : "",
+    ].filter(Boolean).join("；");
+    return meta ? `${node.label}（${meta}）` : node.label;
+  });
+  return [`- ${label}：${items.join("；")}`];
+}
+
 function buildStructuredSummaryMarkdown(section: BookAnalysisSection): string[] {
   const structuredData = section.structuredData;
   if (!structuredData || typeof structuredData !== "object") {
@@ -83,6 +101,9 @@ function buildStructuredSummaryMarkdown(section: BookAnalysisSection): string[] 
       const label = BOOK_ANALYSIS_STRUCTURED_FIELD_LABELS[key] ?? key;
       if (fieldSpecs.get(key) === "timelineNodeArray") {
         return buildTimelineSummaryRows(label, normalizeBookAnalysisTimelineNodes(value, 12));
+      }
+      if (fieldSpecs.get(key) === "emotionNodeArray") {
+        return buildEmotionSummaryRows(label, value);
       }
       const values = normalizeStructuredValue(value);
       return values.length > 0 ? [`- ${label}：${values.join("；")}`] : [];

@@ -13,6 +13,11 @@ interface ChapterEditorSidebarProps {
   isDirty: boolean;
   isSaving: boolean;
   selectedDiagnosticId: string | null;
+  selectedDiagnosticIds: string[];
+  batchInstruction: string;
+  onBatchInstructionChange: (value: string) => void;
+  onRunBatchDiagnostics: () => void;
+  isRunningBatchDiagnostics: boolean;
   onBack?: () => void;
   backLabel?: string;
   onOpenChapterVersions?: () => void;
@@ -25,6 +30,7 @@ interface ChapterEditorSidebarProps {
   onResolveDiagnostic: (card: ChapterEditorDiagnosticCard) => void;
   isResolvingDiagnostic?: boolean;
   diagnosticsDisabled?: boolean;
+  onToggleDiagnosticSelect: (card: ChapterEditorDiagnosticCard) => void;
   onCollapse?: () => void;
   qualityNotice?: ReactNode;
 }
@@ -115,9 +121,46 @@ export default function ChapterEditorSidebar(props: ChapterEditorSidebarProps) {
           </p>
         )}
       </details>
-      <ChapterEditorDiagnosticList workspace={workspace} status={props.workspaceStatus} selectedId={props.selectedDiagnosticId}
-        disabled={props.diagnosticsDisabled ?? false} isDirty={props.isDirty} isResolving={props.isResolvingDiagnostic ?? false}
-        onFocus={props.onFocusDiagnostic} onRun={props.onRunDiagnostic} onResolve={props.onResolveDiagnostic} />
+      {workspace?.diagnosticCards.length ? (
+        <section className="space-y-3 border-t border-border/50 pt-5">
+          <div>
+            <h3 className="text-sm font-medium">批量修稿</h3>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+              勾选下方问题卡，可一次性生成修稿候选；也可补充一句你自己的修改要求。
+            </p>
+          </div>
+          <textarea
+            aria-label="批量修稿补充要求"
+            maxLength={800}
+            className="min-h-[72px] w-full resize-y rounded-xl border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring/30"
+            placeholder="例如：保留人物克制的语气，整体不要扩写。"
+            value={props.batchInstruction}
+            onChange={(event) => props.onBatchInstructionChange(event.target.value)}
+          />
+          <Button
+            size="sm"
+            disabled={props.isRunningBatchDiagnostics || props.selectedDiagnosticIds.length === 0}
+            onClick={props.onRunBatchDiagnostics}
+          >
+            {props.isRunningBatchDiagnostics
+              ? "生成中..."
+              : `按选中项修稿（${props.selectedDiagnosticIds.length}）`}
+          </Button>
+        </section>
+      ) : null}
+      <ChapterEditorDiagnosticList
+        workspace={workspace}
+        status={props.workspaceStatus}
+        selectedId={props.selectedDiagnosticId}
+        selectedIds={props.selectedDiagnosticIds}
+        disabled={props.diagnosticsDisabled ?? false}
+        isDirty={props.isDirty}
+        isResolving={props.isResolvingDiagnostic ?? false}
+        onFocus={props.onFocusDiagnostic}
+        onRun={props.onRunDiagnostic}
+        onResolve={props.onResolveDiagnostic}
+        onToggleSelect={props.onToggleDiagnosticSelect}
+      />
     </div>
   );
 }

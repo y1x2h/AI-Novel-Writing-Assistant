@@ -5,6 +5,7 @@ import type {
 } from "@ai-novel/shared/types/bookAnalysis";
 import { BOOK_ANALYSIS_SECTIONS, BOOK_ANALYSIS_STRUCTURED_FIELD_SPECS } from "@ai-novel/shared/types/bookAnalysis";
 import { normalizeBookAnalysisTimelineNodes } from "@ai-novel/shared/utils/bookAnalysisTimeline";
+import { normalizeBookAnalysisEmotionNodes } from "@ai-novel/shared/utils/bookAnalysisEmotion";
 import {
   CHAPTER_HEADING_REGEX,
   CHUNK_OVERLAP_CHARS,
@@ -23,6 +24,7 @@ import type { SourceNote, SourceSegment } from "./bookAnalysis.types";
 
 export const BOOK_ANALYSIS_STRUCTURED_ARRAY_LIMIT = 12;
 export const BOOK_ANALYSIS_TIMELINE_NODE_LIMIT = 30;
+export const BOOK_ANALYSIS_EMOTION_NODE_LIMIT = 40;
 
 export function isMissingTableError(error: unknown): boolean {
   return (
@@ -188,7 +190,9 @@ export function normalizeBookAnalysisEvidence(
       ? normalizedValue.length
       : fieldSpec.type === "timelineNodeArray"
         ? BOOK_ANALYSIS_TIMELINE_NODE_LIMIT
-        : BOOK_ANALYSIS_STRUCTURED_ARRAY_LIMIT;
+        : fieldSpec.type === "emotionNodeArray"
+          ? BOOK_ANALYSIS_EMOTION_NODE_LIMIT
+          : BOOK_ANALYSIS_STRUCTURED_ARRAY_LIMIT;
     if (item.fieldIndex >= maxIndex) {
       const { fieldIndex: _fieldIndex, ...rest } = item;
       return rest;
@@ -336,6 +340,17 @@ function normalizeStructuredTimelineNodeArrayWithMeta(value: unknown): {
   };
 }
 
+function normalizeStructuredEmotionNodeArrayWithMeta(value: unknown): {
+  value: ReturnType<typeof normalizeBookAnalysisEmotionNodes>;
+  truncated: boolean;
+} {
+  const items = normalizeBookAnalysisEmotionNodes(value, Number.MAX_SAFE_INTEGER);
+  return {
+    value: items.slice(0, BOOK_ANALYSIS_EMOTION_NODE_LIMIT),
+    truncated: items.length > BOOK_ANALYSIS_EMOTION_NODE_LIMIT,
+  };
+}
+
 export function normalizeBookAnalysisStructuredDataWithWarnings(
   sectionKey: BookAnalysisSectionKey,
   value: Record<string, unknown> | null,
@@ -353,7 +368,9 @@ export function normalizeBookAnalysisStructuredDataWithWarnings(
     }
     const result = field.type === "timelineNodeArray"
       ? normalizeStructuredTimelineNodeArrayWithMeta(source[field.key])
-      : normalizeStructuredStringArrayWithMeta(source[field.key]);
+      : field.type === "emotionNodeArray"
+        ? normalizeStructuredEmotionNodeArrayWithMeta(source[field.key])
+        : normalizeStructuredStringArrayWithMeta(source[field.key]);
     normalized[field.key] = result.value;
     if (result.truncated) {
       normalizationWarnings.push(field.key);

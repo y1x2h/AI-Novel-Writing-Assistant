@@ -28,6 +28,8 @@ import { plannerService } from "../../planner/PlannerService";
 import { applyChapterQualityClosure } from "./qualityClosure/ChapterQualityClosure";
 import { recoverSavedChapterQuality, SavedChapterQualityRecoveryError } from "./qualityClosure/SavedChapterQualityRecovery";
 import {assertDirectorPipelineOwner} from "../../../modules/novel/director-routing";
+import {RunLeaseLostError} from "../../../modules/director/application/execution";
+import {withoutExecutionSignal, executionSignal} from "../../../platform/runtime/execution";
 import { ChapterAutomaticAttemptService } from "./attempts";
 import { isCurrentChapterProductionCompleted, isCurrentV2ChapterProductionCompleted } from "./completion";
 import {
@@ -204,6 +206,60 @@ export class NovelPipelineExecutor {
       data,
     });
     if (updated.count !== 1) throw new PipelineExecutionLeaseLostError();
+  }
+
+  /**
+   * 所属创作运行结束后收尾正文作业。
+   * 旧实现的 catch 只处理流水线自己的租约，导演运行被取消或租约失效时抛出的中止错误会让
+   * 作业一直停留在 running（watchdog 不接管 directorNext 作业），后续同范围创作只能看到
+   * "同一章节范围存在其他运行的正文作业"。这里按归属运行状态确定终态：运行已结束则取消，
+   * 运行仍可继续（例如暂停）则回到可恢复的排队状态。
+   */
+  private async settleJobAfterOwnerExecutionEnded(input: {jobId: string; novelId: string; payload: string}) {
+    const job = await prisma.generationJob.findUnique({
+      where: {id: input.jobId},
+      select: {status: true, pendingManualRecovery: true, cancelRequestedAt: true, payload: true},
+    });
+    if (!job || job.status === "cancelled" || job.status === "succeeded" || job.status === "failed") return;
+    if (job.pendingManualRecovery) return;
+    const ownerRunId = this.parsePipelinePayload(job.payload).directorNext?.runId;
+    const ownerControl = ownerRunId
+      ? await prisma.directorNextRunControl.findUnique({where: {runId: ownerRunId}, select: {status: true}}).catch(() => null)
+      : null;
+    const ownerRunEnded = Boolean(ownerRunId) && (!ownerControl
+      || ownerControl.status === "completed" || ownerControl.status === "failed" || ownerControl.status === "cancelled");
+    try {
+      if (job.cancelRequestedAt || ownerRunEnded) {
+        await this.updateJobSafe(input.jobId, {
+          status: "cancelled",
+          heartbeatAt: null,
+          currentStage: null,
+          currentItemKey: null,
+          currentItemLabel: null,
+          cancelRequestedAt: null,
+          finishedAt: new Date(),
+          payload: input.payload,
+        }, job.cancelRequestedAt ? "cancelled" : "runnable");
+        void novelEventBus.emit({
+          type: "pipeline:completed",
+          payload: { novelId: input.novelId, jobId: input.jobId, status: "cancelled" },
+        }).catch(() => {});
+        return;
+      }
+      await this.updateJobSafe(input.jobId, {
+        status: "queued",
+        heartbeatAt: null,
+        currentStage: "queued",
+        currentItemKey: null,
+        currentItemLabel: null,
+        finishedAt: null,
+        error: "所属创作运行已结束，正文作业已停止，等待从创作工作台继续。",
+        payload: input.payload,
+      });
+    } catch (error) {
+      if (!(error instanceof PipelineExecutionLeaseLostError)) throw error;
+      logPipelineWarn("正文作业已被新的执行者接管，旧执行停止收尾", {jobId: input.jobId, novelId: input.novelId});
+    }
   }
 
   private stringifyPipelinePayload(input: PipelinePayload) {
@@ -975,6 +1031,22 @@ export class NovelPipelineExecutor {
         logPipelineWarn("任务执行租约已转移，旧执行者停止写入", { jobId, novelId });
         return;
       }
+      // 所属创作运行被取消/租约失效后，执行上下文中的 Prisma 与 AI 都会中止。
+      // 必须先收尾作业，否则后续错误处理本身也会失败，作业永久停在 running。
+      if (executionSignal()?.aborted || error instanceof RunLeaseLostError) {
+        logPipelineWarn("所属创作运行已结束，正文作业停止执行", { jobId, novelId });
+        await withoutExecutionSignal(() => this.settleJobAfterOwnerExecutionEnded({
+          jobId,
+          novelId,
+          payload: this.stringifyPipelinePayload({
+            ...runtimePayload,
+            qualityAlertDetails,
+            replanAlertDetails,
+            recoverableRepairDetails,
+          }),
+        }));
+        return;
+      }
       if (error instanceof PipelineIssueAppliedError) {
         const log = runtimePayload.directorNext?.pendingCharacterReviewId ? logPipelineInfo : logPipelineError;
         log(runtimePayload.directorNext?.pendingCharacterReviewId ? "等待用户确认本章人物" : "任务已按问题策略结束当前执行", {
@@ -1034,27 +1106,45 @@ export class NovelPipelineExecutor {
           rawContentLength: error.details.rawLength,
         });
       }
-      const governedAction = await applyGovernedIssue({
-        issueCode: error instanceof PipelineIssueFailure
-          ? error.issueCode
-          : error instanceof ChapterArtifactSyncBoundaryError
-            ? "runtime.data_integrity"
-          : error instanceof ChapterContentPersistenceError
-            ? "runtime.persistence_failed"
-            : isChapterEmptyContentError(error)
-              ? "generation.empty_content"
-              : resolvePipelineRuntimeIssueCode(error),
-        stage: error instanceof PipelineIssueFailure
-          ? error.stage
-          : error instanceof ChapterContentPersistenceError
-            ? "chapter_persistence"
-            : "chapter_execution",
-        summary: message,
-        evidence: error instanceof Error ? error.stack : undefined,
-        chapterId: error instanceof PipelineIssueFailure ? error.chapterId : undefined,
-        chapterOrder: error instanceof PipelineIssueFailure ? error.chapterOrder : undefined,
-        attempt: issueGovernance?.policy.maxAutomaticRetries ?? maxRetries,
-      });
+      let governedAction: DirectorIssueAction | null = null;
+      try {
+        governedAction = await applyGovernedIssue({
+          issueCode: error instanceof PipelineIssueFailure
+            ? error.issueCode
+            : error instanceof ChapterArtifactSyncBoundaryError
+              ? "runtime.data_integrity"
+            : error instanceof ChapterContentPersistenceError
+              ? "runtime.persistence_failed"
+              : isChapterEmptyContentError(error)
+                ? "generation.empty_content"
+                : resolvePipelineRuntimeIssueCode(error),
+          stage: error instanceof PipelineIssueFailure
+            ? error.stage
+            : error instanceof ChapterContentPersistenceError
+              ? "chapter_persistence"
+              : "chapter_execution",
+          summary: message,
+          evidence: error instanceof Error ? error.stack : undefined,
+          chapterId: error instanceof PipelineIssueFailure ? error.chapterId : undefined,
+          chapterOrder: error instanceof PipelineIssueFailure ? error.chapterOrder : undefined,
+          attempt: issueGovernance?.policy.maxAutomaticRetries ?? maxRetries,
+        });
+      } catch (governanceError) {
+        // 问题治理会调用需要所属运行租约的 AI/写入路径；运行已结束时它必然中止。
+        // 这里必须收尾作业，否则作业会永久停留在 running。
+        if (!(governanceError instanceof RunLeaseLostError) && !executionSignal()?.aborted) throw governanceError;
+        await withoutExecutionSignal(() => this.settleJobAfterOwnerExecutionEnded({
+          jobId,
+          novelId,
+          payload: this.stringifyPipelinePayload({
+            ...runtimePayload,
+            qualityAlertDetails,
+            replanAlertDetails,
+            recoverableRepairDetails,
+          }),
+        }));
+        return;
+      }
       if (governedAction) {
         logPipelineError("任务已按问题策略收束", {
           jobId,
