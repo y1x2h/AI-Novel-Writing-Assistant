@@ -257,7 +257,7 @@ story-deslop 的表达层检查里，除了原有的词簇与标点问题，还�
 - 度量实现：`server/src/services/novel/runtime/proseQuality/ProseQualityDetector.ts`。
 - 阈值定义：`shared/types/styleEngine/signals.ts`（`StyleSignalPolicy`）。
 - 接入点：`server/src/services/novel/runtime/ChapterAcceptanceAssessmentService.ts`、`ChapterContentFinalizationService.ts`。
-- 提示词：`server/src/prompting/prompts/style/style.prompts.ts`（`style.detection@v17`）。
+- 提示词：`server/src/prompting/prompts/style/style.prompts.ts`（`style.detection@v18`）。
 
 ## 改写复检闭环（rewrite recheck）
 
@@ -275,7 +275,7 @@ story-deslop 的表达层检查里，除了原有的词簇与标点问题，还�
 - 比较口径是「同一规则身份下的条目数量」：规则身份优先用 `ruleId`，缺失时退回规则名。减少记为已处理，持平记为仍保留，增加记为复测新增；改写后的措辞变化不构成新增。
 - 新增 `high` 视为回归，直接保留原稿，并在 `rewriteGuard` 写入 `style_regression: blocked`；`medium/low` 只展示，不阻断采用。
 - 复测自身失败时写入 `style_regression: not_checked`，不推翻已有的信息守恒结论，也不把预览判成失败。
-- 检测 prompt `style.detection@v17` 起，每条 violation 必须给出 `disposition`：`fix` 需要修改，`keep` 命中但应保留，`human_review` 需要作者判断。`keep` 与 `human_review` 的 `canAutoRewrite` 必须为 `false`，服务端会再收口一次。
+- 检测 prompt `style.detection@v18` 起，每条 violation 必须给出 `disposition`：`fix` 需要修改，`keep` 命中但应保留，`human_review` 需要作者判断。`keep` 与 `human_review` 的 `canAutoRewrite` 必须为 `false`，服务端会再收口一次。
 - 检测不得把「命中规则」直接等同于「必须清除」：承担信息、限定、人物口吻、场景节拍或题材功能的表达标 `keep`，并说明保留依据。
 
 ### prose 层候选口径（与写法信号对齐）
@@ -304,7 +304,7 @@ story-deslop 的表达层检查里，除了原有的词簇与标点问题，还�
 
 ### Current Rule
 
-- `style.detection@v16` 起引入白名单（当前 `@v17` 继续生效），`STYLE_DIAGNOSTIC_RULES` 与 `STYLE_REWRITE_DISCIPLINE` 同时声明，检测与改写两侧都收口。
+- `style.detection@v16` 起引入白名单（当前 `@v18` 继续生效），`STYLE_DIAGNOSTIC_RULES` 与 `STYLE_REWRITE_DISCIPLINE` 同时声明，检测与改写两侧都收口。
 - 白名单特征（配对复测方向反转或净零）：序数词小标题（第一／第二／首先）、「这意味着／也就是说」复述词本身、冒号后纯列举的空转提示、用概括代替具体数值的材料密度、段首零主语评论。
 - 「这意味着」只有在总结或复述主题时才触发 `forbid-theme-summary`；「也就是说」只有在台词替读者解释设定时才触发 `risk-explanatory-dialogue`。词的表面命中不单独判违规。
 - 冒号只把「结论提示」子类（冒号前给结论性判断、冒号后展开论证）当作候选；空转提示（冒号前空洞宣布、冒号后纯列举）是反向信号，人类更多，标 `keep`。
@@ -319,7 +319,7 @@ story-deslop 的表达层检查里，除了原有的词簇与标点问题，还�
 
 ### Related Modules
 
-- 提示词约束：`server/src/prompting/prompts/style/diagnostics/index.ts`、`server/src/prompting/prompts/style/style.prompts.ts`（`style.detection@v17`）。
+- 提示词约束：`server/src/prompting/prompts/style/diagnostics/index.ts`、`server/src/prompting/prompts/style/style.prompts.ts`（`style.detection@v18`）。
 - 规则定义：`server/src/services/styleEngine/defaults.ts`。
 - 候选证据：`server/src/services/styleEngine/signals/index.ts`。
 
@@ -335,7 +335,7 @@ story-deslop 的表达层检查里，除了原有的词簇与标点问题，还�
 
 ### Current Rule
 
-- `style.detection@v17` 起，`STYLE_DIAGNOSTIC_RULES` 声明四项封闭判据，`STYLE_REWRITE_DISCIPLINE` 声明对应改写边界。
+- `style.detection@v18` 起，`STYLE_DIAGNOSTIC_RULES` 声明四项封闭判据，`STYLE_REWRITE_DISCIPLINE` 声明对应改写边界。
 - 四项判据与参考值（AI vs 人类，配对语料）：
   1. **同义重命名**：同一段里同一实体换实义说法、读者要做「X 就是 Y」的等同连接（AI 0.83 次/段 vs 人类 0.49；≥2 次重灾段 AI 20.6% vs 人类 8.4%）。改写方向：统一回原名词，零信息损失。
   2. **段间衔接连环**：≥6 个段间接口连续明确承接、零自然跳转（AI 中位 7 连环 vs 人类 2）。改写方向：选 1–2 个接口改成自然跳跃，不动其它段。
@@ -355,9 +355,46 @@ story-deslop 的表达层检查里，除了原有的词簇与标点问题，还�
 ### Related Modules
 
 - 候选证据：`server/src/services/styleEngine/signals/index.ts`（`surface.conclusion-colon`、`syntax.isomorphic-triple`）。
-- 提示词判据与改写边界：`server/src/prompting/prompts/style/diagnostics/index.ts`、`server/src/prompting/prompts/style/style.prompts.ts`（`style.detection@v17`）。
+- 提示词判据与改写边界：`server/src/prompting/prompts/style/diagnostics/index.ts`、`server/src/prompting/prompts/style/style.prompts.ts`（`style.detection@v18`）。
 - 复测与回归护栏：`server/src/services/styleEngine/rewrite/recheck.ts`。
 - 共享类型：`shared/types/styleEngine/signals.ts`。
+
+## 叙事层配比检测
+
+### Background
+
+表面信号（模板词、副词、标点）抓不到「像 AI 的组织方式」。sepia 在 StoryScope 发布的 30 维叙事特征 taxonomy 上，整理出一批 AI 与人类分布差异显著的叙事层配比：AI 倾向用身体感觉承载情绪、用外貌描写让主角登场、用内心接受收尾、让叙述者替读者下结论、让对白变成观念辩论。这些是组织层选择，不是措辞问题，本地此前没有对应检测。
+
+### Decision
+
+把这 5 项叙事层配比作为 `style.detection` 的封闭判据维度，由模型通读后按场合判断并输出带原文引用的 violation。不做分轮多调用（控制成本），但在判据里强调逐项独立判断、不塌缩到一两类；语料参考值只作校准，不作单篇阈值或作者身份概率；文本没有判断场合时不报（n/a 处理）。
+
+### Current Rule
+
+- `style.detection@v18` 起，`STYLE_DIAGNOSTIC_RULES` 声明 5 项叙事层配比判据，`STYLE_REWRITE_DISCIPLINE` 声明对应改写方向。
+- 5 项判据与参考值（AI vs 人类，StoryScope taxonomy 与语料汇总）：
+  1. **叙述者主题评论**：叙述声音概括事件意义、替读者下判断（AI 77% vs 人类 52%）。改写：删概括，让事件与人物自己呈现结论。
+  2. **对白变观念辩论**：关键对话争论观念而非推进人物欲望／冲突（AI 59% vs 人类 34%）。改写：落回具体的欲望、阻力与信息交换。
+  3. **情绪以身体感觉主导**：强情绪场景主要靠身体反应承载（AI 81% vs 人类 38%）。改写：把至少一处身体感觉换成动作、对话或留白。
+  4. **主角以外貌登场**：主角首次实质出场用外貌／服饰定格（AI 52% vs 人类 30%）。改写：让主角在做事或说话时出场。
+  5. **结局停在内心接受**：收束靠人物想通、内心和解（AI 47% vs 人类 27%）。改写：用外部行动、关系变化或开放性落点收尾。
+- 只在文本提供判断场合时报告：不是开篇／主角首次出场不报登场方式，没有强情绪场景不报情绪呈现，不是收束不报结局模式。没有场合不强制判断。
+- 命中时 violation 的 `ruleName` 分别为「叙述者主题评论」「对白变观念辩论」「情绪以身体感觉主导」「主角以外貌登场」「结局停在内心接受」，`ruleId` 为 `null`，`layer` 为 `narrative`，`canAutoRewrite` 必须为 `false`（叙事建议不自动改剧情）。
+- 无引文不判：每条 violation 的 `excerpt` 必须是正文连续原句，postValidate 已校验。
+- 拿不准或涉及剧情取舍标 `human_review`，不硬判。
+
+### Failure Modes
+
+- **把语料参考值当单篇阈值**：参考值是群体分布，不是「超过这个数就是 AI」；单篇要看上下文，拿不准标 `human_review`。
+- **没有场合也硬判**：不是开篇就不该报登场方式，没有强情绪场景就不该报情绪配比；硬判会产生噪音，让用户不信任检测。
+- **让叙事层配比进入自动改写**：这些是 narrative 层判断，`canAutoRewrite` 必须为 false；自动改写不能重写人物动机、登场方式或结局。
+- **模型塌缩到一两类**：单次通读容易只注意到最显眼的 1–2 类，判据里明确要求逐项独立判断；若后续观察到塌缩严重，再评估是否拆为分轮调用。
+
+### Related Modules
+
+- 提示词判据与改写边界：`server/src/prompting/prompts/style/diagnostics/index.ts`、`server/src/prompting/prompts/style/style.prompts.ts`（`style.detection@v18`）。
+- 输出校验：`server/src/prompting/prompts/style/style.prompts.ts`（postValidate 校验 excerpt 来自正文）。
+- 复测与回归护栏：`server/src/services/styleEngine/rewrite/recheck.ts`。
 
 ## Failure Modes
 
