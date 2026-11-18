@@ -124,7 +124,7 @@ export const styleDetectionPrompt: PromptAsset<
   z.infer<typeof styleDetectionPayloadSchema>
 > = {
   id: "style.detection",
-  version: "v16",
+  version: "v17",
   taskType: "planner",
   mode: "structured",
   language: "zh",

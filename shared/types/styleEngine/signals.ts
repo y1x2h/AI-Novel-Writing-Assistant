@@ -97,6 +97,8 @@ export const styleSignalFindingSchema = z.object({
     "syntax.action-list",
     "surface.em-dash",
     "discourse.long-paragraph",
+    "surface.conclusion-colon",
+    "syntax.isomorphic-triple",
   ]),
   excerpt: z.string().min(1).max(480),
   from: z.number().int().nonnegative(),

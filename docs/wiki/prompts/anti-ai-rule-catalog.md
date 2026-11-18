@@ -257,7 +257,7 @@ story-deslop 的表达层检查里，除了原有的词簇与标点问题，还�
 - 度量实现：`server/src/services/novel/runtime/proseQuality/ProseQualityDetector.ts`。
 - 阈值定义：`shared/types/styleEngine/signals.ts`（`StyleSignalPolicy`）。
 - 接入点：`server/src/services/novel/runtime/ChapterAcceptanceAssessmentService.ts`、`ChapterContentFinalizationService.ts`。
-- 提示词：`server/src/prompting/prompts/style/style.prompts.ts`（`style.detection@v16`）。
+- 提示词：`server/src/prompting/prompts/style/style.prompts.ts`（`style.detection@v17`）。
 
 ## 改写复检闭环（rewrite recheck）
 
@@ -275,7 +275,7 @@ story-deslop 的表达层检查里，除了原有的词簇与标点问题，还�
 - 比较口径是「同一规则身份下的条目数量」：规则身份优先用 `ruleId`，缺失时退回规则名。减少记为已处理，持平记为仍保留，增加记为复测新增；改写后的措辞变化不构成新增。
 - 新增 `high` 视为回归，直接保留原稿，并在 `rewriteGuard` 写入 `style_regression: blocked`；`medium/low` 只展示，不阻断采用。
 - 复测自身失败时写入 `style_regression: not_checked`，不推翻已有的信息守恒结论，也不把预览判成失败。
-- 检测 prompt `style.detection@v16` 起，每条 violation 必须给出 `disposition`：`fix` 需要修改，`keep` 命中但应保留，`human_review` 需要作者判断。`keep` 与 `human_review` 的 `canAutoRewrite` 必须为 `false`，服务端会再收口一次。
+- 检测 prompt `style.detection@v17` 起，每条 violation 必须给出 `disposition`：`fix` 需要修改，`keep` 命中但应保留，`human_review` 需要作者判断。`keep` 与 `human_review` 的 `canAutoRewrite` 必须为 `false`，服务端会再收口一次。
 - 检测不得把「命中规则」直接等同于「必须清除」：承担信息、限定、人物口吻、场景节拍或题材功能的表达标 `keep`，并说明保留依据。
 
 ### prose 层候选口径（与写法信号对齐）
@@ -304,7 +304,7 @@ story-deslop 的表达层检查里，除了原有的词簇与标点问题，还�
 
 ### Current Rule
 
-- `style.detection@v16` 起，`STYLE_DIAGNOSTIC_RULES` 与 `STYLE_REWRITE_DISCIPLINE` 同时声明白名单，检测与改写两侧都收口。
+- `style.detection@v16` 起引入白名单（当前 `@v17` 继续生效），`STYLE_DIAGNOSTIC_RULES` 与 `STYLE_REWRITE_DISCIPLINE` 同时声明，检测与改写两侧都收口。
 - 白名单特征（配对复测方向反转或净零）：序数词小标题（第一／第二／首先）、「这意味着／也就是说」复述词本身、冒号后纯列举的空转提示、用概括代替具体数值的材料密度、段首零主语评论。
 - 「这意味着」只有在总结或复述主题时才触发 `forbid-theme-summary`；「也就是说」只有在台词替读者解释设定时才触发 `risk-explanatory-dialogue`。词的表面命中不单独判违规。
 - 冒号只把「结论提示」子类（冒号前给结论性判断、冒号后展开论证）当作候选；空转提示（冒号前空洞宣布、冒号后纯列举）是反向信号，人类更多，标 `keep`。
@@ -319,9 +319,45 @@ story-deslop 的表达层检查里，除了原有的词簇与标点问题，还�
 
 ### Related Modules
 
-- 提示词约束：`server/src/prompting/prompts/style/diagnostics/index.ts`、`server/src/prompting/prompts/style/style.prompts.ts`（`style.detection@v16`）。
+- 提示词约束：`server/src/prompting/prompts/style/diagnostics/index.ts`、`server/src/prompting/prompts/style/style.prompts.ts`（`style.detection@v17`）。
 - 规则定义：`server/src/services/styleEngine/defaults.ts`。
 - 候选证据：`server/src/services/styleEngine/signals/index.ts`。
+
+## 语义层四项检测
+
+### Background
+
+去 AI 味的表面信号（模板词、副词、标点）只能抓到「像 AI 的措辞」，抓不到「像 AI 的组织方式」。lieflat 在 270 对同题同事实的配对语料上统计出四项语义层特征，AI 与人类差异显著，且都能给出零信息损失或低损的改写方向——这是本地此前缺失的一块。
+
+### Decision
+
+把四项作为 `style.detection` 的封闭判据维度：脚本只产出定位候选（冒号句、同构三连的位置），是否违规由模型按封闭标签逐条判断；同义重命名与衔接连环依赖语义理解，脚本不强行定位，由模型通读时按判据检测。语料参考值只作校准上下文，不作单篇阈值或作者身份概率。
+
+### Current Rule
+
+- `style.detection@v17` 起，`STYLE_DIAGNOSTIC_RULES` 声明四项封闭判据，`STYLE_REWRITE_DISCIPLINE` 声明对应改写边界。
+- 四项判据与参考值（AI vs 人类，配对语料）：
+  1. **同义重命名**：同一段里同一实体换实义说法、读者要做「X 就是 Y」的等同连接（AI 0.83 次/段 vs 人类 0.49；≥2 次重灾段 AI 20.6% vs 人类 8.4%）。改写方向：统一回原名词，零信息损失。
+  2. **段间衔接连环**：≥6 个段间接口连续明确承接、零自然跳转（AI 中位 7 连环 vs 人类 2）。改写方向：选 1–2 个接口改成自然跳跃，不动其它段。
+  3. **结论提示冒号**：冒号前给结论性判断、冒号后展开论证（AI 2.1–2.2× 人类）。改写方向：删提示语直接写内容。冒号后纯列举的空转提示是反向信号，标 `keep`。
+  4. **高度同构三连**：连续三句句法骨架逐字复刻、只是换词（AI 29.4% vs 人类 10.7%）。改写方向：拆掉一句骨架，不删任何一项内容。
+- 命中时 violation 的 `ruleName` 分别为「同义重命名」「段间衔接连环」「结论提示冒号」「高度同构三连」，`ruleId` 为 `null`（它们不是目录规则），`layer` 用 `surface` 或 `discourse`。
+- 脚本候选：`surface.conclusion-colon` 定位旁白冒号句（跳过带引号的对白），`syntax.isomorphic-triple` 粗筛连续三句（句首同字或三连同问句，长度相近，句首属于已知模板/修饰词的交给对应信号不重复报）。候选只是定位证据，不决定违规。
+- 拿不准标 `keep` 或 `human_review`，不硬判；不得用整体「像不像 AI」的感觉给四项打标签。
+
+### Failure Modes
+
+- **把语料参考值当单篇阈值**：参考值是群体统计，不是「超过这个数就是 AI 写的」；单篇是否违规要看上下文，模型拿不准就标 `keep`。
+- **让脚本直接判违规**：脚本只产出定位候选，是否「结论提示」「高度同构」必须由模型按封闭判据判断；脚本静默判定会违反 AI-First 原则并产生误报。
+- **四项互相重复报**：同构三连句首若已是过渡词重复，由 `template.transition` 覆盖，`syntax.isomorphic-triple` 不再报，避免同一处被算两次。
+- **改写越界**：同义重命名只统一名词不增删信息，衔接连环只改 1–2 个接口，结论冒号只删提示语，同构三连只拆骨架不删内容；越界改写由信息守恒复核与复测护栏拦截。
+
+### Related Modules
+
+- 候选证据：`server/src/services/styleEngine/signals/index.ts`（`surface.conclusion-colon`、`syntax.isomorphic-triple`）。
+- 提示词判据与改写边界：`server/src/prompting/prompts/style/diagnostics/index.ts`、`server/src/prompting/prompts/style/style.prompts.ts`（`style.detection@v17`）。
+- 复测与回归护栏：`server/src/services/styleEngine/rewrite/recheck.ts`。
+- 共享类型：`shared/types/styleEngine/signals.ts`。
 
 ## Failure Modes
 

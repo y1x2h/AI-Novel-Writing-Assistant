@@ -182,6 +182,29 @@ export function scanStyleSignals(content: string, policy: StyleSignalPolicy): St
       emit("discourse.long-paragraph", span.from, span.to, [], 1, visible);
     }
   }
+  // 冒号候选：只定位含冒号的旁白句，是否为「结论提示」由 AI 按封闭判据判断。
+  // 对白引语里的冒号（人名：发言）与版式用途跳过初筛，避免把对话标记成结论宣告。
+  for (const span of units) {
+    const sentence = text.slice(span.from, span.to);
+    if (/[「」『』“”"]/u.test(sentence)) continue;
+    const colonMatches = [...sentence.matchAll(/[：:]/gu)];
+    if (colonMatches.length === 0) continue;
+    const firstColon = colonMatches[0];
+    const before = sentence.slice(0, firstColon.index ?? 0).trim();
+    const after = sentence.slice((firstColon.index ?? 0) + 1).trim();
+    if (before.length < 2 || after.length < 2) continue;
+    emit("surface.conclusion-colon", span.from, span.to, ["："], colonMatches.length,
+      characters(sentence), (sentence.match(/[,，]/gu) ?? []).length);
+  }
+  // 同构三连粗筛：连续三句句首相同或都是问句，且长度相近。只产出候选，
+  // 是否「高度同构」由 AI 收紧判读；句首属于已知模板/修饰词的交给对应信号，不重复报。
+  const excludedOpeners = new Set<string>([
+    ...effective.transitionTerms, ...effective.softenerTerms,
+    ...effective.actionAdverbTerms, ...effective.degreeAdverbTerms, ...effective.fillerTerms,
+  ]);
+  for (const group of isomorphicTripleRuns(units, text, excludedOpeners)) {
+    emit("syntax.isomorphic-triple", group.from, group.to, [], group.hits, group.characters);
+  }
   return { policy: effective, sourceContentHash: createHash("sha256").update(text).digest("hex"),
     coordinateSystem: "utf16-crlf-normalized", findings };
 }
@@ -313,6 +336,45 @@ function actionListRuns(
       }
       if (terminal) reset();
     }
+  }
+  return result;
+}
+
+/**
+ * 连续三句的同构粗筛：句首两字相同，或三句都以问号结尾，且长度相近。
+ * 句首属于已知模板/修饰词的跳过（由对应信号覆盖）；对白跳过。
+ * 只产出定位候选，是否「高度同构」由 AI 收紧判读。
+ */
+function isomorphicTripleRuns(
+  units: Array<{ from: number; to: number }>,
+  text: string,
+  excludedOpeners: Set<string>,
+): Array<{ from: number; to: number; hits: number; characters: number }> {
+  const result: Array<{ from: number; to: number; hits: number; characters: number }> = [];
+  const headOf = (sentence: string) => sentence.replace(/^\s+/u, "").slice(0, 1);
+  for (let i = 0; i + 2 < units.length; i += 1) {
+    const a = text.slice(units[i].from, units[i].to);
+    const b = text.slice(units[i + 1].from, units[i + 1].to);
+    const c = text.slice(units[i + 2].from, units[i + 2].to);
+    if ([a, b, c].some((sentence) => /[「」『』“”"]/u.test(sentence) || !sentence.trim())) continue;
+    const na = characters(a);
+    const nb = characters(b);
+    const nc = characters(c);
+    if (na < 5 || nb < 5 || nc < 5 || na > 120 || nb > 120 || nc > 120) continue;
+    const ha = headOf(a);
+    const hb = headOf(b);
+    const hc = headOf(c);
+    const sameHead = ha.length > 0 && ha === hb && hb === hc;
+    const allQuestions = /[？?]\s*$/u.test(a) && /[？?]\s*$/u.test(b) && /[？?]\s*$/u.test(c);
+    if (!sameHead && !allQuestions) continue;
+    if (sameHead) {
+      const excluded = [...excludedOpeners].some((term) => ha.startsWith(term) || term.startsWith(ha));
+      if (excluded) continue;
+    }
+    const max = Math.max(na, nb, nc);
+    const min = Math.min(na, nb, nc);
+    if (min === 0 || max / min > 2) continue;
+    result.push({ from: units[i].from, to: units[i + 2].to, hits: 3, characters: na + nb + nc });
   }
   return result;
 }

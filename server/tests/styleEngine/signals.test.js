@@ -247,3 +247,20 @@ test('overlong paragraphs suggest breaking by shot', () => {
   assert.equal(result[0].characters, 301);
   assert.equal(rule('甲'.repeat(100) + '。', id).length, 0);
 });
+
+test('conclusion colon candidate locates narration colons and skips quoted dialogue', () => {
+  const id = 'surface.conclusion-colon';
+  assert.equal(rule('这组数字传递出一个残酷的现实：所有人都在隐瞒真相。', id).length, 1);
+  assert.equal(rule('名单如下：甲、乙、丙。', id).length, 1);
+  assert.equal(rule('「张三：你终于来了。」李四没有接话。', id).length, 0);
+  assert.equal(rule('注意：', id).length, 0);
+});
+
+test('isomorphic triple candidate flags same-head or all-question runs, defers to existing opener signals', () => {
+  const id = 'syntax.isomorphic-triple';
+  assert.equal(rule('他推开门。他走进屋里。他放下背包。', id).length, 1);
+  assert.equal(rule('叫什么名字？承载什么功能？嵌入哪个生态？', id).length, 1);
+  assert.equal(rule('不可否认，这是第一。不可否认，这是第二。不可否认，这是第三。', id).length, 0);
+  assert.equal(rule('他推开门。他走进了那间洒满月光、摆着旧家具的大屋子。他放下背包。', id).length, 0);
+  assert.equal(rule('他推开门。他走进屋里。', id).length, 0);
+});
