@@ -257,7 +257,7 @@ story-deslop 的表达层检查里，除了原有的词簇与标点问题，还�
 - 度量实现：`server/src/services/novel/runtime/proseQuality/ProseQualityDetector.ts`。
 - 阈值定义：`shared/types/styleEngine/signals.ts`（`StyleSignalPolicy`）。
 - 接入点：`server/src/services/novel/runtime/ChapterAcceptanceAssessmentService.ts`、`ChapterContentFinalizationService.ts`。
-- 提示词：`server/src/prompting/prompts/style/style.prompts.ts`（`style.detection@v15`）。
+- 提示词：`server/src/prompting/prompts/style/style.prompts.ts`（`style.detection@v16`）。
 
 ## 改写复检闭环（rewrite recheck）
 
@@ -275,7 +275,7 @@ story-deslop 的表达层检查里，除了原有的词簇与标点问题，还�
 - 比较口径是「同一规则身份下的条目数量」：规则身份优先用 `ruleId`，缺失时退回规则名。减少记为已处理，持平记为仍保留，增加记为复测新增；改写后的措辞变化不构成新增。
 - 新增 `high` 视为回归，直接保留原稿，并在 `rewriteGuard` 写入 `style_regression: blocked`；`medium/low` 只展示，不阻断采用。
 - 复测自身失败时写入 `style_regression: not_checked`，不推翻已有的信息守恒结论，也不把预览判成失败。
-- 检测 prompt `style.detection@v15` 起，每条 violation 必须给出 `disposition`：`fix` 需要修改，`keep` 命中但应保留，`human_review` 需要作者判断。`keep` 与 `human_review` 的 `canAutoRewrite` 必须为 `false`，服务端会再收口一次。
+- 检测 prompt `style.detection@v16` 起，每条 violation 必须给出 `disposition`：`fix` 需要修改，`keep` 命中但应保留，`human_review` 需要作者判断。`keep` 与 `human_review` 的 `canAutoRewrite` 必须为 `false`，服务端会再收口一次。
 - 检测不得把「命中规则」直接等同于「必须清除」：承担信息、限定、人物口吻、场景节拍或题材功能的表达标 `keep`，并说明保留依据。
 
 ### prose 层候选口径（与写法信号对齐）
@@ -291,6 +291,37 @@ story-deslop 的表达层检查里，除了原有的词簇与标点问题，还�
 - **用 excerpt 文本当问题身份**：改写后措辞必然变化，会把处理成功误判成新增问题。
 - **在章节热路径默认开启复测**：全书链每章多一次模型调用，成本不可控；复测只属于用户可见的预览。
 - **把标点密度重新提成 high**：会回到「好稿被判坏、修复循环空转」的老问题。
+
+## 已否决特征（X 级）禁改白名单
+
+### Background
+
+去 AI 味的早期规则常把「看起来像 AI」的表面特征列进清理清单，但其中一部分在配对语料（同题、同事实、人类与 AI 各写一篇）的复测里方向反转或净零：它们并不是 AI 味，有些反而是人类更常用的写法。如果继续按旧清单清理，会把正常句子改坏，甚至改得更像 AI。
+
+### Decision
+
+把这些特征显式列入禁改白名单：检测不得判违规，改写不得触碰。白名单只约束「特征本身」，不豁免「用该特征做违规行为」——例如「这意味着」这个词本身不构成指纹，但用它总结主题仍按「禁止总结主题」处理。
+
+### Current Rule
+
+- `style.detection@v16` 起，`STYLE_DIAGNOSTIC_RULES` 与 `STYLE_REWRITE_DISCIPLINE` 同时声明白名单，检测与改写两侧都收口。
+- 白名单特征（配对复测方向反转或净零）：序数词小标题（第一／第二／首先）、「这意味着／也就是说」复述词本身、冒号后纯列举的空转提示、用概括代替具体数值的材料密度、段首零主语评论。
+- 「这意味着」只有在总结或复述主题时才触发 `forbid-theme-summary`；「也就是说」只有在台词替读者解释设定时才触发 `risk-explanatory-dialogue`。词的表面命中不单独判违规。
+- 冒号只把「结论提示」子类（冒号前给结论性判断、冒号后展开论证）当作候选；空转提示（冒号前空洞宣布、冒号后纯列举）是反向信号，人类更多，标 `keep`。
+- 比喻贴切度、暗喻、拟人化喻体：模型间共识不足（0–40%），只可标 `keep` 或 `human_review`，不得自动替换喻体或改暗喻。
+- 白名单特征若同时承担违规行为，按行为对应的规则处理并标 `disposition`，不因白名单而放行违规行为。
+
+### Failure Modes
+
+- **把白名单当成「这些词永远不能动」**：白名单豁免的是特征本身，不是用该特征实施的违规行为；「这意味着」总结主题仍要处理。
+- **在检测里删除对应目录规则**：`forbid-theme-summary` 等规则约束的是行为，不能因为词被白名单就删掉规则。
+- **让脚本信号直接排除白名单特征**：信号仍可产出候选（如冒号定位），但是否违规由模型按白名单判据判断；脚本不得静默过滤，否则会丢失「结论冒号」这类真信号。
+
+### Related Modules
+
+- 提示词约束：`server/src/prompting/prompts/style/diagnostics/index.ts`、`server/src/prompting/prompts/style/style.prompts.ts`（`style.detection@v16`）。
+- 规则定义：`server/src/services/styleEngine/defaults.ts`。
+- 候选证据：`server/src/services/styleEngine/signals/index.ts`。
 
 ## Failure Modes
 
