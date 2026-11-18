@@ -5,7 +5,7 @@ const shared = require('../../../shared/dist/types/styleEngine.js');
 const protection = require('../../dist/services/styleEngine/rewrite');
 const original = '张三缓缓打开木门，等李四进屋。';
 const violation = { layer: 'surface', ruleName: '动作堆叠', canAutoRewrite: true, excerpt: '张三缓缓打开木门，', suggestion: '删去副词' };
-function fixture(violations, patch = {}, conservation = { status: 'preserved', reason: '只改变表达' }) {
+function fixture(violations, patch = {}, conservation = { status: 'preserved', reason: '只改变表达' }, recheckViolations = null) {
   const requests = [];
   let checks = 0;
   const { StyleRewriteService } = loadRuntimeSource('../../styleEngine/StyleRewriteService.ts', {
@@ -24,12 +24,16 @@ function fixture(violations, patch = {}, conservation = { status: 'preserved', r
     './styleContractText': { buildWriterStyleContractText: () => '写法合同' },
     './StyleRuntimeResolver': { StyleRuntimeResolver: class { async resolve() { return { antiAiRules: [], context: {} }; } } },
     './antiAiPreviewRules': { buildAntiAiRuleDirectiveText: () => '', listPreviewAntiAiRules: async () => [] },
-    './StyleDetectionService': { StyleDetectionService: class { async check() { checks++; return { violations }; } } },
+    './StyleDetectionService': { StyleDetectionService: class { async check() {
+      checks++;
+      return { violations: checks > 1 && recheckViolations ? recheckViolations : violations };
+    } } },
     './StyleFragmentRuleService': { StyleFragmentRuleService: class { async listProtectedFragments() { return []; } } },
     './fragments/StyleFragmentRuleService': { StyleFragmentRuleService: class { async listProtectedFragments() { return []; } } },
     './ledger/buildLedgerEntries': { buildLedgerEntries: () => [] },
     './ledger/StyleRewriteLedgerService': { StyleRewriteLedgerService: class { async record() {} async list() { return []; } } },
     './rewrite': protection,
+    './rewrite/recheck': require('../../dist/services/styleEngine/rewrite/recheck.js'),
   });
   return { instance: new StyleRewriteService(), requests, get checks() { return checks; } };
 }
@@ -52,6 +56,22 @@ test('rewrite that adds or loses information retains the original draft', async 
   assert.equal(result.rewriteGuard.checks.at(-1).status, 'blocked');
   assert.match(result.rewriteGuard.checks.at(-1).reason, /改写增删了原文信息/);
 });
+test('recheck retains the original when the candidate introduces a new high-risk issue', async () => {
+  const h = fixture([violation], {}, undefined, [
+    violation,
+    { layer: 'surface', ruleId: 'new-rule', ruleName: '新出现的表达问题', severity: 'high', canAutoRewrite: true, excerpt: '张三缓缓打开木门，', suggestion: '重写整句' },
+  ]);
+
+  const result = await h.instance.rewrite({ ...input, recheck: true });
+
+  assert.equal(h.checks, 2);
+  assert.equal(result.content, original);
+  assert.equal(result.recheck.introduced.length, 1);
+  assert.equal(result.recheck.introduced[0].ruleId, 'new-rule');
+  const regression = result.rewriteGuard.checks.find(check => check.code === 'style_regression');
+  assert.equal(regression.status, 'blocked');
+});
+
 test('manual request cannot bypass narrative, legacy or instance rewrite refusals', async () => {
   for (const item of [{ ...violation, layer: 'narrative' }, { ...violation, layer: undefined }, { ...violation, canAutoRewrite: false }]) {
     const h = fixture([item]);

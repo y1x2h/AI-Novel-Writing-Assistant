@@ -257,11 +257,44 @@ story-deslop 的表达层检查里，除了原有的词簇与标点问题，还�
 - 度量实现：`server/src/services/novel/runtime/proseQuality/ProseQualityDetector.ts`。
 - 阈值定义：`shared/types/styleEngine/signals.ts`（`StyleSignalPolicy`）。
 - 接入点：`server/src/services/novel/runtime/ChapterAcceptanceAssessmentService.ts`、`ChapterContentFinalizationService.ts`。
-- 提示词：`server/src/prompting/prompts/style/style.prompts.ts`（`style.detection@v14`）。
+- 提示词：`server/src/prompting/prompts/style/style.prompts.ts`（`style.detection@v15`）。
+
+## 改写复检闭环（rewrite recheck）
+
+### Background
+
+检测、局部改写与信息守恒已经串成三步，但改写之后是否真的减少了问题、有没有改出新问题，过去没有证据。用户只能看到一份「改前报告」，无法判断这次的修改值不值得采用。
+
+### Decision
+
+改写预览在候选稿上复跑同一次检测，按规则身份比较两次输出；出现新的高风险问题时默认保留原稿。复测是交互预览的默认能力，但不进入章节热路径。
+
+### Current Rule
+
+- `StyleRewriteService.rewrite` 只有显式 `recheck: true` 才复测；`/style-detection/rewrite` 路由默认补齐 `true`，章节后置链不传，避免全书链每章多一次模型调用。
+- 比较口径是「同一规则身份下的条目数量」：规则身份优先用 `ruleId`，缺失时退回规则名。减少记为已处理，持平记为仍保留，增加记为复测新增；改写后的措辞变化不构成新增。
+- 新增 `high` 视为回归，直接保留原稿，并在 `rewriteGuard` 写入 `style_regression: blocked`；`medium/low` 只展示，不阻断采用。
+- 复测自身失败时写入 `style_regression: not_checked`，不推翻已有的信息守恒结论，也不把预览判成失败。
+- 检测 prompt `style.detection@v15` 起，每条 violation 必须给出 `disposition`：`fix` 需要修改，`keep` 命中但应保留，`human_review` 需要作者判断。`keep` 与 `human_review` 的 `canAutoRewrite` 必须为 `false`，服务端会再收口一次。
+- 检测不得把「命中规则」直接等同于「必须清除」：承担信息、限定、人物口吻、场景节拍或题材功能的表达标 `keep`，并说明保留依据。
+
+### prose 层候选口径（与写法信号对齐）
+
+- `prose_dash_or_ellipsis` 只统计旁白，整行对白跳过，并按 `StyleSignalPolicy.emDashCount`（默认 2）的密度触发，严重度固定 `medium`。
+- `prose_negative_flip` 改为整章统计：旁白中同一否定翻转句式至少出现 2 次才提示，严重度固定 `medium`。
+- 两者都只作候选证据，不进入 `hasBlockingFindings`；是否阻塞仍由 AI 接收闸门结合上下文判断。
+- 这样做的原因是修复两个反向问题：单处破折号或单处否定对比被判阻塞，会把好稿判坏；对白里的「——」是正常打断，不能当成模型指纹。
+
+### Failure Modes
+
+- **把复测结果直接覆盖原报告**：用户会失去改动前的对照基础，「已处理多少」也就无法解释。
+- **用 excerpt 文本当问题身份**：改写后措辞必然变化，会把处理成功误判成新增问题。
+- **在章节热路径默认开启复测**：全书链每章多一次模型调用，成本不可控；复测只属于用户可见的预览。
+- **把标点密度重新提成 high**：会回到「好稿被判坏、修复循环空转」的老问题。
 
 ## Failure Modes
 
-- **把可编辑基线规则做成硬编码黑名单**：会让用户无法调整规则库，也违反 AI-First 原则。规则必须是数据。
+- **把可编辑基线规则做成硬编码黑名单**：会让用户无法独立调整规则库，也违反 AI-First 原则。规则必须是数据。
 - **用 `detectPatterns` 直接做运行时字符串匹配**：会把正常的「不是……而是……」全部误判为违规。检测只能由模型做语义判断。
 - **给需要判断替换内容的规则打开 `autoRewrite`**：自动改写容易把正确句子改坏，尤其在二分句式与标点规则上。
 - **只加规则、不同步检测说明与自检清单**：规则进了目录但检测召回不足，用户看到的是「规则有了但没抓到」。
@@ -275,7 +308,7 @@ story-deslop 的表达层检查里，除了原有的词簇与标点问题，还�
 - 检测与改写 prompt：`server/src/prompting/prompts/style/style.prompts.ts`、`style.promptSchemas.ts`。
 - 规则生效策略：`server/src/services/styleEngine/AntiAiPolicyResolver.ts`。
 - 统计学校准：`server/src/services/styleEngine/calibration/`（`calibrationMetrics.ts`、`calibrationBaseline.ts`、`runCalibration.ts`、`corpus/`）。
-- 改写护栏与力度阈值：`server/src/services/styleEngine/rewrite/index.ts`、`StyleRewriteService.ts`。
+- 改写护栏与力度阈值：`server/src/services/styleEngine/rewrite/index.ts`、`StyleRewriteService.ts`、`rewrite/recheck.ts`。
 - 禁改清单：`server/src/services/styleEngine/fragments/StyleFragmentRuleService.ts`、`shared/types/styleEngine/fragmentRules.ts`、`client/src/components/styleReview/StyleProtectedFragmentEditor.tsx`。
 - 改动台账：`server/src/services/styleEngine/ledger/StyleRewriteLedgerService.ts`、`ledger/buildLedgerEntries.ts`、`shared/types/styleEngine/ledger.ts`、`client/src/components/styleReview/StyleRewriteLedgerList.tsx`。
 - 按写法调门限：`server/src/services/styleEngine/signals/StyleSignalPolicyResolver.ts`、`shared/types/styleEngine/signals.ts`、`server/src/services/styleEngine/StyleDetectionService.ts`。

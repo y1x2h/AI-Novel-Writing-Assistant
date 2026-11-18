@@ -91,12 +91,15 @@ export class StyleDetectionService {
       const ruleId = matchedRule?.id ?? item.ruleId ?? item.ruleName;
       const ruleType = matchedRule?.type ?? item.ruleType;
       const source = inferStyleViolationSource(ruleId, contract);
+      // keep / human_review 只是报告，不授予自动改写权限；旧报告缺失时按 fix 处理。
+      const disposition = item.disposition ?? "fix";
       return {
         ruleId, ruleName: matchedRule?.name ?? item.ruleName, ruleType,
         severity: matchedRule?.severity ?? item.severity, source, layer: item.layer,
         issueCategory: inferStyleIssueCategory({ issueCategory: item.issueCategory, source, ruleType }),
         excerpt: item.excerpt, reason: item.reason, suggestion: item.suggestion,
-        canAutoRewrite: isStyleIssueRewritable(item, matchedRule?.autoRewrite ?? true),
+        disposition,
+        canAutoRewrite: disposition === "fix" && isStyleIssueRewritable(item, matchedRule?.autoRewrite ?? true),
       };
     });
     return {

@@ -7,6 +7,7 @@ import type {
   StyleBinding,
   StyleDetectionReport,
   StyleRewriteGuard,
+  StyleRewriteRecheck,
   StyleRewriteScope,
   StyleExtractionDraft,
   StyleExtractionSourceProcessingMode,
@@ -328,8 +329,10 @@ export async function rewriteStyleIssues(payload: {
   model?: string;
   temperature?: number;
   scope?: StyleRewriteScope;
+  /** 预览需要查看改写前后对照，默认由服务端执行复测。 */
+  recheck?: boolean;
 }) {
-  const { data } = await apiClient.post<ApiResponse<{ content: string; report?: StyleDetectionReport; rewriteGuard?: StyleRewriteGuard }>>("/style-detection/rewrite", payload);
+  const { data } = await apiClient.post<ApiResponse<{ content: string; report?: StyleDetectionReport; rewriteGuard?: StyleRewriteGuard; recheck?: StyleRewriteRecheck }>>("/style-detection/rewrite", payload);
   return data;
 }
 

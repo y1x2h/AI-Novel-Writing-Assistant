@@ -316,6 +316,7 @@ export default function AntiAiRulesPage() {
             report={currentRewrite?.report ?? currentDetection ?? null}
             rewritePreview={currentRewrite ? rewritePreview : ""}
             rewriteGuard={currentRewrite?.rewriteGuard}
+            rewriteRecheck={currentRewrite?.recheck}
             detectionPending={detectionMutation.isPending}
             rewritePending={rewriteMutation.isPending}
             rewriteScope={rewriteScope}

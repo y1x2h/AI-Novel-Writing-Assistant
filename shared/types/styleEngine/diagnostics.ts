@@ -17,6 +17,35 @@ export const styleRewriteEscalationSchema = z.object({
 });
 export type StyleRewriteEscalation = z.infer<typeof styleRewriteEscalationSchema>;
 
+/**
+ * AI 对单条命中的处理去向：确需修改、应保留、需要作者判断。
+ * keep / human_review 只作为报告，不授予自动改写权限。
+ */
+export const styleIssueDispositionSchema = z.enum(["fix", "keep", "human_review"]);
+export type StyleIssueDisposition = z.infer<typeof styleIssueDispositionSchema>;
+
+/** 改写后复测里新增的问题条目；只描述可以定位到原文的候选回归。 */
+export const styleRewriteRecheckIssueSchema = z.object({
+  ruleId: z.string(),
+  ruleName: z.string(),
+  severity: z.enum(["low", "medium", "high"]),
+  excerpt: z.string(),
+});
+export type StyleRewriteRecheckIssue = z.infer<typeof styleRewriteRecheckIssueSchema>;
+
+/**
+ * 改写前后对照：按规则身份比较两次检测输出。
+ * resolved / remaining 是数量口径，introduced 只在天平上新增时出现。
+ */
+export const styleRewriteRecheckSchema = z.object({
+  beforeRiskScore: z.number(),
+  afterRiskScore: z.number(),
+  resolved: z.number().int().nonnegative(),
+  remaining: z.number().int().nonnegative(),
+  introduced: z.array(styleRewriteRecheckIssueSchema),
+});
+export type StyleRewriteRecheck = z.infer<typeof styleRewriteRecheckSchema>;
+
 export const styleRewriteGuardSchema = z.object({
   sourceContentHash: z.string(),
   candidateContentHash: z.string(),
@@ -29,7 +58,7 @@ export const styleRewriteGuardSchema = z.object({
   deletionRatio: z.number().nonnegative().optional(),
   escalations: z.array(styleRewriteEscalationSchema).optional(),
   checks: z.array(z.object({
-    code: z.enum(["patch_scope", "edit_budget", "deletion_budget", "protected_terms", "protected_fragment", "semantic_facts"]),
+    code: z.enum(["patch_scope", "edit_budget", "deletion_budget", "protected_terms", "protected_fragment", "semantic_facts", "style_regression"]),
     status: z.enum(["passed", "blocked", "not_checked"]),
     reason: z.string(),
   })),

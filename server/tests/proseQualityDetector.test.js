@@ -35,6 +35,7 @@ test("detectProseQuality detects deterministic prose degradation signals", () =>
   const longParagraph = `${"潮声压在城墙外，灯火一层层熄灭，守夜人握紧刀柄。".repeat(12)}。`;
   const report = detectProseQuality([
     "他不是害怕，而是终于明白自己已经没有退路。",
+    "这不是结束，而是另一场较量的开始。",
     "门后传来声音——很轻，却像刀锋一样贴着耳骨……",
     "他停下。他抬头。他看门。他推开。他进去。他沉默。",
     longParagraph,
@@ -59,7 +60,34 @@ test("detectProseQuality detects deterministic prose degradation signals", () =>
     "prose_engineering_term_leak",
   ]));
   assert.ok(severitiesByCode(report, "prose_long_paragraph").includes("medium"));
+  assert.ok(severitiesByCode(report, "prose_negative_flip").every((severity) => severity === "medium"));
+  assert.ok(severitiesByCode(report, "prose_dash_or_ellipsis").every((severity) => severity === "medium"));
   assert.ok(severitiesByCode(report, "prose_ai_self_reference").includes("critical"));
+});
+
+test("treats punctuation and negation as candidates instead of blocking verdicts", () => {
+  const dialoguePunctuation = detectProseQuality([
+    "「你——」她没说完。",
+    "「我只是……」他把话咽回去。",
+    "他说完这句，就转身离开了。",
+  ].join("\n"));
+  assert.equal(codes(dialoguePunctuation).includes("prose_dash_or_ellipsis"), false);
+
+  const singleNarrationDash = detectProseQuality("门后传来声音——很轻，却贴着耳骨。");
+  assert.equal(codes(singleNarrationDash).includes("prose_dash_or_ellipsis"), false);
+
+  const singleFlip = detectProseQuality("他不是害怕，而是终于明白自己已经没有退路。");
+  assert.equal(codes(singleFlip).includes("prose_negative_flip"), false);
+  assert.equal(singleFlip.hasBlockingFindings, false);
+
+  const repeatedFlip = detectProseQuality([
+    "他不是害怕，而是终于明白自己已经没有退路。",
+    "这不是结束，而是另一场较量的开始。",
+  ].join("\n"));
+  const flipFindings = repeatedFlip.findings.filter((finding) => finding.code === "prose_negative_flip");
+  assert.equal(flipFindings.length, 2);
+  assert.ok(flipFindings.every((finding) => finding.severity === "medium"));
+  assert.equal(repeatedFlip.hasBlockingFindings, false);
 });
 
 test("detectProseQuality keeps common false positives out of blocking findings", () => {

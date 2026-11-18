@@ -684,6 +684,7 @@ export default function WritingFormulaPage() {
               rewritePending={rewriteMutation.isPending}
               rewritePreview={currentRewrite ? rewritePreview : ""}
               rewriteGuard={currentRewrite?.rewriteGuard}
+              rewriteRecheck={currentRewrite?.recheck}
               rewriteScope={rewriteScope}
               onRewriteScopeChange={setRewriteScope}
               onDetectInputChange={setDetectInput}

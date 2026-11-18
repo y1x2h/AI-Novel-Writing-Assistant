@@ -1,6 +1,6 @@
 import type { LLMProvider } from "@ai-novel/shared/types/llm";
 import { runStructuredPrompt } from "../../prompting/core/promptRunner";
-import { isStyleIssueRewritable, selectPresentFragments, type StyleRewriteGuard, type StyleRewriteLedgerEntry, type StyleRewriteScope, type StyleDetectionReport } from "@ai-novel/shared/types/styleEngine";
+import { isStyleIssueRewritable, selectPresentFragments, type StyleRewriteGuard, type StyleRewriteLedgerEntry, type StyleRewriteRecheck, type StyleRewriteScope, type StyleDetectionReport } from "@ai-novel/shared/types/styleEngine";
 import { styleRewritePrompt } from "../../prompting/prompts/style/style.prompts";
 import { styleRewriteConservationPrompt } from "../../prompting/prompts/style/styleRewriteConservation.prompts";
 import { buildWriterStyleContractText } from "./styleContractText";
@@ -11,6 +11,7 @@ import { StyleFragmentRuleService } from "./fragments/StyleFragmentRuleService";
 import { buildLedgerEntries } from "./ledger/buildLedgerEntries";
 import { StyleRewriteLedgerService } from "./ledger/StyleRewriteLedgerService";
 import { guardStylePatches } from "./rewrite";
+import { compareStyleReports, hasBlockingStyleRegression, withStyleRegressionCheck } from "./rewrite/recheck";
 
 interface ConservationVerdict {
   status: "preserved" | "changed" | "uncertain";
@@ -47,6 +48,8 @@ interface RewriteInput {
   temperature?: number;
   /** 用户可见的改写力度：轻改 / 中改 / 重写，默认沿用自由档。 */
   scope?: StyleRewriteScope;
+  /** 候选稿生成后是否复测；交互预览默认复测，章节后置链为控制成本可关闭。 */
+  recheck?: boolean;
 }
 
 export class StyleRewriteService {
@@ -55,7 +58,12 @@ export class StyleRewriteService {
   private readonly fragmentRules = new StyleFragmentRuleService();
   private readonly ledger = new StyleRewriteLedgerService();
 
-  async rewrite(input: RewriteInput): Promise<{ content: string; report: StyleDetectionReport; rewriteGuard?: StyleRewriteGuard }> {
+  async rewrite(input: RewriteInput): Promise<{
+    content: string;
+    report: StyleDetectionReport;
+    rewriteGuard?: StyleRewriteGuard;
+    recheck?: StyleRewriteRecheck;
+  }> {
     // Request issues are hints, never an authorization receipt. Recheck the current
     // source and policy; clients cannot mark narrative edits as safe.
     const report = await this.detector.check(input);
@@ -113,7 +121,18 @@ export class StyleRewriteService {
       provider: input.provider,
       model: input.model,
     });
-    const adopted = verdict !== null && verdict.status !== "changed";
+    let adopt = verdict !== null && verdict.status !== "changed";
+    let guard: StyleRewriteGuard = verdict && !guardBlocked
+      ? upgradeGuardWithConservation(protectedResult.guard, verdict)
+      : protectedResult.guard;
+    let recheck: StyleRewriteRecheck | undefined;
+    if (adopt && input.recheck === true) {
+      recheck = await this.recheckCandidate({ input, before: report, candidate: protectedResult.content });
+      guard = withStyleRegressionCheck(guard, recheck);
+      if (recheck && hasBlockingStyleRegression(recheck)) {
+        adopt = false;
+      }
+    }
     await this.recordLedger({
       novelId: input.novelId,
       chapterId: input.chapterId,
@@ -123,17 +142,40 @@ export class StyleRewriteService {
       entries: buildLedgerEntries({
         plan: result.output,
         issues,
-        guard: protectedResult.guard,
-        adopt: adopted,
+        guard,
+        adopt,
       }),
     });
     return {
-      content: adopted ? protectedResult.content : input.content,
+      content: adopt ? protectedResult.content : input.content,
       report,
-      rewriteGuard: verdict && !guardBlocked
-        ? upgradeGuardWithConservation(protectedResult.guard, verdict)
-        : protectedResult.guard,
+      rewriteGuard: guard,
+      recheck,
     };
+  }
+
+  /** 复测只在候选稿上重跑同一检测；失败时退回未复测，不影响已有守恒结论。 */
+  private async recheckCandidate(input: {
+    input: RewriteInput;
+    before: StyleDetectionReport;
+    candidate: string;
+  }): Promise<StyleRewriteRecheck | undefined> {
+    try {
+      const after = await this.detector.check({
+        content: input.candidate,
+        styleProfileId: input.input.styleProfileId,
+        novelId: input.input.novelId,
+        chapterId: input.input.chapterId,
+        taskStyleProfileId: input.input.taskStyleProfileId,
+        previewAntiAiRuleIds: input.input.previewAntiAiRuleIds,
+        provider: input.input.provider,
+        model: input.input.model,
+        temperature: 0.2,
+      });
+      return compareStyleReports(input.before, after);
+    } catch {
+      return undefined;
+    }
   }
 
   /** 台账只归档结果，写入失败不影响本次改写，也不改变正文链路。 */

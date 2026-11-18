@@ -76,6 +76,7 @@ export const styleDetectionViolationSchema = z.object({
   excerpt: z.string(),
   reason: z.string(),
   suggestion: z.string(),
+  disposition: z.enum(["fix", "keep", "human_review"]).optional(),
   canAutoRewrite: z.boolean(),
 });
 

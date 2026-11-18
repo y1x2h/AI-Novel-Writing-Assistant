@@ -1,4 +1,4 @@
-import { isStyleIssueRewritable, type StyleDetectionReport, type StyleProfile, type StyleRewriteGuard, type StyleRewriteScope } from "@ai-novel/shared/types/styleEngine";
+import { isStyleIssueRewritable, type StyleDetectionReport, type StyleProfile, type StyleRewriteGuard, type StyleRewriteRecheck, type StyleRewriteScope } from "@ai-novel/shared/types/styleEngine";
 import { StyleProtectedFragmentEditor, StyleRiskReport, StyleRewriteLedgerList, StyleRewriteProtection, StyleRewriteScopeSelect } from "@/components/styleReview";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,6 +12,7 @@ interface WritingFormulaCleanPanelProps {
   rewritePending: boolean;
   rewritePreview: string;
   rewriteGuard?: StyleRewriteGuard;
+  rewriteRecheck?: StyleRewriteRecheck;
   rewriteScope: StyleRewriteScope;
   onRewriteScopeChange: (scope: StyleRewriteScope) => void;
   onDetectInputChange: (value: string) => void;
@@ -121,7 +122,7 @@ export default function WritingFormulaCleanPanel(props: WritingFormulaCleanPanel
 
           {rewritePreview ? (
             <div className="space-y-2">
-              <StyleRewriteProtection guard={props.rewriteGuard} retainedOriginal={rewritePreview === detectInput} />
+              <StyleRewriteProtection guard={props.rewriteGuard} retainedOriginal={rewritePreview === detectInput} recheck={props.rewriteRecheck} />
               <pre className="max-h-[320px] overflow-auto whitespace-pre-wrap rounded-xl bg-muted/20 p-4 text-sm">
                 {rewritePreview}
               </pre>

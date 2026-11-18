@@ -19,6 +19,7 @@ export const styleDetectionViolationSchema = z.object({
   excerpt: z.string().trim().min(1).describe("当前正文中的一段连续原句，逐字复制；不得拼接或添加省略号缩写。"),
   reason: z.string().trim().min(1),
   suggestion: z.string().trim().min(1),
+  disposition: z.enum(["fix", "keep", "human_review"]).optional(),
   canAutoRewrite: z.boolean(),
 });
 

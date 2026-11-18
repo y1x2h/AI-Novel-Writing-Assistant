@@ -1,10 +1,16 @@
-import { isStyleIssueRewritable, type StyleDetectionReport, type StyleRewriteGuard, type StyleRewriteScope } from "@ai-novel/shared/types/styleEngine";
+import { isStyleIssueRewritable, type StyleDetectionReport, type StyleRewriteGuard, type StyleRewriteRecheck, type StyleRewriteScope } from "@ai-novel/shared/types/styleEngine";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export { StyleProtectedFragmentEditor } from "./StyleProtectedFragmentEditor";
 export { StyleRewriteLedgerList } from "./StyleRewriteLedgerList";
 
 const layerLabels = { surface: "句子表达", discourse: "段落衔接", narrative: "叙事建议" };
+
+function issueActionLabel(issue: StyleDetectionReport["violations"][number]): string {
+  if (issue.disposition === "keep") return "建议保留";
+  if (issue.disposition === "human_review") return "需要你判断";
+  return isStyleIssueRewritable(issue) ? "可局部修订" : "仅提供建议";
+}
 
 const rewriteScopeOptions: Array<{ value: StyleRewriteScope; label: string; hint: string }> = [
   { value: "in_place", label: "轻改", hint: "只换词和短语，不删整句" },
@@ -45,7 +51,7 @@ export function StyleRiskReport({ report }: { report: StyleDetectionReport }) {
       {report.violations.map((issue, index) => <article key={`${issue.ruleId}-${index}`} className="space-y-2 py-3">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
           <h4 className="font-medium text-foreground">{issue.ruleName}</h4>
-          <span className="text-xs text-muted-foreground">{issue.layer ? layerLabels[issue.layer] : "写法提醒"} · {isStyleIssueRewritable(issue) ? "可局部修订" : "仅提供建议"}</span>
+          <span className="text-xs text-muted-foreground">{issue.layer ? layerLabels[issue.layer] : "写法提醒"} · {issueActionLabel(issue)}</span>
         </div>
         <p className="leading-6 text-muted-foreground">{issue.reason}</p>
         <blockquote className="whitespace-pre-wrap rounded-md bg-muted/30 px-3 py-2 leading-6 text-foreground">{issue.excerpt}</blockquote>
@@ -56,12 +62,25 @@ export function StyleRiskReport({ report }: { report: StyleDetectionReport }) {
   </section>;
 }
 
-export function StyleRewriteProtection({ guard, retainedOriginal }: { guard?: StyleRewriteGuard; retainedOriginal?: boolean }) {
+export function StyleRewriteProtection({ guard, retainedOriginal, recheck }: {
+  guard?: StyleRewriteGuard;
+  retainedOriginal?: boolean;
+  recheck?: StyleRewriteRecheck;
+}) {
   const blocked = guard?.checks.filter(check => check.status === "blocked") ?? [];
   return <div role="status" className={`space-y-1 rounded-md px-3 py-2 text-sm leading-6 ${blocked.length ? "bg-amber-500/10 text-foreground" : "bg-muted/30 text-muted-foreground"}`}>
     <p className="font-medium">{retainedOriginal ? "保留原稿" : "局部修订预览"}</p>
     {blocked.map(check => <p key={check.code}>{check.reason}</p>)}
     {!blocked.length ? <p>{retainedOriginal ? "没有需要安全替换的表达，原文保持不变。" : "比较人物口吻、动作和信息，再采用需要的修改。"}</p> : null}
+    {recheck ? <p>本次修订处理 {recheck.resolved} 处，仍有 {recheck.remaining} 处保留；表达风险参考分 {recheck.beforeRiskScore} → {recheck.afterRiskScore}。</p> : null}
+    {recheck?.introduced.length ? <div className="text-xs leading-5">
+      <p>复测新增 {recheck.introduced.length} 处需要留意：</p>
+      <ul className="list-disc space-y-1 pl-4">
+        {recheck.introduced.slice(0, 3).map((issue, index) => <li key={`${issue.ruleId}-${index}`}>
+          {issue.ruleName}：{issue.excerpt}
+        </li>)}
+      </ul>
+    </div> : null}
     {guard?.checks.some(check => check.code === "semantic_facts" && check.status === "not_checked") && !retainedOriginal
       ? <p className="text-xs">请结合本书的人物与设定核对预览。</p> : null}
   </div>;

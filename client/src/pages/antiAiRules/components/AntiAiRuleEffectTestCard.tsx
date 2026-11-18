@@ -1,4 +1,4 @@
-import { isStyleIssueRewritable, type AntiAiRule, type StyleDetectionReport, type StyleRewriteGuard, type StyleRewriteScope } from "@ai-novel/shared/types/styleEngine";
+import { isStyleIssueRewritable, type AntiAiRule, type StyleDetectionReport, type StyleRewriteGuard, type StyleRewriteRecheck, type StyleRewriteScope } from "@ai-novel/shared/types/styleEngine";
 import { StyleRiskReport, StyleRewriteProtection, StyleRewriteScopeSelect } from "@/components/styleReview";
 import { FlaskConical, Loader2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,7 @@ interface AntiAiRuleEffectTestCardProps {
   report: StyleDetectionReport | null;
   rewritePreview: string;
   rewriteGuard?: StyleRewriteGuard;
+  rewriteRecheck?: StyleRewriteRecheck;
   detectionPending: boolean;
   rewritePending: boolean;
   rewriteScope: StyleRewriteScope;
@@ -92,7 +93,7 @@ export default function AntiAiRuleEffectTestCard(props: AntiAiRuleEffectTestCard
       {props.rewritePreview ? (
         <div className="space-y-3 border-t border-border/60 pt-4">
           <h3 className="text-sm font-semibold">局部修订预览</h3>
-          <StyleRewriteProtection guard={props.rewriteGuard} retainedOriginal={props.rewritePreview === props.content} />
+          <StyleRewriteProtection guard={props.rewriteGuard} retainedOriginal={props.rewritePreview === props.content} recheck={props.rewriteRecheck} />
           <div className="max-h-[360px] overflow-auto whitespace-pre-wrap break-words rounded-lg bg-muted/30 p-4 text-sm leading-7">
             {props.rewritePreview}
           </div>

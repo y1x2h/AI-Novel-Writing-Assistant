@@ -187,6 +187,7 @@ const rewriteSchema = z.object({
   model: z.string().trim().optional(),
   temperature: z.number().min(0).max(2).optional(),
   scope: styleRewriteScopeSchema.optional(),
+  recheck: z.boolean().optional(),
 });
 
 const novelRecommendationParamsSchema = z.object({
@@ -595,7 +596,9 @@ router.post("/style-detection/check", validate({ body: detectionSchema }), async
 
 router.post("/style-detection/rewrite", validate({ body: rewriteSchema }), async (req, res, next) => {
   try {
-    const data = await styleRewriteService.rewrite(req.body as z.infer<typeof rewriteSchema>);
+    const input = req.body as z.infer<typeof rewriteSchema>;
+    // 交互预览默认复测，用户能看到本次修订处理掉多少、又引入多少。
+    const data = await styleRewriteService.rewrite({ ...input, recheck: input.recheck ?? true });
     res.status(200).json({
       success: true,
       data,

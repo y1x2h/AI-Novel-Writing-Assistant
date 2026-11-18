@@ -604,8 +604,26 @@ export interface CompiledStylePromptBlocks {
   appliedRuleIds: string[];
 }
 
-export { styleRiskLayerSchema, styleRewriteEscalationSchema, styleRewriteGuardSchema, styleRewriteScopeSchema, isStyleIssueRewritable } from "./styleEngine/diagnostics.js";
-export type { StyleRiskLayer, StyleRewriteGuard, StyleRewriteBaseline, StyleRewriteScope, StyleRewriteEscalation } from "./styleEngine/diagnostics.js";
+export {
+  styleIssueDispositionSchema,
+  styleRiskLayerSchema,
+  styleRewriteEscalationSchema,
+  styleRewriteGuardSchema,
+  styleRewriteRecheckIssueSchema,
+  styleRewriteRecheckSchema,
+  styleRewriteScopeSchema,
+  isStyleIssueRewritable,
+} from "./styleEngine/diagnostics.js";
+export type {
+  StyleIssueDisposition,
+  StyleRiskLayer,
+  StyleRewriteGuard,
+  StyleRewriteBaseline,
+  StyleRewriteRecheck,
+  StyleRewriteRecheckIssue,
+  StyleRewriteScope,
+  StyleRewriteEscalation,
+} from "./styleEngine/diagnostics.js";
 export { styleSignalPolicySchema, styleSignalPolicyOverrideSchema, styleSignalScanSchema, createStyleSignalPolicy } from "./styleEngine/signals.js";
 export type { StyleSignalPolicy, StyleSignalPolicyOverride, StyleSignalFinding, StyleSignalScan } from "./styleEngine/signals.js";
 export {
@@ -639,6 +657,8 @@ export interface StyleDetectionViolation {
   excerpt: string;
   reason: string;
   suggestion: string;
+  /** AI 给出的处理去向；旧报告缺失该字段时按 fix 处理，但仍受 canAutoRewrite 约束。 */
+  disposition?: import("./styleEngine/diagnostics").StyleIssueDisposition;
   canAutoRewrite: boolean;
 }
 

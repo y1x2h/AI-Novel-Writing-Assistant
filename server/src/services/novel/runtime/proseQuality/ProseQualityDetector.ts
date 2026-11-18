@@ -46,10 +46,12 @@ interface TextSegment {
 
 const MAX_FINDINGS_PER_CODE = 8;
 const MAX_TOTAL_FINDINGS = 40;
+/** 整章旁白至少重复该次数才把否定翻转当作候选证据。 */
+const MIN_NEGATIVE_FLIP_OCCURRENCES = 2;
 
 const TERMINAL_PUNCTUATION = /[。！？!?”"」』）)】》…]$/u;
 const NEGATIVE_FLIP_PATTERN = /(?:不是|并非|并不是|不算|不能说是|没有|不再是)[^。！？；;\n]{1,36}?[，,、]?\s*(?:而是|却是|反而是|更像是|只是)[^。！？；;\n]{1,36}/gu;
-const DASH_OR_ELLIPSIS_PATTERN = /——|—|--|……|…{2,}|\.{3,}/u;
+const DASH_OR_ELLIPSIS_PATTERN = /——|—|--|……|…{2,}|\.{3,}/gu;
 const AI_SELF_REFERENCE_PATTERN = /作为(?:一名|一个)?(?:AI|人工智能|语言模型)|我是(?:AI|人工智能|语言模型)|我无法(?:继续)?(?:创作|生成|提供|完成)|我不能(?:继续)?(?:创作|生成|提供|完成)|无法满足(?:该|这个)?请求|不能协助|as an AI|I (?:am|cannot|can't)[^。！？.!?\n]{0,40}AI/iu;
 const PLACEHOLDER_PATTERN = /TODO|TBD|待补充|此处省略|省略若干|略写|占位|PLACEHOLDER|\{\{[^}]{0,80}\}\}|\[[^\]]{0,40}待补[^\]]{0,40}\]/iu;
 const ENGINEERING_TERM_STRONG_PATTERN = /细纲|情节点|卷纲|功能标签|目标情绪|字数目标|章首钩子|章尾钩子|任务描述|任务单|scene\s*card|prompt|schema|runtime\s*package|上下文包|系统提示词|修复指令/iu;
@@ -82,14 +84,15 @@ export function detectProseQuality(content: string, policy?: StyleSignalPolicy):
   };
 
   for (const segment of segments) {
-    scanNegativeFlip(segment, addFinding);
-    scanDashOrEllipsis(segment, addFinding);
     scanAiSelfReference(segment, addFinding);
     scanPlaceholderLeak(segment, addFinding);
     scanEngineeringTermLeak(segment, addFinding);
     scanPeriodStutter(segment, addFinding);
     scanLongParagraph(segment, addFinding);
   }
+
+  scanNegativeFlip(segments, addFinding);
+  scanDashOrEllipsis(segments, effectivePolicy, addFinding);
 
   scanVerbatimRepeat(segments, addFinding);
   scanDialogueBalance(content, effectivePolicy, addFinding);
@@ -168,44 +171,68 @@ function buildTextSegments(content: string): TextSegment[] {
   return segments;
 }
 
+/**
+ * 否定翻转只作候选：单处「不是 A，而是 B」在小说里既合法也常见，
+ * 只有整章旁白反复使用同一句式才提示，且不阻塞正文。
+ */
 function scanNegativeFlip(
-  segment: TextSegment,
+  segments: TextSegment[],
   addFinding: (finding: ProseQualityFinding) => void,
 ): void {
-  for (const match of segment.text.matchAll(NEGATIVE_FLIP_PATTERN)) {
-    const index = match.index ?? 0;
-    if (isInsideQuote(segment.text, index) || /不是[^。！？；;\n]{1,16}就是/u.test(match[0])) {
-      continue;
+  const matches: Array<{ segment: TextSegment; index: number; excerpt: string }> = [];
+  for (const segment of segments) {
+    for (const match of segment.text.matchAll(NEGATIVE_FLIP_PATTERN)) {
+      const index = match.index ?? 0;
+      if (isInsideQuote(segment.text, index) || /不是[^。！？；;\n]{1,16}就是/u.test(match[0])) {
+        continue;
+      }
+      matches.push({ segment, index, excerpt: match[0] });
     }
+  }
+  if (matches.length < MIN_NEGATIVE_FLIP_OCCURRENCES) {
+    return;
+  }
+  for (const match of matches) {
     addFinding({
       code: "prose_negative_flip",
-      severity: "high",
-      line: segment.line,
-      column: index + 1,
-      message: "正文出现高频 AI 式否定翻转句，容易显得概念化、模板化。",
-      excerpt: formatExcerpt(match[0]),
-      fixSuggestion: "改成具体动作、感官细节或角色判断，避免用“不是 A，而是 B”解释主题。",
+      severity: "medium",
+      line: match.segment.line,
+      column: match.index + 1,
+      message: "旁白反复使用“不是 A，而是 B”式否定翻转，容易显得概念化、模板化。",
+      excerpt: formatExcerpt(match.excerpt),
+      fixSuggestion: "改成具体动作、感官细节或角色判断，避免用否定翻转解释主题。",
     });
   }
 }
 
+/**
+ * 破折号与省略号按密度判断并跳过对白：对白里的「——」是正常打断，
+ * 「……」是常见停顿。阈值与写法信号策略共用 emDashCount，只作候选证据。
+ */
 function scanDashOrEllipsis(
-  segment: TextSegment,
+  segments: TextSegment[],
+  policy: StyleSignalPolicy,
   addFinding: (finding: ProseQualityFinding) => void,
 ): void {
-  const match = segment.text.match(DASH_OR_ELLIPSIS_PATTERN);
-  if (!match || match.index == null) {
-    return;
+  for (const segment of segments) {
+    if (lineLooksLikeDialogue(segment.text)) {
+      continue;
+    }
+    const narration = stripQuotedText(segment.text);
+    const hits = Array.from(narration.matchAll(DASH_OR_ELLIPSIS_PATTERN));
+    if (hits.length < policy.emDashCount) {
+      continue;
+    }
+    addFinding({
+      code: "prose_dash_or_ellipsis",
+      severity: "medium",
+      line: segment.line,
+      column: (hits[0]?.index ?? 0) + 1,
+      message: `同一段旁白连续使用 ${hits.length} 处破折号或省略号，容易形成模型化停顿。`,
+      excerpt: formatExcerpt(segment.text),
+      fixSuggestion: "改写为自然的动作停顿、句读或人物反应，减少用标点制造情绪。",
+    });
   }
-  addFinding({
-    code: "prose_dash_or_ellipsis",
-    severity: "high",
-    line: segment.line,
-    column: match.index + 1,
-    message: "正文使用破折号、省略号或双连字符，容易形成模型化停顿。",
-    excerpt: formatExcerpt(segment.text),
-    fixSuggestion: "改写为自然的动作停顿、句读或人物反应，减少机械标点制造的情绪。",
-  });
 }
 
 function scanAiSelfReference(
