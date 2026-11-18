@@ -43,6 +43,14 @@ export const styleRewriteRecheckSchema = z.object({
   resolved: z.number().int().nonnegative(),
   remaining: z.number().int().nonnegative(),
   introduced: z.array(styleRewriteRecheckIssueSchema),
+  /**
+   * 过度修正告警：改写在去味方向上矫枉过正（改出的问题不少于已解决的问题，
+   * 或改写后风险参考分反而升高）。advisory 性质，不阻断采用，只提醒用户对照原稿。
+   */
+  overCorrection: z.object({
+    detected: z.boolean(),
+    reason: z.string(),
+  }).optional(),
 });
 export type StyleRewriteRecheck = z.infer<typeof styleRewriteRecheckSchema>;
 
@@ -58,8 +66,8 @@ export const styleRewriteGuardSchema = z.object({
   deletionRatio: z.number().nonnegative().optional(),
   escalations: z.array(styleRewriteEscalationSchema).optional(),
   checks: z.array(z.object({
-    code: z.enum(["patch_scope", "edit_budget", "deletion_budget", "protected_terms", "protected_fragment", "semantic_facts", "style_regression"]),
-    status: z.enum(["passed", "blocked", "not_checked"]),
+    code: z.enum(["patch_scope", "edit_budget", "deletion_budget", "protected_terms", "protected_fragment", "semantic_facts", "style_regression", "over_correction"]),
+    status: z.enum(["passed", "blocked", "not_checked", "advisory"]),
     reason: z.string(),
   })),
 });

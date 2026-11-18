@@ -8,6 +8,36 @@ import type {
 
 const MAX_INTRODUCED = 8;
 
+function severityWeight(severity: "low" | "medium" | "high"): number {
+  return severity === "high" ? 3 : severity === "medium" ? 2 : 1;
+}
+
+/**
+ * 过度修正判定：改写在去味方向上矫枉过正——改出的新问题（按严重度加权）不少于已解决的问题，
+ * 或改写后风险参考分反而升高。advisory 性质，不阻断采用。
+ */
+function detectOverCorrection(
+  beforeRisk: number,
+  afterRisk: number,
+  resolved: number,
+  resolvedWeight: number,
+  introducedCount: number,
+  introducedWeight: number,
+): StyleRewriteRecheck["overCorrection"] | undefined {
+  if (introducedCount === 0) return undefined;
+  const reasons: string[] = [];
+  if (introducedWeight >= resolvedWeight) {
+    reasons.push(resolvedWeight === 0
+      ? `本次没有处理掉原有问题，却新增了 ${introducedCount} 处问题（${introducedWeight} 点）`
+      : `复测新增 ${introducedCount} 处问题（${introducedWeight} 点）不少于已处理的 ${resolved} 处（${resolvedWeight} 点）`);
+  }
+  if (afterRisk > beforeRisk) {
+    reasons.push(`表达风险参考分从 ${beforeRisk} 升到 ${afterRisk}`);
+  }
+  if (reasons.length === 0) return undefined;
+  return { detected: true, reason: `${reasons.join("；")}，可能改过头了，建议对照原稿确认。` };
+}
+
 /** 规则身份：目录规则用规则 ID，写法合同问题退回规则名，避免把模型措辞当成新问题。 */
 function issueKey(issue: StyleDetectionViolation): string {
   const ruleId = issue.ruleId?.trim() ?? "";
@@ -46,27 +76,39 @@ export function compareStyleReports(
   const afterByKey = groupByKey(after.violations);
   const keys = new Set([...beforeByKey.keys(), ...afterByKey.keys()]);
   let resolved = 0;
+  let resolvedWeight = 0;
   let remaining = 0;
   const introduced: StyleRewriteRecheckIssue[] = [];
 
   for (const key of keys) {
-    const beforeCount = beforeByKey.get(key)?.length ?? 0;
-    const afterCount = afterByKey.get(key)?.length ?? 0;
-    resolved += Math.max(0, beforeCount - afterCount);
+    const beforeList = beforeByKey.get(key) ?? [];
+    const afterList = afterByKey.get(key) ?? [];
+    const beforeCount = beforeList.length;
+    const afterCount = afterList.length;
+    const resolvedCount = Math.max(0, beforeCount - afterCount);
+    resolved += resolvedCount;
     remaining += Math.min(beforeCount, afterCount);
+    resolvedWeight += beforeList.slice(0, resolvedCount).reduce((sum, issue) => sum + severityWeight(issue.severity), 0);
     if (afterCount > beforeCount) {
       introduced.push(
-        ...(afterByKey.get(key) ?? []).slice(0, afterCount - beforeCount).map(toRecheckIssue),
+        ...afterList.slice(0, afterCount - beforeCount).map(toRecheckIssue),
       );
     }
   }
+
+  const trimmedIntroduced = introduced.slice(0, MAX_INTRODUCED);
+  const introducedWeight = trimmedIntroduced.reduce((sum, issue) => sum + severityWeight(issue.severity), 0);
+  const overCorrection = detectOverCorrection(
+    before.riskScore, after.riskScore, resolved, resolvedWeight, trimmedIntroduced.length, introducedWeight,
+  );
 
   return {
     beforeRiskScore: before.riskScore,
     afterRiskScore: after.riskScore,
     resolved,
     remaining,
-    introduced: introduced.slice(0, MAX_INTRODUCED),
+    introduced: trimmedIntroduced,
+    overCorrection,
   };
 }
 
@@ -94,11 +136,17 @@ export function withStyleRegressionCheck(
   recheck: StyleRewriteRecheck | undefined,
 ): StyleRewriteGuard {
   const { status, reason } = regressionReason(recheck);
+  const overCorrection = recheck?.overCorrection;
   return {
     ...guard,
     checks: [
-      ...guard.checks.filter((check) => check.code !== "style_regression"),
+      ...guard.checks.filter((check) => check.code !== "style_regression" && check.code !== "over_correction"),
       { code: "style_regression", status, reason },
+      {
+        code: "over_correction",
+        status: overCorrection?.detected ? "advisory" : "passed",
+        reason: overCorrection?.detected ? overCorrection.reason : "改写后未出现过度修正。",
+      },
     ],
   };
 }

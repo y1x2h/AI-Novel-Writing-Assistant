@@ -68,9 +68,11 @@ export function StyleRewriteProtection({ guard, retainedOriginal, recheck }: {
   recheck?: StyleRewriteRecheck;
 }) {
   const blocked = guard?.checks.filter(check => check.status === "blocked") ?? [];
+  const advisory = guard?.checks.filter(check => check.status === "advisory") ?? [];
   return <div role="status" className={`space-y-1 rounded-md px-3 py-2 text-sm leading-6 ${blocked.length ? "bg-amber-500/10 text-foreground" : "bg-muted/30 text-muted-foreground"}`}>
     <p className="font-medium">{retainedOriginal ? "保留原稿" : "局部修订预览"}</p>
     {blocked.map(check => <p key={check.code}>{check.reason}</p>)}
+    {advisory.map(check => <p key={check.code} className="text-amber-700">{check.reason}</p>)}
     {!blocked.length ? <p>{retainedOriginal ? "没有需要安全替换的表达，原文保持不变。" : "比较人物口吻、动作和信息，再采用需要的修改。"}</p> : null}
     {recheck ? <p>本次修订处理 {recheck.resolved} 处，仍有 {recheck.remaining} 处保留；表达风险参考分 {recheck.beforeRiskScore} → {recheck.afterRiskScore}。</p> : null}
     {recheck?.introduced.length ? <div className="text-xs leading-5">

@@ -72,3 +72,32 @@ test("records a skipped recheck when detection fails", () => {
   const check = withStyleRegressionCheck(guard, undefined).checks.find((item) => item.code === "style_regression");
   assert.equal(check.status, "not_checked");
 });
+
+test("flags over-correction when new issues outweigh resolved ones", () => {
+  const before = report([issue("rule-a", "high")], 60);
+  const after = report([issue("rule-a", "high"), issue("rule-c", "medium"), issue("rule-d", "medium")], 60);
+  const recheck = compareStyleReports(before, after);
+  assert.equal(recheck.overCorrection?.detected, true);
+  assert.match(recheck.overCorrection?.reason ?? "", /没有处理掉原有问题/);
+  const guard = { sourceContentHash: "a", candidateContentHash: "b", policyRevision: "rev", checks: [] };
+  const check = withStyleRegressionCheck(guard, recheck).checks.find((item) => item.code === "over_correction");
+  assert.equal(check?.status, "advisory");
+});
+
+test("flags over-correction when risk score rises after rewrite", () => {
+  const before = report([issue("rule-a", "high")], 60);
+  const after = report([issue("rule-c", "low")], 72);
+  const recheck = compareStyleReports(before, after);
+  assert.equal(recheck.overCorrection?.detected, true);
+  assert.match(recheck.overCorrection?.reason ?? "", /参考分从 60 升到 72/);
+});
+
+test("does not flag over-correction when rewrite resolves more than it introduces", () => {
+  const before = report([issue("rule-a", "high")], 60);
+  const after = report([], 40);
+  const recheck = compareStyleReports(before, after);
+  assert.equal(recheck.overCorrection, undefined);
+  const guard = { sourceContentHash: "a", candidateContentHash: "b", policyRevision: "rev", checks: [] };
+  const check = withStyleRegressionCheck(guard, recheck).checks.find((item) => item.code === "over_correction");
+  assert.equal(check?.status, "passed");
+});

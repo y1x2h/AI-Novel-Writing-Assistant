@@ -98,10 +98,10 @@ story-deslop 的表达层检查里，除了原有的词簇与标点问题，还�
 
 ### Decision
 
-- 在 `server/src/services/styleEngine/calibration/` 下建立可复算的校准基线，语料以 `.txt` 提交进仓库，规模刻意保持小（当前 AI 语料 1154 字、真人语料 179 字），保证任何人本地都能复现。
+- 在 `server/src/services/styleEngine/calibration/` 下建立可复算的校准基线，语料以 `.txt` 提交进仓库，规模刻意保持小（当前 AI 语料 1178 字、真人语料 179 字），保证任何人本地都能复现。
 - 基线只记录事实：每条规则的 `hits`、`perKilo`（AI 语料每千字命中条数）与 `falsePositiveRate`（命中里来自真人语料的比例，作为误报代理指标）。
 - 基线用 `signalRevision` 与信号策略 revision 绑定。改动 `shared/types/styleEngine/signals.ts` 的阈值、词表或新增信号后，必须刷新基线，否则 `calibration.test.js` 直接失败。
-- AI 语料必须覆盖全部 18 条信号；检测到某条规则在 AI 语料里零命中时，测试提示补样本，避免基线在无声中失效。叙述类信号需要足够的连续正文（连接密度要求单文件叙述 ≥600 字），语料样本不能是孤句拼接。
+- AI 语料必须覆盖全部 20 条信号；检测到某条规则在 AI 语料里零命中时，测试提示补样本，避免基线在无声中失效。叙述类信号需要足够的连续正文（连接密度要求单文件叙述 ≥600 字），语料样本不能是孤句拼接。
 
 ### Current Rule
 
@@ -278,6 +278,13 @@ story-deslop 的表达层检查里，除了原有的词簇与标点问题，还�
 - 检测 prompt `style.detection@v18` 起，每条 violation 必须给出 `disposition`：`fix` 需要修改，`keep` 命中但应保留，`human_review` 需要作者判断。`keep` 与 `human_review` 的 `canAutoRewrite` 必须为 `false`，服务端会再收口一次。
 - 检测不得把「命中规则」直接等同于「必须清除」：承担信息、限定、人物口吻、场景节拍或题材功能的表达标 `keep`，并说明保留依据。
 
+### 过度修正告警（over-correction advisory）
+
+- 复测在比较「已处理 / 仍保留 / 新增」之外，还要判断改写有没有矫枉过正：当复测新增问题按严重度加权后不少于已处理问题的加权，或改写后表达风险参考分反而升高时，在 guard 写入 `over_correction: advisory` 并给出原因，前端以提醒形式展示。
+- 严重度权重：`high=3`、`medium=2`、`low=1`。加权是为了避免「处理掉一个 low、新增一个 high」被算成打平而漏报。
+- advisory 不是否决：它与 `style_regression` 的安全边界分开。只有新增 `high` 问题才走 `style_regression: blocked` 保留原稿；过度修正只提醒用户对照原稿，是否采纳由用户决定，不触发保留原稿，也不进入账本的 `blocked` 状态。
+- guard 检查状态枚举新增 `advisory`，消费侧（保留原稿判定、账本、前端）只把 `blocked` 当否决，`advisory` 只渲染提醒，避免提醒意外变成拦截。
+
 ### prose 层候选口径（与写法信号对齐）
 
 - `prose_dash_or_ellipsis` 只统计旁白，整行对白跳过，并按 `StyleSignalPolicy.emDashCount`（默认 2）的密度触发，严重度固定 `medium`。
@@ -291,6 +298,7 @@ story-deslop 的表达层检查里，除了原有的词簇与标点问题，还�
 - **用 excerpt 文本当问题身份**：改写后措辞必然变化，会把处理成功误判成新增问题。
 - **在章节热路径默认开启复测**：全书链每章多一次模型调用，成本不可控；复测只属于用户可见的预览。
 - **把标点密度重新提成 high**：会回到「好稿被判坏、修复循环空转」的老问题。
+- **把过度修正做成 blocked**：过度修正是质量债务提醒，不是安全否决；判成 blocked 会让用户在「改了可能更好也可能更差」的场景下失去选择权，只能保留原稿。它必须保持 advisory，与 `style_regression` 的安全边界分开。
 
 ## 已否决特征（X 级）禁改白名单
 
