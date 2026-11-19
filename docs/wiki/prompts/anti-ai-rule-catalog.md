@@ -276,7 +276,7 @@ story-deslop 的表达层检查里，除了原有的词簇与标点问题，还�
 - 度量实现：`server/src/services/novel/runtime/proseQuality/ProseQualityDetector.ts`。
 - 阈值定义：`shared/types/styleEngine/signals.ts`（`StyleSignalPolicy`）。
 - 接入点：`server/src/services/novel/runtime/ChapterAcceptanceAssessmentService.ts`、`ChapterContentFinalizationService.ts`。
-- 提示词：`server/src/prompting/prompts/style/style.prompts.ts`（`style.detection@v19`）。
+- 提示词：`server/src/prompting/prompts/style/style.prompts.ts`（`style.detection@v20`）。
 
 ## 改写复检闭环（rewrite recheck）
 
@@ -346,7 +346,7 @@ story-deslop 的表达层检查里，除了原有的词簇与标点问题，还�
 
 ### Related Modules
 
-- 提示词约束：`server/src/prompting/prompts/style/diagnostics/index.ts`、`server/src/prompting/prompts/style/style.prompts.ts`（`style.detection@v19`）。
+- 提示词约束：`server/src/prompting/prompts/style/diagnostics/index.ts`、`server/src/prompting/prompts/style/style.prompts.ts`（`style.detection@v20`）。
 - 规则定义：`server/src/services/styleEngine/defaults.ts`。
 - 候选证据：`server/src/services/styleEngine/signals/index.ts`。
 
@@ -382,7 +382,7 @@ story-deslop 的表达层检查里，除了原有的词簇与标点问题，还�
 ### Related Modules
 
 - 候选证据：`server/src/services/styleEngine/signals/index.ts`（`surface.conclusion-colon`、`syntax.isomorphic-triple`）。
-- 提示词判据与改写边界：`server/src/prompting/prompts/style/diagnostics/index.ts`、`server/src/prompting/prompts/style/style.prompts.ts`（`style.detection@v19`）。
+- 提示词判据与改写边界：`server/src/prompting/prompts/style/diagnostics/index.ts`、`server/src/prompting/prompts/style/style.prompts.ts`（`style.detection@v20`）。
 - 复测与回归护栏：`server/src/services/styleEngine/rewrite/recheck.ts`。
 - 共享类型：`shared/types/styleEngine/signals.ts`。
 
@@ -419,7 +419,7 @@ story-deslop 的表达层检查里，除了原有的词簇与标点问题，还�
 
 ### Related Modules
 
-- 提示词判据与改写边界：`server/src/prompting/prompts/style/diagnostics/index.ts`、`server/src/prompting/prompts/style/style.prompts.ts`（`style.detection@v19`）。
+- 提示词判据与改写边界：`server/src/prompting/prompts/style/diagnostics/index.ts`、`server/src/prompting/prompts/style/style.prompts.ts`（`style.detection@v20`）。
 - 输出校验：`server/src/prompting/prompts/style/style.prompts.ts`（postValidate 校验 excerpt 来自正文）。
 - 复测与回归护栏：`server/src/services/styleEngine/rewrite/recheck.ts`。
 
@@ -451,7 +451,7 @@ story-deslop 的表达层检查里，除了原有的词簇与标点问题，还�
 
 ### Related Modules
 
-- 提示词判据与改写边界：`server/src/prompting/prompts/style/diagnostics/index.ts`、`server/src/prompting/prompts/style/style.prompts.ts`（`style.detection@v19`）。
+- 提示词判据与改写边界：`server/src/prompting/prompts/style/diagnostics/index.ts`、`server/src/prompting/prompts/style/style.prompts.ts`（`style.detection@v20`）。
 - 自动改写权限：`shared/types/styleEngine/diagnostics.ts`、`server/src/services/styleEngine/rewrite/`。
 
 ## Failure Modes

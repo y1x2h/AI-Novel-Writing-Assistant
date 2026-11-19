@@ -33,7 +33,7 @@ test('scene diagnostics use six-step semantic review without mechanical cadence 
   const guidance = STYLE_DIAGNOSTIC_RULES.join('\n');
   const rewriteDiscipline = STYLE_REWRITE_DISCIPLINE.join('\n');
 
-  assert.equal(styleDetectionPrompt.version, 'v19');
+  assert.equal(styleDetectionPrompt.version, 'v20');
   for (const text of ['场景转折缺过程', '长段无压力变化', '场景功能', '人物目标', '压力来源', '失败或受阻', '转折依据', '余波']) {
     assert.ok(guidance.includes(text), `scene guidance should include ${text}`);
   }
@@ -58,6 +58,21 @@ test('ordinary contract findings accept null rule IDs without schema repair', ()
   assert.throws(() => styleDetectionPrompt.postValidate({ ...output, violations: [{
     ...output.violations[0], ruleId: 'surface.action-adverb-stack',
   }] }, { content: output.violations[0].excerpt, allowedRuleIds: ['real-rule-id'] }), /未提供的规则/);
+});
+
+test('bracket-wrapped rule IDs are normalized before source validation', () => {
+  const excerpt = '他缓缓走近，微微侧身，又轻轻推开了木门。';
+  const base = styleDetectionPayloadSchema.parse({ riskScore: 20, summary: '破折号命中但保留', violations: [{
+    ruleId: '[baseline:risk-narration-em-dash]', ruleName: '旁白破折号', ruleType: 'risk', severity: 'low', layer: 'surface',
+    excerpt, reason: '成对插入语', suggestion: '原样保留', disposition: 'keep', canAutoRewrite: false,
+  }] });
+  const accepted = styleDetectionPrompt.postValidate(base, {
+    content: excerpt, allowedRuleIds: ['baseline:risk-narration-em-dash'],
+  });
+  assert.equal(accepted.violations[0].ruleId, 'baseline:risk-narration-em-dash');
+  assert.throws(() => styleDetectionPrompt.postValidate({ ...base, violations: [{
+    ...base.violations[0], ruleId: '[surface.action-adverb-stack]',
+  }] }, { content: excerpt, allowedRuleIds: ['baseline:risk-narration-em-dash'] }), /未提供的规则/);
 });
 
 test('model evidence uses a distinct statistical label while stored scanner IDs stay intact', () => {

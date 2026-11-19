@@ -124,7 +124,7 @@ export const styleDetectionPrompt: PromptAsset<
   z.infer<typeof styleDetectionPayloadSchema>
 > = {
   id: "style.detection",
-  version: "v19",
+  version: "v20",
   taskType: "planner",
   mode: "structured",
   language: "zh",
@@ -137,7 +137,20 @@ export const styleDetectionPrompt: PromptAsset<
       if (!input.content.replace(/\s/gu, "").includes(item.excerpt.replace(/\s/gu, ""))) {
         throw new Error("写法检测证据必须来自当前正文。");
       }
-      if (item.ruleId && input.allowedRuleIds && !input.allowedRuleIds.includes(item.ruleId)) {
+      // 模型可能把目录行的方括号一并写入 ruleId（如 [baseline:risk-x]），
+      // 这里做确定性归一化：只保留括号内的 ID 文本，再做来源校验。
+      let ruleId = item.ruleId;
+      if (typeof ruleId === "string") {
+        const trimmed = ruleId.trim();
+        const normalized = trimmed.startsWith("[") && trimmed.endsWith("]") && trimmed.length >= 2
+          ? trimmed.slice(1, -1).trim()
+          : trimmed;
+        if (normalized !== ruleId) {
+          ruleId = normalized;
+          item.ruleId = normalized;
+        }
+      }
+      if (ruleId && input.allowedRuleIds && !input.allowedRuleIds.includes(ruleId)) {
         throw new Error("写法检测引用了未提供的规则。");
       }
     }
@@ -155,7 +168,7 @@ export const styleDetectionPrompt: PromptAsset<
       "riskScore, summary, canAutoRewrite, violations。",
       "",
       "violations 中每一项必须且只能包含以下字段：",
-      "ruleId（反 AI 规则使用目录方括号内原始 ID，普通写法合同问题使用 null）, ruleName, ruleType, severity, issueCategory, layer, excerpt, reason, suggestion, disposition, canAutoRewrite。",
+      "ruleId（反 AI 规则填写目录行 [id] 中括号内的 ID 文本，不要带方括号；普通写法合同问题使用 null）, ruleName, ruleType, severity, issueCategory, layer, excerpt, reason, suggestion, disposition, canAutoRewrite。",
       ...STYLE_DIAGNOSTIC_RULES,
       "",
       "全局硬规则：",
