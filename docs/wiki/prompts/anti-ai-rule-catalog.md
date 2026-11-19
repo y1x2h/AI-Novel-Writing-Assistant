@@ -257,7 +257,7 @@ story-deslop 的表达层检查里，除了原有的词簇与标点问题，还�
 - 度量实现：`server/src/services/novel/runtime/proseQuality/ProseQualityDetector.ts`。
 - 阈值定义：`shared/types/styleEngine/signals.ts`（`StyleSignalPolicy`）。
 - 接入点：`server/src/services/novel/runtime/ChapterAcceptanceAssessmentService.ts`、`ChapterContentFinalizationService.ts`。
-- 提示词：`server/src/prompting/prompts/style/style.prompts.ts`（`style.detection@v18`）。
+- 提示词：`server/src/prompting/prompts/style/style.prompts.ts`（`style.detection@v19`）。
 
 ## 改写复检闭环（rewrite recheck）
 
@@ -327,7 +327,7 @@ story-deslop 的表达层检查里，除了原有的词簇与标点问题，还�
 
 ### Related Modules
 
-- 提示词约束：`server/src/prompting/prompts/style/diagnostics/index.ts`、`server/src/prompting/prompts/style/style.prompts.ts`（`style.detection@v18`）。
+- 提示词约束：`server/src/prompting/prompts/style/diagnostics/index.ts`、`server/src/prompting/prompts/style/style.prompts.ts`（`style.detection@v19`）。
 - 规则定义：`server/src/services/styleEngine/defaults.ts`。
 - 候选证据：`server/src/services/styleEngine/signals/index.ts`。
 
@@ -363,7 +363,7 @@ story-deslop 的表达层检查里，除了原有的词簇与标点问题，还�
 ### Related Modules
 
 - 候选证据：`server/src/services/styleEngine/signals/index.ts`（`surface.conclusion-colon`、`syntax.isomorphic-triple`）。
-- 提示词判据与改写边界：`server/src/prompting/prompts/style/diagnostics/index.ts`、`server/src/prompting/prompts/style/style.prompts.ts`（`style.detection@v18`）。
+- 提示词判据与改写边界：`server/src/prompting/prompts/style/diagnostics/index.ts`、`server/src/prompting/prompts/style/style.prompts.ts`（`style.detection@v19`）。
 - 复测与回归护栏：`server/src/services/styleEngine/rewrite/recheck.ts`。
 - 共享类型：`shared/types/styleEngine/signals.ts`。
 
@@ -400,9 +400,40 @@ story-deslop 的表达层检查里，除了原有的词簇与标点问题，还�
 
 ### Related Modules
 
-- 提示词判据与改写边界：`server/src/prompting/prompts/style/diagnostics/index.ts`、`server/src/prompting/prompts/style/style.prompts.ts`（`style.detection@v18`）。
+- 提示词判据与改写边界：`server/src/prompting/prompts/style/diagnostics/index.ts`、`server/src/prompting/prompts/style/style.prompts.ts`（`style.detection@v19`）。
 - 输出校验：`server/src/prompting/prompts/style/style.prompts.ts`（postValidate 校验 excerpt 来自正文）。
 - 复测与回归护栏：`server/src/services/styleEngine/rewrite/recheck.ts`。
+
+## 场景过程与压力变化检测
+
+### Background
+
+小说正文的 AI 感不只来自措辞，也来自场景组织：核心转折被压缩成「决定—行动—成功」的剧情梗概，或长段叙述始终维持同一状态。fiction-humanizer-zh 的场景六步法提供了场景功能、人物目标、压力来源、失败点、转折依据与余波六个检查坐标，并建议定期回查压力变化或情绪落点。若直接把这些方法做成字数阈值或必填模板，会误伤必要喘息、简洁转折和有意平静。
+
+### Decision
+
+将六步法作为模型理解场景的语义坐标，在 `style.detection` 中设置「场景转折缺过程」「长段无压力变化」两类封闭判据。脚本不做场景识别、字数计时或违规评分；是否构成问题完全由模型结合场合与原文证据判断。两类结果只提供修改方向，不进入自动改写。
+
+### Current Rule
+
+- 六个检查坐标是定位缺口的工具，不要求每个场景凑齐六项，也不要求每段都制造高潮。转折必须依据已有铺垫，不能用凭空救兵、神物、奖励或人物降智补洞。
+- **场景转折缺过程**：只检查核心冲突、重要选择或关键转折。结果句替代了必要的触发、尝试、阻碍、调整、代价或余波，并已削弱因果或压力体验时才报告；有意略写的过场、非核心事件、短片段和可信的简洁转折不报。
+- **长段无压力变化**：较长叙述缺少目标／阻力、信息、关系、选择或情绪落点变化，导致阅读状态长期不前进时才报告。每 300～500 字只是回查线索，不是违规阈值或 AI 率依据。
+- 必要喘息、有意平静、纯过渡、有效氛围铺垫，以及虽无冲突但带来新信息或情绪落点的段落必须保留；不得建议按固定字数周期制造转折。
+- 两类命中的 `ruleId` 均为 `null`，`layer` 均为 `narrative`，`canAutoRewrite` 必须为 `false`；证据不足不报，拿不准或涉及剧情取舍标 `human_review`。
+- suggestion 只能指出补显哪个环节、利用哪处已有铺垫或保留何种余波，不能新增事件、重大事实、人物动机或硬钩子。同类问题合并，避免与总结替代人物变化、静态填充和收束缺乏代价重复计数。
+
+### Failure Modes
+
+- **把六步法做成场景填表**：会让所有场景都走向同一种冲突结构，抹平题材与节奏差异；只检查核心转折是否缺必要过程。
+- **把 300～500 字当成定时冲突**：会持续制造硬转折并误报喘息段；回查周期不是违规判据。
+- **把压力等同于动作冲突**：信息到达、选择后果、关系变化和情绪落点也能改变阅读状态。
+- **让场景建议进入自动改写**：补过程很容易虚构事件或改变因果，必须保持 narrative 只读建议与人工取舍。
+
+### Related Modules
+
+- 提示词判据与改写边界：`server/src/prompting/prompts/style/diagnostics/index.ts`、`server/src/prompting/prompts/style/style.prompts.ts`（`style.detection@v19`）。
+- 自动改写权限：`shared/types/styleEngine/diagnostics.ts`、`server/src/services/styleEngine/rewrite/`。
 
 ## Failure Modes
 

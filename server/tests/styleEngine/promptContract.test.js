@@ -28,6 +28,25 @@ test('style prompts require information gain before excusing repeated structures
   assert.match(messages.map(x => x.content).join('\n'), /单个对话或内心引语的我不改变叙述人称/);
 });
 
+test('scene diagnostics use six-step semantic review without mechanical cadence or rewrite permission', () => {
+  const { STYLE_DIAGNOSTIC_RULES, STYLE_REWRITE_DISCIPLINE } = require('../../dist/prompting/prompts/style/diagnostics');
+  const guidance = STYLE_DIAGNOSTIC_RULES.join('\n');
+  const rewriteDiscipline = STYLE_REWRITE_DISCIPLINE.join('\n');
+
+  assert.equal(styleDetectionPrompt.version, 'v19');
+  for (const text of ['场景转折缺过程', '长段无压力变化', '场景功能', '人物目标', '压力来源', '失败或受阻', '转折依据', '余波']) {
+    assert.ok(guidance.includes(text), `scene guidance should include ${text}`);
+  }
+  assert.match(guidance, /ruleId 用 null，layer 用 narrative，canAutoRewrite 必须 false/);
+  assert.match(guidance, /human_review/);
+  assert.match(guidance, /每 300～500 字仅是回查长段的线索，不是超过即违规的阈值/);
+  assert.match(guidance, /必要喘息、有意平静、纯过渡、有效氛围铺垫、短片段/);
+  assert.match(guidance, /避免与总结替代人物变化、静态填充、收束缺乏代价等判据重复计数/);
+  assert.match(rewriteDiscipline, /场景六步法与压力变化只给修改方向、不自动改剧情/);
+  assert.match(rewriteDiscipline, /不能新增救兵、神物、系统奖励、人物降智、重大事实或硬钩子/);
+  assert.match(rewriteDiscipline, /禁止机械执行每 300～500 字制造一次转折/);
+});
+
 test('ordinary contract findings accept null rule IDs without schema repair', () => {
   const output = styleDetectionPayloadSchema.parse({ riskScore: 40, summary: '句式聚集', violations: [{
     ruleId: null, ruleName: '动作副词堆叠', ruleType: 'style', severity: 'medium', layer: 'surface',
