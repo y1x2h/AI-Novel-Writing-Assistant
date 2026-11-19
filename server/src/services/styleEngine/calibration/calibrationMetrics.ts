@@ -11,9 +11,12 @@ export const calibrationEntrySchema = z.object({
   ruleId: styleSignalFindingSchema.shape.ruleId,
   /** AI 语料里每千字的候选证据条数。 */
   perKilo: z.number().nonnegative(),
-  /** 命中里来自真人语料的比例，用作误报代理指标。 */
+  /** 真人语料里每千字的候选证据条数。 */
+  humanPerKilo: z.number().nonnegative(),
+  /** 命中里来自真人语料的比例，只作来源占比代理，不等于真实误报率。 */
   falsePositiveRate: z.number().min(0).max(1),
   hits: z.number().int().nonnegative(),
+  humanHits: z.number().int().nonnegative(),
 });
 export type CalibrationEntry = z.infer<typeof calibrationEntrySchema>;
 
@@ -22,6 +25,7 @@ export const calibrationBaselineSchema = z.object({
   /** 与信号策略的 revision 绑定：改阈值或加信号后必须重新校准。 */
   signalRevision: z.literal("style-signals-v1"),
   sampleCharacters: z.number().int().nonnegative(),
+  humanCharacters: z.number().int().nonnegative(),
   generatedAt: z.string().min(1),
   tolerance: z.object({
     perKilo: z.number().nonnegative(),
@@ -47,7 +51,7 @@ function countCharacters(text: string): number {
 }
 
 /**
- * 用固定语料复算每条规则的命中密度与误报代理指标。
+ * 用固定语料复算每条规则的 AI/真人命中密度与命中来源占比。
  * 统计只产出基线与差异，不做任何硬判定，也不参与运行时路由。
  */
 export function measureCalibration(input: {
@@ -78,8 +82,10 @@ export function measureCalibration(input: {
     return {
       ruleId,
       perKilo: aiCharacters === 0 ? 0 : round((ai / aiCharacters) * 1000, 3),
+      humanPerKilo: humanCharacters === 0 ? 0 : round((human / humanCharacters) * 1000, 3),
       falsePositiveRate: denominator === 0 ? 0 : round(human / denominator, 4),
       hits: ai,
+      humanHits: human,
     } satisfies CalibrationEntry;
   });
 
@@ -87,8 +93,8 @@ export function measureCalibration(input: {
 }
 
 export interface CalibrationDrift {
-  ruleId: CalibrationRuleId;
-  field: "perKilo" | "falsePositiveRate" | "hits";
+  ruleId: CalibrationRuleId | "corpus.ai" | "corpus.human";
+  field: "perKilo" | "humanPerKilo" | "falsePositiveRate" | "hits" | "humanHits" | "characters";
   measured: number;
   expected: number;
   tolerance: number;
@@ -107,10 +113,19 @@ export function diffCalibration(input: {
 
   if (input.measurement.sampleCharacters !== input.baseline.sampleCharacters) {
     drifts.push({
-      ruleId: "template.transition",
-      field: "hits",
+      ruleId: "corpus.ai",
+      field: "characters",
       measured: input.measurement.sampleCharacters,
       expected: input.baseline.sampleCharacters,
+      tolerance: 0,
+    });
+  }
+  if (input.measurement.humanCharacters !== input.baseline.humanCharacters) {
+    drifts.push({
+      ruleId: "corpus.human",
+      field: "characters",
+      measured: input.measurement.humanCharacters,
+      expected: input.baseline.humanCharacters,
       tolerance: 0,
     });
   }
@@ -129,6 +144,15 @@ export function diffCalibration(input: {
         tolerance: input.baseline.tolerance.perKilo,
       });
     }
+    if (Math.abs(measured.humanPerKilo - entry.humanPerKilo) > input.baseline.tolerance.perKilo) {
+      drifts.push({
+        ruleId: entry.ruleId,
+        field: "humanPerKilo",
+        measured: measured.humanPerKilo,
+        expected: entry.humanPerKilo,
+        tolerance: input.baseline.tolerance.perKilo,
+      });
+    }
     if (Math.abs(measured.falsePositiveRate - entry.falsePositiveRate) > input.baseline.tolerance.falsePositiveRate) {
       drifts.push({
         ruleId: entry.ruleId,
@@ -144,6 +168,15 @@ export function diffCalibration(input: {
         field: "hits",
         measured: measured.hits,
         expected: entry.hits,
+        tolerance: 0,
+      });
+    }
+    if (measured.humanHits !== entry.humanHits) {
+      drifts.push({
+        ruleId: entry.ruleId,
+        field: "humanHits",
+        measured: measured.humanHits,
+        expected: entry.humanHits,
         tolerance: 0,
       });
     }

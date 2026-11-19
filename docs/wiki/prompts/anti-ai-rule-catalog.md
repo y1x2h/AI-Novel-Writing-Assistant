@@ -94,27 +94,46 @@ story-deslop 的表达层检查里，除了原有的词簇与标点问题，还�
 
 ### Background
 
-反 AI 信号的阈值过去只有「工程初值」：改过词表或阈值后，没有任何机制能说明这会让检测变松还是变紧，也无法在回归时发现偏移。同时，规则在真人文本上会不会误触发，此前完全靠人工感觉。
+反 AI 信号的阈值过去只有「工程初值」：改过词表或阈值后，没有任何机制能说明这会让检测变松还是变紧，也无法在回归时发现偏移。同时，规则在真人文本上会不会误触发，此前完全靠人工感觉；没有作者、作品与版权来源的匿名或自写片段，也不足以证明真人写作中的实际命中情况。
 
 ### Decision
 
-- 在 `server/src/services/styleEngine/calibration/` 下建立可复算的校准基线，语料以 `.txt` 提交进仓库，规模刻意保持小（当前 AI 语料 1178 字、真人语料 179 字），保证任何人本地都能复现。
-- 基线只记录事实：每条规则的 `hits`、`perKilo`（AI 语料每千字命中条数）与 `falsePositiveRate`（命中里来自真人语料的比例，作为误报代理指标）。
+- 在 `server/src/services/styleEngine/calibration/` 下建立可复算的校准基线，语料以 `.txt` 提交进仓库，规模刻意保持小（当前 AI 语料 1178 字、真人语料 2636 字），保证任何人本地都能复现。
+- 真人语料必须同时在 `corpus/provenance.json` 登记作者、作品、HTTPS 来源、版权依据和节选说明。当前样本是鲁迅《孔乙己》与许地山《命命鸟》的公有领域原文节选，保留原用字与标点，只去除网页空白；至少两位作者，避免把单一作者的习惯当成普遍规律。
+- 当前真人样本属于早期现代中文小说，只用于复算和回归，不代表现代网文或全部中文小说的分布，也不能据此推出题材、年代或作者身份结论。
+- 基线只记录事实：每条信号的 AI 命中数 `hits`、真人命中数 `humanHits`、AI 每千字命中密度 `perKilo`、真人每千字命中密度 `humanPerKilo`，以及 `falsePositiveRate = humanHits / (hits + humanHits)`。最后这个历史字段名只表示**命中来源占比**：真人命中尚未经过违规裁决，因此它不是严格统计意义上的误报率，更不是文本由 AI 创作的概率。
 - 基线用 `signalRevision` 与信号策略 revision 绑定。改动 `shared/types/styleEngine/signals.ts` 的阈值、词表或新增信号后，必须刷新基线，否则 `calibration.test.js` 直接失败。
 - AI 语料必须覆盖全部 20 条信号；检测到某条规则在 AI 语料里零命中时，测试提示补样本，避免基线在无声中失效。叙述类信号需要足够的连续正文（连接密度要求单文件叙述 ≥600 字），语料样本不能是孤句拼接。
 
 ### Current Rule
 
-- 刷新方式：在 `server` 目录执行 `pnpm run calibrate:signals`，把输出的 entries 与 `sampleCharacters` 粘回 `calibrationBaseline.ts`。
-- 容差：`perKilo` 0.05、`falsePositiveRate` 0.02，`hits` 与 `sampleCharacters` 必须完全一致。
-- 校准只服务回归与解释，不参与运行时判定，也不产生任何规则路由。
-- 当前已知事实：`syntax.attributive-stack` 的 `falsePositiveRate` 为 0.5——真人语料里的 `巷子深处飘来煮面条的味道` 被误判为长定语。该信号的回溯没有在无边界词的短句中途停住，属于召回边界偏宽，已作为待收敛项保留在基线里，不在校准阶段顺手修改检测逻辑。
+- 刷新方式：在 `server` 目录执行 `pnpm run calibrate:signals`，把输出的 entries、`sampleCharacters` 与 `humanCharacters` 粘回 `calibrationBaseline.ts`。
+- `provenance.human` 必须与磁盘真人 `.txt` 文件一一对应，不允许重复、匿名、未知或待确认来源。当前入库测试要求版权依据明确标注「公有领域」；未来若引入其他授权文本，必须先明确扩展版权合同，不能含糊绕过。
+- 容差：`perKilo` 与 `humanPerKilo` 均为 0.05，`falsePositiveRate` 为 0.02；`hits`、`humanHits`、`sampleCharacters` 与 `humanCharacters` 必须完全一致。AI 与真人字数漂移分别报告为 `corpus.ai / characters` 和 `corpus.human / characters`，不借用具体信号规则伪装语料变化。
+- 当前真人语料在以下七类信号上有正常候选命中，数值是回归事实而不是违规结论：
+
+| 信号 | `humanHits` | `humanPerKilo` |
+| --- | ---: | ---: |
+| `rhythm.comma-density` | 1 | 0.379 |
+| `syntax.attributive-stack` | 4 | 1.517 |
+| `syntax.particle-overload` | 4 | 1.517 |
+| `discourse.low-connective-density` | 2 | 0.759 |
+| `surface.em-dash` | 1 | 0.379 |
+| `discourse.long-paragraph` | 3 | 1.138 |
+| `surface.conclusion-colon` | 2 | 0.759 |
+
+- 这些命中说明长定语、「的」字、连接词、长段、冒号与破折号本身都可以是正常中文表达。它们必须原样保留在基线中，防止后续改动把「真人零命中」误当成质量目标；候选证据是否构成违规，仍由 LLM 结合聚集度、信息增量与作品写法判断，命中不授予自动改写权限。
+- 校准只服务开发期回归与解释，不参与运行时判定、评分、作者身份判断或规则路由。
 
 ### Failure Modes
 
 - **改了阈值不刷基线**：revision 不一致或数值漂移会让测试失败，这是期望行为，不要通过放宽容差绕过。
-- **把语料当判定样本**：语料只用于复算与回归，不能拿它当"AI 味标准答案"，更不能据此做关键词判定。
-- **扩大语料却不更新基线**：`sampleCharacters` 与 `hits` 是精确比对项，扩语料必须同一提交刷新基线。
+- **匿名或自写文本冒充真人基线**：没有可核验作者、作品、来源和版权依据的文本不能进入真人语料；至少两位作者的要求也不能靠拆分同一作者的不同片段绕过。
+- **把来源占比当误报率或作者概率**：`falsePositiveRate` 只描述当前两组语料的命中来源比例，不能用于判定某段正文由 AI 或真人创作。
+- **为追求零命中删样本或改窄阈值**：真人正常命中是重要反例，必须保留并解释；若要调整检测逻辑，应另有语义证据和聚焦测试，而不是让校准表看起来更好。
+- **把语料当判定样本**：语料只用于复算与回归，不能拿它当「AI 味标准答案」，更不能据此做关键词判定。
+- **扩大语料却不更新基线**：两侧字数与命中数都是精确比对项，扩语料必须同一提交更新来源清单并刷新基线。
+- **把小型公版样本外推为现代网文结论**：增加代表性需要更多合法、可核验且覆盖不同作者与文体的样本，不能用当前结果宣称某类表达在网文中的普遍频率。
 
 ## 改写力度分级（轻改 / 中改 / 重写）
 

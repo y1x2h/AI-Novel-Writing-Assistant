@@ -4,7 +4,7 @@ import { CALIBRATION_BASELINE } from "./calibrationBaseline";
 import { loadCalibrationCorpus } from "./loadCalibrationCorpus";
 
 /**
- * 开发脚本：用固定语料复算每条反 AI 信号的命中密度与误报代理指标。
+ * 开发脚本：用固定语料复算每条反 AI 信号的 AI/真人命中密度与命中来源占比。
  *
  * 运行方式（在 server 目录下）：
  *   pnpm run calibrate:signals
@@ -16,7 +16,7 @@ import { loadCalibrationCorpus } from "./loadCalibrationCorpus";
  */
 function renderBaselineEntries(measurement: CalibrationMeasurement): string {
   return measurement.entries
-    .map((entry) => `  { ruleId: "${entry.ruleId}", perKilo: ${entry.perKilo}, falsePositiveRate: ${entry.falsePositiveRate}, hits: ${entry.hits} },`)
+    .map((entry) => `  { ruleId: "${entry.ruleId}", perKilo: ${entry.perKilo}, humanPerKilo: ${entry.humanPerKilo}, falsePositiveRate: ${entry.falsePositiveRate}, hits: ${entry.hits}, humanHits: ${entry.humanHits} },`)
     .join("\n");
 }
 

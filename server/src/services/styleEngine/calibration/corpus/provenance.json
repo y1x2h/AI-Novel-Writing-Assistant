@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "human": [
+    {
+      "file": "01-narrative.txt",
+      "author": "鲁迅",
+      "work": "孔乙己",
+      "sourceUrl": "https://zh.wikisource.org/wiki/%E5%AD%94%E4%B9%99%E5%B7%B1",
+      "rights": "公有领域：作者鲁迅于1936年逝世；原文节选",
+      "selection": "开篇五段，保留原用字与标点，仅去除网页空白"
+    },
+    {
+      "file": "02-dialogue.txt",
+      "author": "许地山",
+      "work": "命命鸟",
+      "sourceUrl": "https://zh.wikisource.org/wiki/%E5%91%BD%E5%91%BD%E9%B3%A5",
+      "rights": "公有领域：作者许地山于1941年逝世；原文节选",
+      "selection": "开篇学校场景，保留原用字与标点，仅去除网页空白"
+    }
+  ]
+}
