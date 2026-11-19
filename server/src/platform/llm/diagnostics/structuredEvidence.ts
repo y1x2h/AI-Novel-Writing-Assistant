@@ -11,26 +11,35 @@ function status(value: unknown): number | null {
   return typeof value === "number" && value >= 100 && value <= 599 ? value : null;
 }
 
-export function emptyResponseEvidence(maxTokens?: number): StructuredResponseEvidence {
+export function emptyResponseEvidence(
+  maxTokens?: number, budgetTrace?: StructuredResponseEvidence["budgetTrace"],
+): StructuredResponseEvidence {
   return { failureReason: null, finishReason: null, refused: false, contentChars: 0, reasoningChars: 0,
     httpStatus: null, providerCode: null, retryAfterMs: null, durationMs: 0,
-    maxTokens: maxTokens ?? null, tokenUsage: null, errorChain: [] };
+    maxTokens: maxTokens ?? null, ...(budgetTrace ? { budgetTrace } : {}), tokenUsage: null, errorChain: [] };
 }
 
 export function observeStructuredChunk(evidence: StructuredResponseEvidence, chunk: unknown): void {
   const source = record(chunk);
   const metadata = record(source.response_metadata);
   const extra = record(source.additional_kwargs);
-  evidence.finishReason = token(metadata.finish_reason ?? metadata.stop_reason ?? extra.finish_reason) ?? evidence.finishReason;
+  evidence.finishReason = readResponseFinishReason(chunk) ?? evidence.finishReason;
   evidence.refused ||= Boolean(extra.refusal || metadata.refusal || metadata.blocked);
   const usage = extractLlmTokenUsage(chunk);
   evidence.tokenUsage = mergeStreamTokenUsage(evidence.tokenUsage, usage);
+}
+
+export function readResponseFinishReason(chunk: unknown): string | null {
+  const source = record(chunk);
+  const metadata = record(source.response_metadata);
+  return token(metadata.finish_reason ?? metadata.stop_reason ?? record(source.additional_kwargs).finish_reason);
 }
 
 export function classifyResponseEvidence(
   evidence: StructuredResponseEvidence, error?: unknown, category?: string, cancelled = false,
 ): StructuredFailureReason | null {
   if (cancelled) return "cancelled";
+  const rootMessage = error instanceof Error ? error.message : typeof error === "string" ? error : "";
   const seen = new Set<unknown>();
   let current = error;
   while (current && !seen.has(current) && seen.size < 6) {
@@ -49,6 +58,14 @@ export function classifyResponseEvidence(
       if (Number.isFinite(delay) && delay >= 0) evidence.retryAfterMs ??= Math.ceil(delay);
     }
     current = item.cause;
+  }
+  // Some providers surface the HTTP status only inside the error message
+  // ("400 inference request is invalid"). Recover it so downstream retry and
+  // fallback decisions see the real status instead of retrying blindly.
+  if (evidence.httpStatus == null && rootMessage) {
+    const stripped = rootMessage.replace(/^\[STRUCTURED_OUTPUT:[a-z_]+\]\s*/i, "");
+    const match = stripped.match(/^\s*(\d{3})\b/) ?? rootMessage.match(/\bstatus(?: code)?\s*(\d{3})\b/i);
+    if (match) evidence.httpStatus ??= status(Number(match[1]));
   }
   if (evidence.refused || evidence.finishReason === "content_filter" || evidence.finishReason === "refusal") return "blocked";
   if (evidence.httpStatus === 429) return "rate_limited";

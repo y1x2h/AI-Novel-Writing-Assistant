@@ -1,3 +1,4 @@
+import { outlineOpeningPlan, prepareOutlineHandoff, withOutlineOpeningSteps } from "./outlineOpening";
 import { prepareEditedChapterGate } from "./recovery/editedChapterGate";
 import {withStepUsage} from "./usage";
 import { prisma } from "../../db/prisma";
@@ -17,7 +18,7 @@ import { generateAutoCharacterCastDraft, appendCharacterCastOptionsDraft } from 
 import { NovelCorePipelineService } from "../../services/novel/novelCorePipelineService";
 import {buildDirectorCompletionProfile} from "@ai-novel/shared/types/directorCompletion";
 import { DIRECTOR_ISSUE_POLICY_PRESETS, directorIssuePolicySchema } from "@ai-novel/shared/types/directorIssue";
-import { requireLaunch, modelOptions, planningModelOptions, bookContractInput, targetVolume, executionWindow } from "./productionInputs";
+import { requireLaunch, modelOptions, planningModelOptions, bookContractInput, targetVolume, executionWindow, readExecutionWindow } from "./productionInputs";
 import { readBatchOutcome } from "./batchOutcome";
 import {readEditedArtifact, resumeBusiness, cancelBusiness} from "./savedContent";
 import {readExistingAssets} from "./existingAssets";
@@ -28,8 +29,8 @@ import {readProductionProjection} from "./projections/productionProgress";
 import {assertNovelDirectorVersion, assertV2RunExecution, readRunExecutionEpoch} from "../../modules/novel/director-routing";
 import {AppError} from "../../middleware/errorHandler";
 import {directorIssuePolicyService} from "../../services/novel/director/issues/DirectorIssuePolicyService";
-import {getDirectorChapterBudgetSettings} from "../../services/settings/chapterBudget";
-import {DEFAULT_DIRECTOR_CHAPTER_TOKEN_LIMIT} from "@ai-novel/shared/types/director/chapterBudget";
+import {resolveDirectorChapterBudget} from "../../services/settings/chapterBudget";
+import {LEGACY_DIRECTOR_CHAPTER_TOKEN_LIMIT} from "@ai-novel/shared/types/director/chapterBudget";
 import { createKernelProductionStep, createNativeKernelRuntime, assertKernelOpenReadiness } from "./productionKernel";
 import {MANUAL_CHAPTER_PLAN_VERSION, readManualChapterRequest, type ManualChapterLaunchInput} from "./productionKernel/manual/contract";
 import {assertKernelStartReadiness} from "./productionKernel";
@@ -53,7 +54,7 @@ export function createDirectorProductionOptions(): DirectorNextServiceOptions {
       const workspace = await volumes.getVolumes(context.contract.novelId, {hydrateCanonical:false});
       return {...modelOptions(context), targetVolumeId: targetVolume(context, workspace)};
     }, contentHash});
-  const stepRegistry = createProductionStepRegistry(withStepUsage({
+  const stepRegistry = createProductionStepRegistry(withStepUsage(withOutlineOpeningSteps({
     story_macro: createStoryMacroStepHandler({storyMacroService: macro, inputProvider: async context => ({...modelOptions(context), storyInput: requireLaunch(context.contract).storyInput}), contentHash}),
     book_contract: createBookContractStepHandler({generationService: new BookContractGenerationService(), bookContractService: book,
       inputProvider: async context => ({novelId: context.contract.novelId, ...modelOptions(context), promptInput: await bookContractInput(context, macro)}), contentHash}),
@@ -93,7 +94,8 @@ export function createDirectorProductionOptions(): DirectorNextServiceOptions {
       const workspace = await volumes.getVolumes(context.contract.novelId, {hydrateCanonical:false});return {...planningModelOptions(context), workspace, targets: executionWindow(context, workspace).targets};
     }, resolveIssues: async (_context, reports) => resolveChapterQualityReports(reports), contentHash}),
     execution_contract_sync: createExecutionContractSyncStepHandler({volumeService: {syncVolumeChaptersWithOptions:(novelId,input,options)=>volumes.syncVolumeChaptersWithOptions(novelId,input,{...options,hydrateCanonical:false})}, chapterService: new ChapterService(), inputProvider: async context => {
-      const workspace = await volumes.getVolumes(context.contract.novelId, {hydrateCanonical:false});return {workspace, executionRange: executionWindow(context, workspace).executionRange};
+      const workspace = await volumes.getVolumes(context.contract.novelId, {hydrateCanonical:false});
+      return readExecutionWindow(context, workspace);
     }, contentHash}),
     chapter_batch: createKernelProductionStep({db: prisma, runtime: context => createNativeKernelRuntime(prisma, context),
       legacy: createChapterBatchStepHandler({pipelineService: pipeline, inputProvider: async context => {
@@ -107,7 +109,8 @@ export function createDirectorProductionOptions(): DirectorNextServiceOptions {
       }
       const policy = directorIssuePolicySchema.parse(context.contract.issuePolicy.pipelinePolicy);
       return {...modelOptions(context), startOrder: range.from, endOrder: range.to, directorNext: {runId: context.runId, decisions: [],
-        chapterTokenLimit: input.chapterTokenLimit ?? DEFAULT_DIRECTOR_CHAPTER_TOKEN_LIMIT},
+        chapterTokenLimit: input.chapterTokenLimit ?? LEGACY_DIRECTOR_CHAPTER_TOKEN_LIMIT,
+        ...(input.chapterBudgetAutomatic ? {chapterBudgetAutomatic: true} : {})},
         issueGovernanceVersion: 1 as const, issuePolicySnapshot: policy, autoReview: true, autoRepair: true,
         controlPolicy: {kickoffMode: "director_start" as const, advanceMode: range.to === input.estimatedChapterCount ? "full_book_autopilot" as const : "auto_to_execution" as const,
           reviewCheckpoints: [], autoExecutionRange: {mode: "chapter_range" as const, start: range.from, end: range.to}}};
@@ -118,10 +121,10 @@ export function createDirectorProductionOptions(): DirectorNextServiceOptions {
     }, save: async (runId, jobId) => events.append({runId, type: "chapter_batch_job", payload: {jobId}})},
       readOutcome: readBatchOutcome, waitForPoll: () => new Promise(resolve => setTimeout(resolve, 1000)),
       isRunActive: async runId => (await prisma.directorNextRunControl.findUnique({where: {runId}, select: {status: true}}))?.status === "running", contentHash})}),
-  }));
+  }, volumes)));
   const manualPlan = {version: MANUAL_CHAPTER_PLAN_VERSION, externalArtifacts: ["novel_seed"],
     steps: [{...directorProductionPlan.steps.find(step => step.id === "chapter_batch")!, requires: ["novel_seed"], overwrites: [], gateable: false}]};
-  return {prepareGate: prepareEditedChapterGate, plan: directorProductionPlan, additionalPlans: [manualPlan], stepRegistry, readEditedArtifact, resumeBusiness, cancelBusiness,
+  return {prepareGate: prepareEditedChapterGate, plan: directorProductionPlan, additionalPlans: [manualPlan, outlineOpeningPlan], stepRegistry, readEditedArtifact, resumeBusiness, cancelBusiness,
     executionBoundary: {
       beforeOpen: async (novelId, tx) => {
         await tx.novel.update({where: {id: novelId}, data: {directorEpoch: {increment: 0}}});
@@ -161,13 +164,18 @@ export function createDirectorProductionOptions(): DirectorNextServiceOptions {
       launchInput: launch, tokenBudget: null, rejectionBudget: 3};
     requireLaunch(contract);readManualChapterRequest(contract);return contract;
   }, prepareOpen: async contract => {
+    await prepareOutlineHandoff(contract);
     const identity = await assertNovelDirectorVersion(contract.novelId, "v2");
     const manual = readManualChapterRequest(contract);
     if (manual) contract.executionEpoch = identity.epoch;
     if (manual) await assertKernelStartReadiness(prisma, contract);
     else await assertKernelOpenReadiness(prisma, contract);
     const launch = requireLaunch(contract);
-    launch.chapterTokenLimit ??= (await getDirectorChapterBudgetSettings()).tokenLimit;
+    if (launch.chapterTokenLimit == null) {
+      const budget = await resolveDirectorChapterBudget();
+      launch.chapterTokenLimit = budget.tokenLimit;
+      if (budget.automatic) launch.chapterBudgetAutomatic = true;
+    }
     const configured = (await directorIssuePolicyService.getNovelPolicy(contract.novelId)).effectivePolicy.chapterReviewRetryPolicy;
     if (configured && contract.issuePolicy.pipelinePolicy) contract.issuePolicy.pipelinePolicy.chapterReviewRetryPolicy = {...configured};
     const novel = await prisma.novel.findUniqueOrThrow({where: {id: contract.novelId}, select: {id: true, title: true, description: true}});

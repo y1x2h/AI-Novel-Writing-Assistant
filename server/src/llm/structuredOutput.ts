@@ -17,6 +17,7 @@ export type StructuredOutputErrorCategory =
   | "empty_response"
   | "reasoning_budget_exhausted"
   | "output_budget_exhausted"
+  | "model_unavailable"
   | "transport_error";
 
 export interface StructuredOutputProfile {
@@ -26,9 +27,7 @@ export interface StructuredOutputProfile {
   nativeJsonObject: boolean;
   requiresNonThinkingForStructured: boolean;
   supportsReasoningToggle: boolean;
-  omitMaxTokensForNativeStructured: boolean;
   preferredStructuredStrategy: StructuredOutputStrategy;
-  safeStructuredMaxTokens?: number;
   family: string;
 }
 
@@ -140,9 +139,7 @@ function buildProfile(input: Partial<StructuredOutputProfile> & { family: string
     nativeJsonObject: input.nativeJsonObject ?? false,
     requiresNonThinkingForStructured: input.requiresNonThinkingForStructured ?? false,
     supportsReasoningToggle: input.supportsReasoningToggle ?? false,
-    omitMaxTokensForNativeStructured: input.omitMaxTokensForNativeStructured ?? false,
     preferredStructuredStrategy: input.preferredStructuredStrategy ?? "prompt_json",
-    safeStructuredMaxTokens: input.safeStructuredMaxTokens,
     family: input.family,
   };
 }
@@ -175,7 +172,6 @@ function resolveBuiltinStructuredOutputProfile(input: {
     return buildProfile({
       family: "anthropic",
       preferredStructuredStrategy: "prompt_json",
-      safeStructuredMaxTokens: 8192,
     });
   }
   if (usesOfficialEndpoint("gemini", GEMINI_HOST_PATTERN)) {
@@ -235,7 +231,6 @@ function resolveBuiltinStructuredOutputProfile(input: {
     return buildProfile({
       family: "minimax",
       preferredStructuredStrategy: "prompt_json",
-      safeStructuredMaxTokens: 8192,
     });
   }
   if (isDashScopeQwen) {
@@ -245,8 +240,6 @@ function resolveBuiltinStructuredOutputProfile(input: {
       preferredStructuredStrategy: qwenNativeStructuredModel ? "json_object" : "prompt_json",
       requiresNonThinkingForStructured: qwenMixedThinkingModel,
       supportsReasoningToggle: qwenMixedThinkingModel,
-      omitMaxTokensForNativeStructured: qwenNativeStructuredModel,
-      safeStructuredMaxTokens: qwenNativeStructuredModel ? undefined : 8192,
     });
   }
   if (isModelScopeQwen && qwenFamily) {
@@ -255,14 +248,12 @@ function resolveBuiltinStructuredOutputProfile(input: {
       preferredStructuredStrategy: "prompt_json",
       requiresNonThinkingForStructured: qwenMixedThinkingModel && !qwenThinkingOnlyModel,
       supportsReasoningToggle: qwenMixedThinkingModel && !qwenThinkingOnlyModel,
-      safeStructuredMaxTokens: 8192,
     });
   }
   if (qwenFamily) {
     return buildProfile({
       family: "custom_openai_compatible_qwen",
       preferredStructuredStrategy: "prompt_json",
-      safeStructuredMaxTokens: 8192,
     });
   }
   if (usesOfficialEndpoint("openai", OPENAI_HOST_PATTERN)) {
@@ -277,34 +268,29 @@ function resolveBuiltinStructuredOutputProfile(input: {
     return buildProfile({
       family: "anthropic",
       preferredStructuredStrategy: "prompt_json",
-      safeStructuredMaxTokens: 8192,
     });
   }
   if (input.provider === "siliconflow") {
     return buildProfile({
       family: "siliconflow",
       preferredStructuredStrategy: "prompt_json",
-      safeStructuredMaxTokens: 8192,
     });
   }
   if (input.provider === "ollama") {
     return buildProfile({
       family: "ollama",
       preferredStructuredStrategy: "prompt_json",
-      safeStructuredMaxTokens: 8192,
     });
   }
   if (customProvider) {
     return buildProfile({
       family: qwenFamily ? "custom_openai_compatible_qwen" : "custom_openai_compatible",
       preferredStructuredStrategy: "prompt_json",
-      safeStructuredMaxTokens: 8192,
     });
   }
   return buildProfile({
     family: "default",
     preferredStructuredStrategy: "prompt_json",
-    safeStructuredMaxTokens: 8192,
   });
 }
 
@@ -424,6 +410,10 @@ export function classifyStructuredOutputFailure(input: {
   const lowerMessage = message.toLowerCase();
   const trimmedRawContent = rawContent.trim().toLowerCase();
   const haystack = `${message}\n${rawContent}`.toLowerCase();
+  if ((input.error && typeof input.error === "object" && "status" in input.error && input.error.status === 402)
+    || /余额不足|额度不足|quota\s+exhausted|insufficient\s+(?:balance|credits)|payment required/.test(haystack)) {
+    return "model_unavailable";
+  }
 
   if (
     haystack.includes("response_format")
@@ -503,6 +493,7 @@ export function extractStructuredOutputErrorCategory(message?: string | null): S
     "empty_response",
     "reasoning_budget_exhausted",
     "output_budget_exhausted",
+    "model_unavailable",
     "transport_error",
   ].includes(category) ? category : null;
 }
@@ -529,7 +520,7 @@ export class StructuredOutputError extends Error {
   }
 }
 
-export function describeStructuredResponseFailure(reason: StructuredFailureReason): {
+export function describeStructuredResponseFailure(reason: StructuredFailureReason | "model_unavailable"): {
   category: StructuredOutputErrorCategory;
   message: string;
 } {
@@ -548,6 +539,11 @@ export function describeStructuredResponseFailure(reason: StructuredFailureReaso
       return {
         category: "output_budget_exhausted",
         message: "模型输出达到 Token 上限后被截断（finish_reason=length/max_tokens），结果不完整。请提高输出 Token 上限后重试。",
+      };
+    case "model_unavailable":
+      return {
+        category: "model_unavailable",
+        message: "模型余额或可用额度不足。请检查账户额度，或更换可用的模型渠道后重试。",
       };
     case "blocked":
       return { category: "transport_error", message: "模型拒绝或过滤了本次请求，请调整创作要求或核对模型服务提示。" };

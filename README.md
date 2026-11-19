@@ -8,8 +8,13 @@
 <p align="center"><sub>Open-source AI novel writing assistant and long-form production studio.</sub></p>
 
 <p align="center">
+  <a href="https://biznovelstudio.com"><strong>🌐 项目官网｜使用文档、下载安装与更新说明</strong></a>
+</p>
+
+<p align="center">
   <a href="https://github.com/ExplosiveCoderflome/AI-Novel-Writing-Assistant/releases/latest"><img src="https://img.shields.io/github/v/release/ExplosiveCoderflome/AI-Novel-Writing-Assistant?style=flat-square&amp;label=Windows%20%E6%A1%8C%E9%9D%A2%E7%89%88&amp;color=17556b" alt="最新桌面版本" /></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/License-AGPL--3.0-17556b?style=flat-square" alt="AGPL-3.0 许可证" /></a>
+  <a href="https://linux.do/"><img src="https://img.shields.io/badge/LINUX%20DO-%E7%A4%BE%E5%8C%BA-FDD835?style=flat-square&amp;labelColor=222" alt="LINUX DO 社区" /></a>
   <a href="./package.json"><img src="https://img.shields.io/badge/Monorepo-pnpm%20workspace-3C873A?style=flat-square" alt="Monorepo · pnpm workspace" /></a>
 </p>
 
@@ -33,7 +38,7 @@
 
 <p align="center">
   <a href="https://github.com/ExplosiveCoderflome/AI-Novel-Writing-Assistant/releases/latest"><strong>下载 Windows 桌面版</strong></a> ·
-  <a href="https://explosivecoderflome.github.io/AI-Novel-Writing-Assistant/">项目介绍与文档</a> ·
+  <a href="https://biznovelstudio.com">项目官网与文档</a> ·
   <a href="#快速开始">第一次使用</a> ·
   <a href="#源码运行">源码运行</a> ·
   <a href="https://github.com/ExplosiveCoderflome/AI-Novel-Writing-Assistant/issues">问题反馈</a>
@@ -45,30 +50,40 @@
 
 **桌面版适合直接开始写作；源码版适合开发和自行部署。** 模型需要使用你自己的 API 配置，知识库检索可按需启用。
 
-[最新更新](#最新更新) · [能做什么](#现在已经能做什么) · [导演版本与模式](#导演版本与运行模式) · [Token 缓存优化](#token-缓存与调用优化) · [功能预览](#功能预览) · [文档导航](#文档导航) · [参与项目](#参与项目)
+[最新更新](#最新更新) · [能做什么](#现在已经能做什么) · [导演版本与模式](#导演版本与运行模式) · [功能预览](#功能预览) · [文档导航](#文档导航) · [参与项目](#参与项目)
 
 ## 最新更新
 
-### 2026-11-19
+### 2026-11-19 · v0.8.9
+
+桌面版本 `v0.8.9` 支持长篇通读和导出、拆书分段续跑与版本对比，并改善大纲确认、短篇规划和章节生成的恢复体验。
 
 #### 新增
 
 - 写法检测新增四类「组织方式」层面的提示：同一段里同一实体换来换去的说法、段落之间衔接得太紧没有自然停顿、用冒号先给结论再展开、连续三句骨架几乎一样。每类都给出明确的修改方向，只提示不自动改坏内容。
 - 写法检测新增叙事层配比提醒：强情绪场景是否主要靠身体反应呈现、主角是否以外貌登场、结局是否停在内心接受、叙述者是否替读者下结论、对白是否变成观念辩论。每类给出修改方向，只提醒不自动改剧情。
 - 写法检测新增场景过程与压力变化提醒：关键转折只有结果、缺少必要过程，或长段叙述缺少目标、信息、关系与情绪落点变化时会给出修改方向。必要喘息、过渡和有意平静的段落无需强行制造转折，两类提醒都不会自动改剧情。
+- 长篇完稿后，可以从简易书架或导演台通读全书，也可以按当前有效目录导出 TXT。
+- 拆书小节重新生成后，可以对比手改正文与 AI 生成版，选用 AI 版后保存。参考开书、续写和发布会使用保存后的正文。
 
 #### 优化
 
 - 去 AI 味改写不再误改那些经实测并不是 AI 味的写法：序数词小标题、冒号后的纯列表、用概括代替具体数值的材料说明会原样保留；「这意味着」「也就是说」这类词本身不再被当成问题，只有在它们总结主题或替读者解释设定时才提示。比喻是否贴切只做提醒，不自动替换。
 - 改写预览新增过度修正提醒：当修改新带来的表达问题不少于已处理的问题，或修改后表达风险参考分反而升高时，会提示对照原稿确认；该提醒只作参考，不阻断采用。
+- 首页按作品显示待确认、暂停和失败事项，点击即可回到对应作品或导演台。V2 导演台展开分卷可直接查看本卷章节。
+- 拆书中断或扩容后只补跑缺失的原文笔记和小节。已保存的笔记可以复用，所选原文过长时会提示缩小范围。
 
 #### 修复
 
 - 写法检测在模型返回的规则编号夹带方括号时，会先整理成可用编号再生成报告，避免部分章节的检测结果因编号格式不被识别而整体失败。
+- 章节首稿和续写按模型路由分配输出额度。遇到截断、空正文或流式生成中断时，可从已保存的进度恢复。
+- 短篇规划按作品规模分配输出额度，额度允许时自动提额重试。大纲开书后可正常确认章节计划，大纲建议遇到输出上限也会尝试提额重试。
+- 桌面端重启后会记住已关闭的开书引导提示。
 
-完整历史更新见 [版本更新说明](./docs/releases/release-notes.md)。
+[查看完整更新历史](docs/releases/release-notes.md)
 
----
+正式桌面版以 GitHub Release 的 **v0.8.9** 五平台安装包为准。打包期间可从 [GitHub Releases](https://github.com/ExplosiveCoderflome/AI-Novel-Writing-Assistant/releases/latest) 下载当前正式版。`v0.8.8`、`v0.8.7` 和 `v0.8.6` 均提供完整五平台安装包，`v0.8.5` 亦为完整五平台，`v0.8.4` 缺 Windows 包，`v0.8.3` 标签曾推送但打包失败、无安装包，`v0.8.2` 附注标签也不对应可下载版本。功能与致谢见[完整更新历史](docs/releases/release-notes.md)。
+
 
 ## 现在已经能做什么
 
@@ -173,36 +188,7 @@ V2 单章默认上限为 **100,000 Tokens**，累计包含该章的生成、检�
 
 [常见问题](./docs/public/faq.md) · [故障排查](./docs/public/troubleshooting.md)
 
-## Token 缓存与调用优化
-
-长篇创作会反复使用本书约定、写法与世界规则。工作台把可复用的规则和书级、卷级资料放在输入前部，再附上本章任务、当前状态与正文，为模型供应商复用相同前缀提供条件。缓存复用的是已处理过的输入，正文仍由模型基于本次任务生成。
-
-### 哪些部分做了优化
-
-- **稳定资料前置。** 表达规则、作品约定和适用的世界规则按复用范围组织；每次读取当前资料，修改设置后后续调用使用新内容。
-- **同章修文复用前缀。** 局部修文把本次修复重点放在同章资料和正文之后，资料与正文未变化时更容易复用前缀，同时保留写法、世界约束和秘密边界。
-- **有效审校结果复用。** 正文、创作约定、检查规则、模型与参数等相关条件一致时，复用有效的检查结果，减少相同请求的重复调用。这与厂商的输入缓存是两种机制。
-- **减少无效修文与复验。** 检查区分必须修复的缺口和普通表达建议，结合修改位置与实际效果处理局部问题，避免反复改整章；默认完成优先策略下，残余局部问题保留为质量提醒。
-
-### 不同步骤，复用空间不同
-
-| 步骤 | 可以复用的主要资料 | 必须随创作更新的内容 |
-| --- | --- | --- |
-| 章节规划 | 书级定位、作品约定、适用的卷级目标 | 本章任务、近期结果、人物状态 |
-| 正文生成 | 写法与表达规则、作品约定、适用的世界规则 | 上章接续、本章事件、场景和人物状态 |
-| 章节检查 | 检查标准、同章任务与约定 | 当前待检查正文与修文结果 |
-| 局部修文 | 本书写法、同章资料、未变化的正文 | 本次问题证据、修复重点和追加要求 |
-| 写后资料整理 | 抽取规则、确实未变化的相关资料 | 新正文、角色变化、资源与伏笔状态 |
-
-正文需要输入新的剧情和状态，这部分未命中是正常成本。首次调用、切换模型或通道、修改书级资料，也可能让命中量发生变化。优化效果应结合正文质量、输入命中与未命中 Tokens、输出 Tokens、调用次数和单章总用量一起判断。
-
-### 从哪里查看实际效果
-
-在本书 **“AI 用量”** 中筛选同一章节、步骤与模型，比较连续调用的输入、输出、命中和未命中 Tokens。也可以在 **AI 实况** 中查看正在执行的调用。
-
-**缓存命中与未命中都属于输入 Tokens，不在总用量之外重复相加。** 缓存统计以厂商实际返回为准，未提供的字段显示未知；缓存收益受厂商、模型与通道的机制影响，不能承诺固定命中率或节省比例。新建章节预算扣除已报告的有效命中量，原始调用总量仍完整保留，实际费用以厂商账单为准。
-
-面向开发者的详细边界见[模型输入缓存 Wiki](./docs/wiki/prompts/llm-input-cache.md)与[小说 AI 用量说明](./docs/wiki/workflows/novel-ai-usage.md)。
+模型、用量与写法等进阶配置可在作品创作过程中按需开启；具体操作见[模型设置](./docs/public/modules/system-settings.md)、[模型路由](./docs/public/modules/model-routing.md)与[项目文档站](https://explosivecoderflome.github.io/AI-Novel-Writing-Assistant/)。
 
 ## 功能预览
 
@@ -342,7 +328,7 @@ V1 与 V2 分别编排这条链，已保存的小说资料可以复用。章节�
 | 原理、模块边界与开发规范 | [开发 Wiki](./docs/wiki/README.md) · [文档目录](./docs/README.md) · [协作规则](./AGENTS.md) |
 | 历史更新与后续方向 | [完整更新记录](./docs/releases/release-notes.md) · [当前路线图](./TASK.md) |
 
-也可以在[在线文档站](https://explosivecoderflome.github.io/AI-Novel-Writing-Assistant/)搜索模块与使用问题。
+也可以在[在线文档站](https://biznovelstudio.com)搜索模块与使用问题。
 
 ## 源码运行
 
@@ -488,6 +474,18 @@ V2 内核位于 `server/src/modules/director/`，业务能力由应用层接入�
 
 提交贡献前请阅读 [CONTRIBUTING.md](./CONTRIBUTING.md) 与 [CLA.md](./CLA.md)，并说明第三方代码、素材及其许可证。感谢参与测试、提出建议和提交修复的朋友，也感谢贡献者 [@ystyleb](https://github.com/ystyleb)。
 
+### 友情链接
+
+<p align="center">
+  <a href="https://linux.do/"><img src="https://img.shields.io/badge/LINUX%20DO-%E7%A4%BE%E5%8C%BA-FDD835?style=flat-square&amp;labelColor=222" alt="LINUX DO 社区" /></a>
+</p>
+
+<p align="center">
+  <a href="https://linux.do/"><strong>LINUX DO</strong></a>
+  ·
+  <a href="https://linux.do/t/topic/2738271">本项目讨论帖</a>
+</p>
+
 ### 交流与支持
 
 <details>
@@ -513,4 +511,4 @@ V2 内核位于 `server/src/modules/director/`，业务能力由应用层接入�
 - 服务型商用：将本项目或其修改版本作为后端，以 SaaS、托管等形式向第三方提供服务，须通过作者获取商业授权许可。
 - 新贡献默认按 [CLA.md](./CLA.md) 提交，可随项目按 AGPL-3.0-only 分发，也可纳入维护者另行提供的商业授权。
 
-[贡献与授权说明](./CONTRIBUTING.md) · [LINUX DO](https://linux.do/)
+[贡献与授权说明](./CONTRIBUTING.md)

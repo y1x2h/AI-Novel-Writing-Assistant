@@ -1,12 +1,14 @@
 import { loadCapability } from "./compatibility";
 import {attachLLMCacheRequestPolicy,resolveCacheCapability} from "../platform/llm/cache";
-import {attachExecutionSignal,assertLlmExecutionConfiguration,attachLlmExecutionPolicy,resolveScopedTaskOutputTokens} from "../platform/llm/execution";
+import {attachExecutionSignal,assertLlmExecutionConfiguration,attachLlmExecutionPolicy,resolveScopedTaskOutputTokens,useLegacyStructuredThinking} from "../platform/llm/execution";
 import {
   ALWAYS_THINKING_MODEL_OUTPUT_TOKENS,
+  DEFAULT_MODEL_OUTPUT_TOKENS,
   type LLMProvider,
   type ProviderAuthMode,
   type ReasoningEffort,
 } from "@ai-novel/shared/types/llm";
+import type { LlmOutputBudgetTrace } from "@ai-novel/shared/types/llmUsage";
 import type { ModelRouteRequestProtocol } from "@ai-novel/shared/types/novel";
 import { ChatOpenAI } from "@langchain/openai";
 import type { PromptInvocationMeta } from "../prompting/core/promptTypes";
@@ -41,6 +43,8 @@ interface LLMOptions {
   baseURL?: string;
   authMode?: ProviderAuthMode;
   maxTokens?: number;
+  automaticMaxTokens?: number;
+  budgetOrigin?: Pick<LlmOutputBudgetTrace, "requestedMaxTokens" | "routeMaxTokens" | "automaticMaxTokens">;
   timeoutMs?: number;
   reasoningEnabled?: boolean;
   reasoningEffort?: ReasoningEffort;
@@ -76,6 +80,7 @@ export interface ResolvedLLMClientOptions {
   baseURL: string;
   authMode: ProviderAuthMode;
   maxTokens?: number;
+  budgetTrace?: LlmOutputBudgetTrace;
   timeoutMs?: number;
   concurrencyLimit: number;
   requestIntervalMs: number;
@@ -229,9 +234,9 @@ export async function resolveLLMClientOptions(
   let resolvedModel = normalizeOptionalText(options.model);
   let resolvedTemperature: number | undefined = options.temperature;
   let resolvedMaxTokens: number | undefined = options.maxTokens;
-  // Explicit task options OR model-route budgets are user intent (#209).
-  // safeStructuredMaxTokens only guards the unset/default path.
-  let respectConfiguredMaxTokens = options.maxTokens != null;
+  let routeMaxTokens: number | undefined;
+  const automaticMaxTokens = options.automaticMaxTokens != null && Number.isSafeInteger(options.automaticMaxTokens)
+    ? Math.max(DEFAULT_MODEL_OUTPUT_TOKENS, options.automaticMaxTokens) : DEFAULT_MODEL_OUTPUT_TOKENS;
   let resolvedModelRoute: string | undefined;
   let resolvedRouteDegraded = false;
 
@@ -273,12 +278,8 @@ export async function resolveLLMClientOptions(
     if (options.temperature == null) {
       resolvedTemperature = route.temperature;
     }
-    if (options.maxTokens == null) {
-      resolvedMaxTokens = route.maxTokens;
-      if (route.maxTokens != null) {
-        respectConfiguredMaxTokens = true;
-      }
-    }
+    routeMaxTokens = route.routeMaxTokens;
+    resolvedMaxTokens ??= routeMaxTokens ?? (options.automaticMaxTokens == null ? route.maxTokens : automaticMaxTokens);
     if (options.requestProtocol == null) {
       options.requestProtocol = route.requestProtocol;
     }
@@ -323,7 +324,6 @@ export async function resolveLLMClientOptions(
   const authMode = normalizeProviderAuthMode(options.authMode ?? dbSecret?.authMode);
 
   const capability = await loadCapability({ provider: resolvedProvider, model, baseURL });
-  if (capability.maxOutputTokens != null) respectConfiguredMaxTokens = true;
   const temperature = resolveModelTemperature(resolvedProvider, model, resolvedTemperature);
   const timeoutMs = normalizeOptionalTimeoutMs(options.timeoutMs);
   const concurrencyLimit = normalizeLimitValue(dbSecret?.concurrencyLimit);
@@ -340,27 +340,34 @@ export async function resolveLLMClientOptions(
       requestProtocol,
     })
     : null;
-  const usesNativeStructured = structuredStrategy != null && structuredStrategy !== "prompt_json";
   const requestedReasoningEnabled = options.reasoningEnabled ?? dbSecret?.reasoningEnabled ?? true;
   const requestedReasoningEffort = options.reasoningEffort ?? dbSecret?.reasoningEffort ?? "high";
   const shouldForceDisableReasoning = Boolean(
     structuredProfile
       && structuredProfile.requiresNonThinkingForStructured,
   );
-  const reasoningEnabled = shouldForceDisableReasoning ? false : requestedReasoningEnabled;
-  let effectiveMaxTokens = resolveScopedTaskOutputTokens(resolvedProvider, model, resolvedModelRoute ?? options.taskType, capability.maxOutputTokens ?? resolvedMaxTokens);
+  const modernStructuredThinking = executionMode === "structured" && !useLegacyStructuredThinking();
+  const defaultStructuredThinkingOff = modernStructuredThinking && options.reasoningEnabled == null;
+  const reasoningEnabled = !shouldForceDisableReasoning && !defaultStructuredThinkingOff && requestedReasoningEnabled;
+  resolvedMaxTokens ??= automaticMaxTokens;
+  const origin = options.budgetOrigin ?? {
+    requestedMaxTokens: options.maxTokens ?? null,
+    routeMaxTokens: routeMaxTokens ?? null,
+    automaticMaxTokens: options.maxTokens == null && routeMaxTokens == null ? resolvedMaxTokens ?? null : null,
+  };
+  const frozenMaxTokens = resolveScopedTaskOutputTokens(resolvedProvider, model, resolvedModelRoute ?? options.taskType, undefined);
+  const automaticTextBudget = origin.automaticMaxTokens
+    ?? (origin.requestedMaxTokens == null && resolvedModelRoute === "writer" ? origin.routeMaxTokens : null);
+  const reasoningReserveTokens = capability.reasoningRequired && automaticTextBudget != null && frozenMaxTokens == null
+    ? DEFAULT_MODEL_OUTPUT_TOKENS / 2 : 0;
+  let effectiveMaxTokens = frozenMaxTokens ?? Math.max(resolvedMaxTokens, (automaticTextBudget ?? 0) + reasoningReserveTokens);
+  let source: LlmOutputBudgetTrace["source"] = frozenMaxTokens != null ? "frozen"
+    : origin.requestedMaxTokens != null ? "task" : origin.routeMaxTokens != null ? "route" : "automatic";
   if (capability.maxOutputTokens != null) {
-    effectiveMaxTokens = Math.min(effectiveMaxTokens ?? capability.maxOutputTokens, capability.maxOutputTokens);
-  }
-  if (structuredProfile && usesNativeStructured && structuredProfile.omitMaxTokensForNativeStructured && capability.maxOutputTokens == null) {
-    effectiveMaxTokens = undefined;
-  } else if (
-    structuredProfile
-    && typeof structuredProfile.safeStructuredMaxTokens === "number"
-    && typeof effectiveMaxTokens === "number"
-    && !respectConfiguredMaxTokens
-  ) {
-    effectiveMaxTokens = Math.min(effectiveMaxTokens, structuredProfile.safeStructuredMaxTokens);
+    const beforeEndpoint = frozenMaxTokens ?? origin.requestedMaxTokens ?? origin.routeMaxTokens
+      ?? (automaticTextBudget == null ? effectiveMaxTokens : automaticTextBudget + reasoningReserveTokens);
+    effectiveMaxTokens = Math.min(effectiveMaxTokens, capability.maxOutputTokens);
+    if (beforeEndpoint > capability.maxOutputTokens) source = "endpoint";
   }
   const baseModelKwargs = options.modelKwargs ?? {};
   const reasoningBehavior = resolveProviderReasoningBehavior({
@@ -369,12 +376,14 @@ export async function resolveLLMClientOptions(
     model,
     reasoningEnabled,
     reasoningEffort: requestedReasoningEffort,
+    minimizeRequiredThinking: modernStructuredThinking && !reasoningEnabled,
   });
   // 强制思考模型无法关闭思考，思考 token 会先占满同一次输出额度并让正文为空。
   // 这些模型在任务未配置额度时按常规默认值请求，必须抬到思考可用后仍能产出正文的下限。
   if (isGlmAlwaysThinkingModel(model) && reasoningBehavior.reasoningEnabled) {
     effectiveMaxTokens = Math.max(effectiveMaxTokens ?? 0, ALWAYS_THINKING_MODEL_OUTPUT_TOKENS);
   }
+  const effectiveReasoningEnabled = reasoningBehavior.reasoningEnabled || (modernStructuredThinking && capability.reasoningRequired === true);
   const modelKwargs = {
     ...(reasoningBehavior.modelKwargs ?? {}),
     ...baseModelKwargs,
@@ -389,10 +398,20 @@ export async function resolveLLMClientOptions(
     baseURL,
     authMode,
     maxTokens: effectiveMaxTokens,
+    budgetTrace: {
+      ...origin,
+      source,
+      endpointMaxTokens: capability.maxOutputTokens ?? null,
+      frozenMaxTokens: frozenMaxTokens ?? null,
+      structuredMaxTokens: null,
+      ...(reasoningReserveTokens > 0 ? {reasoningReserveTokens: Math.min(reasoningReserveTokens,
+        Math.max(0, effectiveMaxTokens - (automaticTextBudget ?? 0)))} : {}),
+      finalMaxTokens: effectiveMaxTokens,
+    },
     timeoutMs,
     concurrencyLimit,
     requestIntervalMs,
-    reasoningEnabled: reasoningBehavior.reasoningEnabled,
+    reasoningEnabled: effectiveReasoningEnabled,
     reasoningEffort: reasoningBehavior.reasoningEffort,
     modelKwargs: Object.keys(modelKwargs).length > 0 ? modelKwargs : undefined,
     includeRawResponse: reasoningBehavior.includeRawResponse,
@@ -400,7 +419,7 @@ export async function resolveLLMClientOptions(
     executionMode,
     structuredProfile,
     structuredStrategy: structuredStrategy ?? null,
-    reasoningForcedOff: shouldForceDisableReasoning && requestedReasoningEnabled,
+    reasoningForcedOff: requestedReasoningEnabled && !effectiveReasoningEnabled,
     taskType: options.taskType,
     promptMeta: options.promptMeta,
     modelRoute: resolvedModelRoute,
@@ -452,6 +471,7 @@ export function createLLMFromResolvedOptions(resolved: ResolvedLLMClientOptions)
     model: resolved.model,
     temperature: resolved.temperature,
     maxTokens: resolved.maxTokens,
+    budgetTrace: resolved.budgetTrace,
     timeoutMs: resolved.timeoutMs,
     taskType: resolved.taskType,
     modelRoute: resolved.modelRoute,

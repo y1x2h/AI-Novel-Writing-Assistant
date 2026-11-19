@@ -84,17 +84,71 @@ test("unprobed custom structured requests turn reasoning off even without a know
   }
 });
 
-test("stored probe results override custom structured reasoning defaults", async (t) => {
+test("stored probe results keep structured thinking off and still drive toggle kwargs", async (t) => {
+  // Contract (v0.8.8 / candidate-budget wiki): new structured calls default thinking
+  // off; tasks may opt in explicitly; probe toggles only decide whether off can be
+  // sent as kwargs; reasoningRequired models still think.
   const input = identity("probed-thinking-control");
   factory.setProviderSecretCache(input.provider, { key: "fixture-key" });
   t.after(() => factory.setProviderSecretCache(input.provider, null));
-  for (const supported of [true, false]) {
-    await compat.saveCapability(input, { ...compat.builtinCapability(input), source: "probed",
-      thinkingToggle: { supported, control: "enable_thinking", effort: false } });
+
+  await compat.saveCapability(input, {
+    ...compat.builtinCapability(input),
+    source: "probed",
+    thinkingToggle: { supported: true, control: "enable_thinking", effort: false },
+  });
+  {
     const resolved = await factory.resolveLLMClientOptions(input.provider, { ...input, executionMode: "structured" });
-    assert.equal(resolved.reasoningEnabled, !supported);
-    assert.equal(resolved.reasoningForcedOff, supported);
-    assert.deepEqual(resolved.modelKwargs, supported ? { enable_thinking: false } : undefined);
+    assert.equal(resolved.reasoningEnabled, false);
+    assert.equal(resolved.reasoningForcedOff, true);
+    assert.deepEqual(resolved.modelKwargs, { enable_thinking: false });
+    const off = await factory.resolveLLMClientOptions(input.provider, {
+      ...input, executionMode: "structured", reasoningEnabled: false,
+    });
+    assert.equal(off.reasoningEnabled, false);
+    assert.deepEqual(off.modelKwargs, { enable_thinking: false });
+    // Toggle-supported structured profile still forces thinking off even if asked on.
+    const on = await factory.resolveLLMClientOptions(input.provider, {
+      ...input, executionMode: "structured", reasoningEnabled: true,
+    });
+    assert.equal(on.reasoningEnabled, false);
+    assert.equal(on.reasoningForcedOff, true);
+    assert.deepEqual(on.modelKwargs, { enable_thinking: false });
+  }
+
+  await compat.saveCapability(input, {
+    ...compat.builtinCapability(input),
+    source: "probed",
+    thinkingToggle: { supported: false, control: "enable_thinking", effort: false },
+  });
+  {
+    const resolved = await factory.resolveLLMClientOptions(input.provider, { ...input, executionMode: "structured" });
+    assert.equal(resolved.reasoningEnabled, false);
+    assert.equal(resolved.modelKwargs, undefined);
+    const off = await factory.resolveLLMClientOptions(input.provider, {
+      ...input, executionMode: "structured", reasoningEnabled: false,
+    });
+    assert.equal(off.reasoningEnabled, false);
+    assert.equal(off.modelKwargs, undefined);
+    // Without a usable toggle, explicit on is honored (no requiresNonThinking force).
+    const on = await factory.resolveLLMClientOptions(input.provider, {
+      ...input, executionMode: "structured", reasoningEnabled: true,
+    });
+    assert.equal(on.reasoningEnabled, true);
+    assert.equal(on.reasoningForcedOff, false);
+    assert.equal(on.modelKwargs, undefined);
+  }
+
+  await compat.saveCapability(input, {
+    ...compat.builtinCapability(input),
+    source: "probed",
+    thinkingToggle: { supported: false, control: "none", effort: false },
+    reasoningRequired: true,
+  });
+  {
+    const resolved = await factory.resolveLLMClientOptions(input.provider, { ...input, executionMode: "structured" });
+    assert.equal(resolved.reasoningEnabled, true);
+    assert.equal(resolved.reasoningForcedOff, false);
   }
 });
 
@@ -196,12 +250,12 @@ test("probes require opt-in, use cheap-first trials, save supported modes and ve
   mockClients(t, (resolved, messages, options) => {
     calls.push(options.response_format?.type ?? (options.tools ? "tool_calling" : "prompt_only"));
     assert.deepEqual(resolved.modelKwargs, { thinking: { type: "disabled" } });
-    assert.equal(resolved.maxTokens, 128);
+    assert.equal(resolved.maxTokens, 512);
     return stream(options.tools ? fixtures.tool : fixtures.ok);
   });
   await assert.rejects(probeModel(input, { allowNetwork: false }), /opt-in/);
   assert.equal(calls.length, 0);
-  const result = await probeModel(input, { allowNetwork: true });
+  const result = await probeModel(input, { allowNetwork: true, requestDelayMs: 0 });
   assert.deepEqual(calls, ["json_object", "json_schema", "tool_calling", "prompt_only"]);
   assert.deepEqual(result.structuredModes, ["json_schema", "json_object", "tool_calling", "prompt_only"]);
   assert.equal(result.thinkingToggle.supported, true);
@@ -212,7 +266,7 @@ test("probes require opt-in, use cheap-first trials, save supported modes and ve
 test("unknown service thinking control is learned from reasoning-on/off fixture evidence", async (t) => {
   const input = identity("thinking-discovery");
   mockClients(t, (resolved, messages, options) => stream(options.tools ? fixtures.tool : resolved.modelKwargs?.enable_thinking === false ? fixtures.ok : fixtures.thinking));
-  const result = await probeModel(input, { allowNetwork: true });
+  const result = await probeModel(input, { allowNetwork: true, requestDelayMs: 0 });
   assert.equal(result.thinkingToggle.supported, true);
   assert.equal(result.thinkingToggle.control, "enable_thinking");
   assert.equal(result.reasoningField, "reasoning_content");
@@ -259,7 +313,7 @@ test("raw LangChain deltas preserve reasoning evidence during a probe", async (t
     if (options.tools) return stream(fixtures.tool);
     return stream([{ content: '{"ok":true}', additional_kwargs: { __raw_response: { choices: [{ delta: { reasoning_content: "Still thinking despite the flag." } }] } } }]);
   });
-  const result = await probeModel(input, { allowNetwork: true });
+  const result = await probeModel(input, { allowNetwork: true, requestDelayMs: 0 });
   assert.equal(result.thinkingToggle.supported, false);
   assert.equal(result.reasoningField, "reasoning_content");
 });
@@ -276,7 +330,7 @@ test("a transient probe network error preserves the last successful profile", as
 test("unusable native probe results select prompt-only after a valid plain response", async (t) => {
   const input = identity("probe-native-empty");
   mockClients(t, (resolved, messages, options) => stream(options.response_format || options.tools ? [] : fixtures.ok));
-  const result = await probeModel(input, { allowNetwork: true });
+  const result = await probeModel(input, { allowNetwork: true, requestDelayMs: 0 });
   assert.deepEqual(result.structuredModes, ["prompt_only"]);
   assert.deepEqual(result.failedModes, ["json_object", "json_schema", "tool_calling"]);
 });

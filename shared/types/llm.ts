@@ -15,7 +15,7 @@ export const LLM_PROVIDERS = [
 export type BuiltinLLMProvider = typeof LLM_PROVIDERS[number];
 export type LLMProvider = BuiltinLLMProvider | (string & {});
 /** Initial per-request output allowance. Saved task settings and explicit request values take precedence. */
-export const DEFAULT_MODEL_OUTPUT_TOKENS = 8192;
+export const DEFAULT_MODEL_OUTPUT_TOKENS = 16_384;
 /**
  * 强制思考模型（GLM 5.3+）无法关闭思考，思考 token 与正文共用同一次输出额度。
  * 按非思考模型的默认额度请求时，思考会先占满额度，正文与结构化结果为空，

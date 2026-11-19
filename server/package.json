@@ -12,11 +12,11 @@
     "src/prisma/schema.sqlite.prisma"
   ],
   "prisma": {
-    "seed": "ts-node-dev --transpile-only src/db/seed.ts"
+    "seed": "tsx src/db/seed.ts"
   },
   "scripts": {
     "dev": "pnpm run dev:api",
-    "dev:api": "node scripts/ensure-dev-prisma.cjs && node scripts/stop-stale-dev-server.cjs && ts-node-dev --respawn --transpile-only src/app.ts",
+    "dev:api": "node scripts/ensure-dev-prisma.cjs && node scripts/stop-stale-dev-server.cjs && tsx watch --clear-screen=false src/app.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/app.js",
     "start:api": "node dist/app.js",
@@ -27,7 +27,7 @@
     "test:node": "node scripts/run-tests.cjs fast",
     "calibrate:signals": "pnpm --filter @ai-novel/shared build && pnpm run build && node dist/services/styleEngine/calibration/runCalibration.js",
     "test:integration": "pnpm --filter @ai-novel/shared build && pnpm run build && node scripts/run-tests.cjs integration",
-    "test:all": "pnpm --filter @ai-novel/shared build && pnpm run build && node scripts/run-tests.cjs all",
+    "test:all": "pnpm prisma:generate && pnpm --filter @ai-novel/shared build && pnpm run build && node scripts/run-tests.cjs all",
     "test:planner": "pnpm --filter @ai-novel/shared build && pnpm run build && node --test tests/planner.test.js",
     "test:tools": "pnpm --filter @ai-novel/shared build && pnpm run build && node --test tests/tools.test.js",
     "test:runtime": "pnpm --filter @ai-novel/shared build && pnpm run build && node --test tests/runtime.test.js",
@@ -46,7 +46,8 @@
     "db:seed": "prisma db seed --config prisma.config.ts",
     "db:studio": "prisma studio --config prisma.config.ts",
     "db:restore": "node scripts/restore-dev-data.cjs",
-    "db:prune-snapshots": "node scripts/prune-snapshots.cjs"
+    "db:prune-snapshots": "node scripts/prune-snapshots.cjs",
+    "prisma:deploy:postgres": "node ../scripts/deploy-prisma-postgres.cjs"
   },
   "dependencies": {
     "@ai-novel/shared": "workspace:*",
@@ -65,6 +66,7 @@
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
     "helmet": "^8.1.0",
+    "js-tiktoken": "1.0.21",
     "langchain": "^1.2.28",
     "morgan": "^1.10.1",
     "sharp": "^0.35.1",
@@ -78,7 +80,7 @@
     "@types/morgan": "^1.9.10",
     "@types/node": "^25.3.3",
     "prisma": "^7.4.2",
-    "ts-node-dev": "^2.0.0",
+    "tsx": "^4.23.15",
     "typescript": "^5.9.3",
     "yauzl": "^3.2.0"
   }

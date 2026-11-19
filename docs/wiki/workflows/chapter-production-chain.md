@@ -40,7 +40,8 @@
 - 同一章节范围的并发正文作业冲突检测必须区分"归属运行仍活跃"与"孤儿作业"：watchdog 只恢复 legacy 作业，不接管 payload 携带 `directorNext` 的 v2 作业，归属导演运行进入终态（completed/failed/cancelled）或运行记录缺失的遗留 queued/running 作业没有任何执行者会恢复。`startPipelineJob` 识别这类孤儿作业并自动取消后放行；归属运行仍活跃（queued/running/paused/waiting_gate）或非导演来源的作业保持阻塞，提示用户回到原创作页面处理。paused 运行的作业不得清理，因为恢复时会通过 `chapter_batch_job` 绑定复用自己的作业。
 - 正文作业的执行上下文会继承所属创作运行的执行信号；运行被取消或租约失效时，问题治理内的 AI/写入调用会抛出 `RunLeaseLostError`。流水线执行器必须在 catch 与治理兜底两处按归属运行状态收尾：运行已终态或缺失则把作业置为 cancelled，运行仍可恢复（例如 paused）则回到 queued，禁止让异常直接逃逸而把作业永久留在 running。启动恢复时，等待取消的 directorNext 作业统一用 `canFinalizeCancelledPipelineJob` 判定：归属运行终态或缺失才由服务侧取消，活跃运行（含 paused）继续等待原创作页面恢复。
 - 默认 writer 继续整章一次性生成，不把 sceneCards、章节合同或分场景多轮写作重新接入正文热路径。
-- writer 只为生成可读正文服务，必须显式关闭不需要的推理模式，并使用与章节目标长度相称的输出上限；续写沿用同一边界。验收、局部修文与 `artifact_delta` 都是结构化子任务，必须各自携带更小的独立输出上限，结构校验重试也继承该上限。输入上下文预算不能代替输出费用保护。
+- writer 只为生成可读正文服务，必须显式关闭不需要的推理模式，并使用与章节目标长度相称的输出上限；未指定单次调用上限时继承 Writer 路由/自动预算，并按章节目标限制续写额度。调用方显式设置的 `maxTokens` 必须原样作为上限，不能被推理预留自动抬高。续写先估算尚缺正文，再受 Writer 路由额度封顶；最终仍须校验实际新增字符，不能仅依赖 token 估算。验收、局部修文与 `artifact_delta` 都是结构化子任务，必须各自携带更小的独立输出上限，结构校验重试也继承该上限。输入上下文预算不能代替输出费用保护。
+- 正文流的 `stream` 与 `complete` 是同一次生成的两个结果面：章节运行时必须消费流、等待 completion，并将流消费异常、completion rejection、空正文和模型截断收敛为章节可恢复失败。上述失败不得保存部分正文、运行定稿或发布章节完成状态；状态持久化本身失败时保留错误日志，不能把原生成错误伪装成成功。
 - writer 仍然整章一次性生成，不按场景多轮拼接正文；但 `sceneCards` 顶层保存的 `ReaderExperienceContract` 会进入默认正文、验收和修复上下文，场景卡本身继续作为规划、诊断和局部修复辅助资产。
 - 正文生成前只做最低可写性检查：章节存在、人物可用、上下文包可组装、任务目标可解释。
 - 生成后用一次结构化接收闸门判断是否可继续、是否需要局部修文、是否需要人工确认。
@@ -217,6 +218,7 @@
 - 同一章重复同步账本或重复 timeline / artifact delta 抽取：检查 content hash checkpoint 是否在 LLM 调用前完成 `running` 抢占，而不是只在调用成功后写 `succeeded`。
 - 修复循环：检查自动修文次数是否被限制、失败是否落到可继续生产或等待人工的终态，并确认恢复时仍使用原任务策略快照，而不是因读取了新的默认配置再次改变修复模式。
 - 正文出现 AI 自述、占位符、工程词或明显截断：优先检查 runtime package 的 `audit.openIssues` 是否包含 `prose_*` code。若只有 `prose_*` 且没有 `replan_required`、邻章计划失配或不可用正文，应走本章修复或质量债，不应暂停整本自动导演。
+- writer 流中断、空回复或截断后显示章节生成失败/可恢复：检查 `ChapterWritingGraph` 是否同时检查流与 completion，以及 `ChapterStreamGenerationOrchestrator` 是否将失败标记为 `pending_generation`；确认没有保存 partial stream，也没有在失败后调用定稿。若正文被输出上限截断，检查 Writer 路由预算和章节目标，而不是恢复固定的小 token 上限。
 - `chapter.draft.write 未满足其完成标准` 高频出现：先查 runtime package 的 `failureClassification` 和 `obligationCoverage`。如果 root cause 是 `draft_obligation_unmet`，应优先检查接收闸门输出的缺失义务和 patch repair；如果是 `replan_required`，检查是否存在单章职责过载或邻章分工失配。
 - 章节反复要求重规划：检查 `rolling_window_review` 的原因是否只来自生成前的紧急 payoff 或 `advance_payoff`。如果审计分数可通过、正文和 artifact delta 已经体现推进，但 runtime package 仍推荐重规划，说明重规划推荐读取了写前状态而不是写后失败证据。
 - 自动导演在高章节数被早期 payoff 卡住：检查是否存在同义重复账本项被 AI 全量对账新建为无目标窗口的 `overdue`。正确行为是同步后处理复用未完成的同名 canonical ledgerKey，并把无明确窗口的 overdue 降级为待推进风险，避免把旧 `lastTouchedChapterOrder` 锚成跨几十章的重规划窗口。
@@ -258,6 +260,8 @@
 ## 普通末章与全书终章
 
 连载作品的末章可以保留下一阶段牵引；紧凑全书的终章必须完成结局合同，不创建必须续写的新主线，也不要求下一 beat 钩子。章节列表 Prompt 通过结构化完成配置区分两种合同，不能靠标题或正文关键词判断是否结局。
+
+简易书架与导演工作区使用同一个全书完成投影。目标取作品保存的章数与当前目录覆盖范围，已有修订目录以有效章节顺序为准。每个目标章都需要有可交付的已保存正文，当前运行仍在写作、等待确认或明确需要重规划时保留对应状态。普通质量债可以随稿件保留。通读首章与 TXT 导出使用有效目录。
 
 达到目标章节数后，紧凑作品只允许追加最多 5 章收尾，追加内容应围绕未解决的主冲突、关系变化、核心伏笔和主题落点。超过预算仍未完成时进入明确恢复状态，不覆盖已保存正文。
 

@@ -3,7 +3,8 @@ import { canRetryStructuredTask } from "../../../../platform/llm/diagnostics/Str
 import { prisma } from "../../../../db/prisma";
 import { AppError } from "../../../../middleware/errorHandler";
 import { runStructuredPrompt } from "../../../../prompting/core/promptRunner";
-import { shortStoryPlanPrompt, shortStoryRevisionImpactPrompt } from "../../../../prompting/prompts/shortStory/shortStory.prompts";
+import { runShortStoryPlan } from "./shortStoryPlanCall";
+import { shortStoryRevisionImpactPrompt } from "../../../../prompting/prompts/shortStory/shortStory.prompts";
 import { affectedSegmentIds, parseJson } from "../domain/revisionState";
 import { loadRevisionContext, captureBaseline } from "./ShortStoryContext";
 import type { RevisionPreviewData } from "./ShortStoryRevisionService";
@@ -13,6 +14,7 @@ export async function previewShortStoryRevision(
   novelId: string, instruction: string, mode: "revision" | "replan" = "revision",
 ): Promise<ShortStoryRevisionImpact> {
   const context = await loadRevisionContext(novelId);
+  if(context.imported)throw new AppError("导入短篇请在原稿修订工作区逐节生成候选并明确采纳；全篇重规划尚未开放。",409);
   if (!await canRetryStructuredTask(context.task.id)) throw new AppError("模型服务要求稍后再试，请等待后继续。", 429);
   if (context.task.status === "queued" || context.task.status === "running") {
     throw new AppError("请等待当前生成结束后再预览修改。", 409);
@@ -49,8 +51,7 @@ export async function previewShortStoryRevision(
   const affectedIds = affectedSegmentIds(context.segments, revision.affectedSegmentOrders, revision.recommendedStrategy);
   let candidatePlan: RevisionPreviewData["candidatePlan"] = null;
   if (revision.recommendedStrategy === "full_replan") {
-    const planned = await runStructuredPrompt({
-      asset: shortStoryPlanPrompt,
+    const planned = await runShortStoryPlan({
       promptInput: {
         originalIdea, understanding: context.interpretation.understanding, direction: revision.revisedDirection,
         targetWordCount: revision.recommendedTargetWordCount, requiredSegmentCount: context.segments.length,

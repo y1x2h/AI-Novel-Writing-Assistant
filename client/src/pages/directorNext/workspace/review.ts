@@ -1,10 +1,12 @@
 import type {VolumeChapterPlan} from "@ai-novel/shared/types/novel";
 import type {WorkspaceBook, WorkspaceChapter} from "./model";
 
-const labels: Record<string,string> = {character_cast:"角色阵容",volume_strategy:"卷纲",chapter_task_sheet:"章节任务与场景",chapter_execution_contract:"正文执行计划",chapter_batch_closed:"本批次正文"};
+const labels: Record<string,string> = {story_macro:"故事规划",book_contract:"创作约定",world_skeleton:"世界设定",volume_beat_sheet:"本卷节奏",volume_chapter_list:"本卷章节路线",character_cast:"角色阵容",volume_strategy:"卷纲",chapter_task_sheet:"章节任务与场景",chapter_execution_contract:"正文执行计划",chapter_batch_closed:"本批次正文"};
 export interface SavedReview {
   type:string; label:string; ready:boolean; error?:string; notice?:string;
+  canRegenerate?:boolean;
   runId?:string; controlVersion?:number;
+  volumeId?:string;
   plan?:VolumeChapterPlan;
   execution?:NonNullable<WorkspaceBook["executionPlans"]>[number];
   chapters?:WorkspaceChapter[];
@@ -23,6 +25,15 @@ export function resolveSavedReview(book:WorkspaceBook, params:URLSearchParams): 
   if (contexts.length!==1 || contexts[0].novelId!==book.novel.id) return missing();
   const context=contexts[0];
   result.runId=context.runId;result.controlVersion=context.controlVersion;
+  if (type === "story_macro") return book.outlinePreparation?.storyMacro?.expansion && book.outlinePreparation.storyMacro.decomposition ? {...result,ready:true} : missing();
+  if (type === "book_contract") return book.outlinePreparation?.hasBookContract ? {...result,ready:true} : missing();
+  if (type === "world_skeleton") return book.materials.world || book.outlinePreparation?.worldMode==="skip" ? {...result,ready:true} : missing();
+  if (type === "volume_beat_sheet" || type === "volume_chapter_list") {
+    const volumes=book.planning?.volumes.filter(volume=>volume.id===context.volumeId) ?? [];
+    if (volumes.length!==1) return missing();
+    const saved=type==="volume_beat_sheet" ? book.planning?.beatSheets.some(sheet=>sheet.volumeId===context.volumeId && sheet.beats.length) : volumes[0].chapters.length;
+    return saved ? {...result,ready:true,volumeId:context.volumeId} : missing();
+  }
   if (type === "character_cast") return book.materials.characters.length ? {...result,ready:true} : missing();
   if (type === "volume_strategy") return book.planning?.volumes.length ? {...result,ready:true} : missing();
   const {from,to,chapterId:id,volumeId}=context;
@@ -36,7 +47,9 @@ export function resolveSavedReview(book:WorkspaceBook, params:URLSearchParams): 
   if (plans.length!==1) return missing();
   if (type === "chapter_task_sheet") {
     const plan=plans[0];
-    if (plan.id!==id || !hasText(plan.taskSheet) || !hasText(plan.sceneCards)) return missing();
+    if (plan.id!==id) return missing();
+    const missingFields = [!hasText(plan.taskSheet) && "章节任务", !hasText(plan.sceneCards) && "场景安排"].filter(Boolean);
+    if (missingFields.length) return {...result,canRegenerate:true,error:`第 ${from} 章缺少已保存的${missingFields.join("和")}，请在导演台处理当前阶段。`};
     return {...result,ready:true,plan};
   }
   const rows=book.executionPlans?.filter(row=>row.id===id && row.order===from) ?? [];

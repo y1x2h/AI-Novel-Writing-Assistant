@@ -26,6 +26,7 @@ test("custom provider auth mode replaces the SDK bearer header when requested", 
 });
 const {
   classifyStructuredOutputFailure,
+  describeStructuredResponseFailure,
   resolveStructuredOutputProfile,
   selectStructuredOutputStrategy,
 } = require("../dist/llm/structuredOutput.js");
@@ -225,7 +226,6 @@ test("structured output profiles distinguish official, ModelScope Qwen and unkno
   assert.equal(qwenMixedProfile.nativeJsonObject, true);
   assert.equal(qwenMixedProfile.requiresNonThinkingForStructured, true);
   assert.equal(qwenMixedProfile.supportsReasoningToggle, true);
-  assert.equal(qwenMixedProfile.omitMaxTokensForNativeStructured, true);
   assert.equal(selectStructuredOutputStrategy(qwenMixedProfile, schema), "json_object");
 
   const qwenThinkingProfile = resolveStructuredOutputProfile({
@@ -238,7 +238,6 @@ test("structured output profiles distinguish official, ModelScope Qwen and unkno
   assert.equal(qwenThinkingProfile.nativeJsonObject, false);
   assert.equal(qwenThinkingProfile.requiresNonThinkingForStructured, false);
   assert.equal(qwenThinkingProfile.supportsReasoningToggle, false);
-  assert.equal(qwenThinkingProfile.omitMaxTokensForNativeStructured, false);
   assert.equal(selectStructuredOutputStrategy(qwenThinkingProfile, schema), "prompt_json");
 
   const customProfile = resolveStructuredOutputProfile({
@@ -329,7 +328,7 @@ test("resolveLLMClientOptions applies structured reasoning and token guardrails"
     assert.equal(qwen.reasoningEnabled, false);
     assert.equal(qwen.reasoningForcedOff, true);
     assert.equal(qwen.modelKwargs?.enable_thinking, false);
-    assert.equal(qwen.maxTokens, undefined);
+    assert.equal(qwen.maxTokens, 20000);
     assert.equal(qwen.requestProtocol, "openai_compatible");
 
     const glm = await resolveLLMClientOptions("glm", {
@@ -412,6 +411,9 @@ test("resolveLLMClientOptions applies structured reasoning and token guardrails"
 });
 
 test("structured failure classification separates native-json, thinking and schema problems", () => {
+  assert.equal(classifyStructuredOutputFailure({ error: { status: 402, message: "Payment required" } }), "model_unavailable");
+  assert.equal(classifyStructuredOutputFailure({ error: new Error("余额不足，请充值") }), "model_unavailable");
+  assert.match(describeStructuredResponseFailure("model_unavailable").message, /余额或可用额度不足.*检查账户额度.*更换可用的模型渠道/);
   assert.equal(
     classifyStructuredOutputFailure({ error: new Error("response_format json_schema is not supported") }),
     "unsupported_native_json",
