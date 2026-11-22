@@ -1,5 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const { DEFAULT_MODEL_OUTPUT_TOKENS } = require("@ai-novel/shared/types/llm");
 
 const { prisma } = require("../dist/db/prisma.js");
 const { setPromptRunnerStructuredInvokerForTests } = require("../dist/prompting/core/promptRunner.js");
@@ -48,8 +49,10 @@ test("generating a novel world keeps the selected model instead of forcing DeepS
     assert.equal(captured[0].provider, "ollama");
     assert.equal(captured[0].model, "qwen3:8b");
     assert.equal(captured[0].temperature, 0.35);
-    // 世界观生成不再设置固定输出上限：强制思考模型的思考内容计入输出预算，固定小上限会把正文挤空。
-    assert.equal(captured[0].maxTokens, undefined);
+    assert.equal(captured[0].maxTokens, DEFAULT_MODEL_OUTPUT_TOKENS);
+    assert.equal(captured[0].automaticMaxTokens, undefined);
+    assert.equal(captured[0].reasoningEnabled, false);
+    assert.equal(captured[0].transportRetryCount, 0);
     assert.equal(captured[0].timeoutMs, 120_000);
     assert.equal(captured[0].maxRepairAttempts, 0);
   } finally {

@@ -11,12 +11,7 @@ import type {
   NovelWorldSyncSection,
 } from "@ai-novel/shared/types/novelWorld";
 import { prisma } from "../../../db/prisma";
-import { runStructuredPrompt } from "../../../prompting/core/promptRunner";
-import {
-  getWorldGenerationTimeoutMs,
-  rethrowWithWorldGenerationTimeoutHint,
-} from "../../settings/worldGeneration/timeoutSettings";
-import { novelThemeWorldGenerationPrompt } from "../../../prompting/prompts/world/world.prompts";
+import { getWorldGenerationTimeoutMs } from "../../settings/worldGeneration/timeoutSettings";
 import {
   applyStructuredWorldToLegacyFields,
   buildWorldBindingSupport,
@@ -30,6 +25,7 @@ import { parseSyncPendingChanges } from "./novelWorldSyncPending";
 import { listNovelWorldSyncRecords } from "./novelWorldSyncRecords";
 import { NovelWorldSyncService } from "./NovelWorldSyncService";
 import { normalizeStoryWorldSlice } from "../storyWorldSlice/storyWorldSlicePersistence";
+import { runNovelThemeWorldGeneration } from "./novelThemeWorldGeneration";
 
 function buildGeneratedOpeningWorldSlice(input: {
   novelId: string;
@@ -486,9 +482,8 @@ export class NovelWorldInstanceService {
     }
 
     const timeoutMs = await getWorldGenerationTimeoutMs();
-    const result = await runStructuredPrompt({
-      asset: novelThemeWorldGenerationPrompt,
-      promptInput: {
+    const result = await runNovelThemeWorldGeneration(
+      {
         novelTitle: novel.title,
         description: novel.description ?? "",
         targetAudience: novel.targetAudience ?? "",
@@ -502,19 +497,15 @@ export class NovelWorldInstanceService {
         bookContractContext: input.bookContractContext,
         openingOnly: input.openingOnly,
       },
-      options: {
+      {
         novelId: input.novelId,
         provider: input.provider,
         model: input.model,
         temperature: input.temperature ?? 0.5,
-        // 不设固定输出上限：强制思考模型（如 GLM 5.3+）的思考内容会计入输出预算，
-        // 固定的小上限会被思考吃满、导致正文返回为空、结构化输出失败；预算交给模型与路由决定。
         timeoutMs,
         entrypoint: "novel-world-generate",
       },
-    }).catch((error: unknown) => {
-      rethrowWithWorldGenerationTimeoutHint(error);
-    });
+    );
 
     const structuredData = normalizeWorldStructuredData(result.output.structuredData);
     structuredData.metadata = {

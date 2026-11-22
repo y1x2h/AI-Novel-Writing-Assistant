@@ -70,6 +70,8 @@ function loadService(behavior) {
         { id: "ch4", content: null, generationState: null, chapterStatus: null, riskFlags: null, artifactSyncCheckpoints: [] },
       ],
     },
+    // 新版入口会先做原稿隔离判断，本用例只关心孤儿作业清理，因此按普通小说放行。
+    manuscriptProject: { findUnique: async () => null },
   };
 
   const originalLoad = Module._load;

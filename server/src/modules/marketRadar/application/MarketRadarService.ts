@@ -321,7 +321,14 @@ export function selectMarketAnalysisSnapshots<T extends { platform: string; list
     const selectedKeys = new Set(selectedLists.map(marketSourceKey));
     return snapshots.filter((snapshot) => selectedKeys.has(marketSourceKey(snapshot)));
   }
-  return snapshots;
+  const newBookPlatforms = new Set(snapshots
+    .filter((snapshot) => snapshot.listKey === "new_book" || snapshot.listKey === "new_author")
+    .map((snapshot) => snapshot.platform));
+  return snapshots.filter((snapshot) => (
+    !newBookPlatforms.has(snapshot.platform)
+    || snapshot.listKey === "new_book"
+    || snapshot.listKey === "new_author"
+  ));
 }
 
 export function selectMarketAnalysisItems<T extends { id: string }>(items: T[], selectedItemIds?: string[]): T[] {

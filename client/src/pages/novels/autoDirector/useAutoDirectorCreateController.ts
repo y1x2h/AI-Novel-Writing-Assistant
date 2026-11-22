@@ -40,8 +40,10 @@ import { getAutoDirectorIssuePolicy } from "@/api/settings";
 import { getTaskDetail } from "@/api/tasks";
 import { toast } from "@/components/ui/toast";
 import { isChapterTitleDiversitySummary } from "@/lib/directorTaskNotice";
+import { getNovelWorkflowAttention } from "@/api/novel/shared";
 import { useLLMStore } from "@/store/llmStore";
 import {
+  authorEstimatedChapterCount,
   patchNovelBasicForm,
   type NovelBasicFormState,
 } from "../novelBasicInfo.shared";
@@ -158,11 +160,12 @@ export function useAutoDirectorCreateController(input: UseAutoDirectorCreateCont
   );
   const [ideaInspirations, setIdeaInspirations] = useState<DirectorIdeaInspiration[]>([]);
   const [ideaConstellationOptions, setIdeaConstellationOptions] = useState<DirectorIdeaConstellationOption[]>([]);
-  const [candidatePatchFeedbacks, setCandidatePatchFeedbacks] = useState<Record<string, string>>({});
   const [titlePatchFeedbacks, setTitlePatchFeedbacks] = useState<Record<string, string>>({});
   const [isUpdatingFoundation, setIsUpdatingFoundation] = useState(false);
   const [specClarification, setSpecClarification] = useState<{
     candidate: DirectorCandidate;
+    batch: DirectorCandidateBatch;
+    mode: DirectorRunMode;
     questions: NovelSpecClarificationQuestion[];
   } | null>(null);
   const issuePolicyQuery = useQuery({
@@ -209,7 +212,9 @@ export function useAutoDirectorCreateController(input: UseAutoDirectorCreateCont
     const restoredVersion = restoredTask.meta?.directorVersion;
     if (restoredVersion === "v1" || restoredVersion === "v2") setDirectorVersion(restoredVersion);
     if (Array.isArray(seedPayload?.batches) && seedPayload.batches.length > 0) {
-      setBatches(seedPayload.batches);
+      const restoredBatches = seedPayload.batches;
+      setBatches(previous => restoredTask.id === workflowTaskId
+        ? mergeDirectorCandidateBatches(previous, restoredBatches) : restoredBatches);
     }
     if (typeof seedPayload?.runMode === "string" && (DIRECTOR_RUN_MODES as readonly string[]).includes(seedPayload.runMode)) {
       setRunMode(seedPayload.runMode);
@@ -247,14 +252,14 @@ export function useAutoDirectorCreateController(input: UseAutoDirectorCreateCont
     setIdea(buildInitialIdea(directorBasicForm));
   }, [directorBasicForm, idea]);
 
-  const buildAutoExecutionPlanForRunMode = (): DirectorAutoExecutionPlan | undefined => {
-    if (runMode === "full_book_autopilot") {
+  const buildAutoExecutionPlanForRunMode = (mode = runMode): DirectorAutoExecutionPlan | undefined => {
+    if (mode === "full_book_autopilot") {
       return buildFullBookAutopilotExecutionPlan();
     }
-    if (runMode === "auto_to_execution") {
+    if (mode === "auto_to_execution") {
       return buildDirectorAutoExecutionPlanFromDraft(autoExecutionDraft, {
         usage: "new_book",
-        maxChapterCount: directorBasicForm.estimatedChapterCount,
+        maxChapterCount: authorEstimatedChapterCount(directorBasicForm),
       });
     }
     return undefined;
@@ -344,7 +349,6 @@ export function useAutoDirectorCreateController(input: UseAutoDirectorCreateCont
     },
   });
 
-  const latestBatch = batches.at(-1) ?? null;
   const requestIdea = idea.trim() || resolveIdeaFromCandidateBatches(batches);
   const directorTask = useMemo(() => {
     const loadedTask = directorTaskQuery.data?.data ?? null;
@@ -420,7 +424,7 @@ export function useAutoDirectorCreateController(input: UseAutoDirectorCreateCont
       seedPayload: {
         directorVersion,
         basicForm: {...directorBasicForm,
-          estimatedChapterCount: directorBasicForm.estimatedChapterCountSource === "default" ? undefined : directorBasicForm.estimatedChapterCount},
+          estimatedChapterCount: authorEstimatedChapterCount(directorBasicForm)},
         idea: nextIdea,
         batches,
         runMode,
@@ -474,9 +478,9 @@ export function useAutoDirectorCreateController(input: UseAutoDirectorCreateCont
 
   const {
     generateMutation,
-    patchCandidateMutation,
     refineTitleMutation,
   } = useNovelAutoDirectorCandidateMutations({
+    pausePolling: getNovelWorkflowAttention(directorTask) === "recovery",
     batches,
     selectedPresets,
     feedback,
@@ -489,7 +493,6 @@ export function useAutoDirectorCreateController(input: UseAutoDirectorCreateCont
     setBatches,
     setFeedback,
     setSelectedPresets,
-    setCandidatePatchFeedbacks,
     setTitlePatchFeedbacks,
     setDialogMode,
     setCandidateDialogOpen,
@@ -500,7 +503,9 @@ export function useAutoDirectorCreateController(input: UseAutoDirectorCreateCont
   const confirmMutation = useMutation({
     mutationFn: async (payload: {
       candidate: DirectorCandidate;
+      batch: DirectorCandidateBatch;
       workflowTaskId?: string;
+      mode: DirectorRunMode;
       ideaOverride?: string;
     }) => {
       const currentWorkflowTaskId = payload.workflowTaskId || await ensureWorkflowTask();
@@ -508,20 +513,20 @@ export function useAutoDirectorCreateController(input: UseAutoDirectorCreateCont
       if (!confirmIdea) {
         throw new Error("请先补充起始想法，再继续生成或确认书级方向。");
       }
-      const autoExecutionPlan = buildAutoExecutionPlanForRunMode();
+      const autoExecutionPlan = buildAutoExecutionPlanForRunMode(payload.mode);
       const response = await confirmDirectorCandidate({
         directorVersion,
-        ...buildAutoDirectorRequestPayload(directorBasicForm, confirmIdea, llm, runMode, currentWorkflowTaskId, {
+        ...buildAutoDirectorRequestPayload(directorBasicForm, confirmIdea, llm, payload.mode, currentWorkflowTaskId, {
           styleProfileId: selectedStyleProfileId,
           worldSetupMode,
           marketBriefId,
         }),
-        batchId: latestBatch?.id,
-        round: latestBatch?.round,
+        batchId: payload.batch.id,
+        round: payload.batch.round,
         candidate: payload.candidate,
         autoExecutionPlan,
         autoApproval: {
-          ...autoApprovalDraft.buildPayload(runMode),
+          ...autoApprovalDraft.buildPayload(payload.mode),
         },
         issueGovernanceVersion: issuePolicy ? 1 : undefined,
         issuePolicy: issuePolicy ?? undefined,
@@ -663,7 +668,7 @@ export function useAutoDirectorCreateController(input: UseAutoDirectorCreateCont
           lane: "auto_director",
           title: nextForm.title.trim() || undefined,
           seedPayload: {
-            basicForm: {...nextForm, estimatedChapterCount: nextForm.estimatedChapterCountSource === "default" ? undefined : nextForm.estimatedChapterCount},
+            basicForm: {...nextForm, estimatedChapterCount: authorEstimatedChapterCount(nextForm)},
             genreId: nextForm.genreId || null,
             primaryStoryModeId: nextForm.primaryStoryModeId || null,
             secondaryStoryModeId: nextForm.secondaryStoryModeId || null,
@@ -683,7 +688,6 @@ export function useAutoDirectorCreateController(input: UseAutoDirectorCreateCont
         setBatches([]);
         setFeedback("");
         setSelectedPresets([]);
-        setCandidatePatchFeedbacks({});
         setTitlePatchFeedbacks({});
         setCandidateDialogOpen(false);
         setDialogMode("candidate_selection");
@@ -710,7 +714,12 @@ export function useAutoDirectorCreateController(input: UseAutoDirectorCreateCont
     }),
   });
 
-  const performConfirmCandidate = async (candidate: DirectorCandidate, ideaOverride?: string) => {
+  const performConfirmCandidate = async (
+    candidate: DirectorCandidate,
+    batch: DirectorCandidateBatch,
+    mode: DirectorRunMode = runMode,
+    ideaOverride?: string,
+  ) => {
     if (confirmSubmitLockedRef.current || confirmMutation.isPending) {
       return;
     }
@@ -729,6 +738,8 @@ export function useAutoDirectorCreateController(input: UseAutoDirectorCreateCont
       }
       confirmMutation.mutate({
         candidate,
+        batch,
+        mode,
         workflowTaskId: currentWorkflowTaskId,
         ideaOverride,
       });
@@ -742,7 +753,11 @@ export function useAutoDirectorCreateController(input: UseAutoDirectorCreateCont
     }
   };
 
-  const handleConfirmCandidate = async (candidate: DirectorCandidate) => {
+  const handleConfirmCandidate = async (
+    candidate: DirectorCandidate,
+    batch: DirectorCandidateBatch,
+    mode: DirectorRunMode = runMode,
+  ) => {
     if (confirmSubmitLockedRef.current || confirmMutation.isPending || specClarificationMutation.isPending) {
       return;
     }
@@ -754,13 +769,13 @@ export function useAutoDirectorCreateController(input: UseAutoDirectorCreateCont
       const response = await specClarificationMutation.mutateAsync(candidate);
       const questions = response.data?.questions ?? [];
       if (questions.length > 0) {
-        setSpecClarification({ candidate, questions });
+        setSpecClarification({ candidate, batch, mode, questions });
         return;
       }
     } catch {
       // 澄清是确认前的可选项，接口异常时直接进入确认，不阻塞用户。
     }
-    await performConfirmCandidate(candidate);
+    await performConfirmCandidate(candidate, batch, mode);
   };
 
   const submitSpecClarification = (answers: NovelSpecClarificationAnswer[]) => {
@@ -770,7 +785,7 @@ export function useAutoDirectorCreateController(input: UseAutoDirectorCreateCont
     }
     const ideaOverride = composeIdeaWithClarifications(requestIdea, answers);
     setSpecClarification(null);
-    void performConfirmCandidate(current.candidate, ideaOverride);
+    void performConfirmCandidate(current.candidate, current.batch, current.mode, ideaOverride);
   };
 
   const cancelSpecClarification = () => {
@@ -819,8 +834,6 @@ export function useAutoDirectorCreateController(input: UseAutoDirectorCreateCont
     setFeedback,
     selectedPresets,
     togglePreset,
-    candidatePatchFeedbacks,
-    setCandidatePatchFeedbacks,
     titlePatchFeedbacks,
     setTitlePatchFeedbacks,
     isUpdatingFoundation,
@@ -833,12 +846,17 @@ export function useAutoDirectorCreateController(input: UseAutoDirectorCreateCont
     retryDirectorVersions: () => void versionsQuery.refetch(),
     directorVersionsError: versionsQuery.isError,
     generateMutation,
-    patchCandidateMutation,
     refineTitleMutation,
     confirmMutation,
     continueMutation,
     onBasicFormChange,
     applyCandidateTitleOption,
+    onReviewedCandidate: (batchId: string, candidate: DirectorCandidate) => {
+      setBatches(previous => previous.map(batch => batch.id !== batchId ? batch : {
+        ...batch, candidates: batch.candidates.map(current => current.id !== candidate.id ? current :
+          { ...candidate, workingTitle: current.workingTitle, titleOptions: current.titleOptions }),
+      }));
+    },
     handleConfirmCandidate,
     specClarification,
     isGeneratingSpecClarification: specClarificationMutation.isPending,

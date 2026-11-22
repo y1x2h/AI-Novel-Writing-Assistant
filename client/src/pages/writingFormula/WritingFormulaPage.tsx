@@ -9,6 +9,7 @@ import type {
 import { useNavigate, useSearchParams } from "react-router-dom";
 import OpenInCreativeHubButton from "@/components/creativeHub/OpenInCreativeHubButton";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { toast } from "@/components/ui/toast";
 import { getNovelDetail, getNovelList } from "@/api/novel";
 import { queryKeys } from "@/api/queryKeys";
 import {
@@ -374,7 +375,11 @@ export default function WritingFormulaPage() {
     },
     onSuccess: async () => {
       setMessage("写法资产保存完成。");
+      toast.success("写法资产保存完成。");
       await refreshStyleData();
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : "保存写法失败，请稍后重试。");
     },
   });
 

@@ -1,3 +1,4 @@
+import { WorkspaceColumns } from "@/components/layout/resizableWorkspace";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ListChecks, Plus, RefreshCw } from "lucide-react";
 import { useNavigate } from "react-router-dom";
@@ -271,7 +272,8 @@ export default function BookAnalysisPage() {
           ) : null}
         />
       ) : null}
-      <div className="grid gap-6 xl:grid-cols-[252px_minmax(0,1fr)]">
+      <WorkspaceColumns layoutId="book-analysis" className="grid gap-6 xl:workspace-split" gap={24} minCenter={560}
+        left={{ label: "调整拆书列表宽度", initial: "252px", min: 160 }}>
         <div className="order-2 min-w-0 xl:order-1 xl:sticky xl:top-4 xl:self-start">
           <BookAnalysisSidebar
             analysisMode={workspace.analysisMode}
@@ -393,7 +395,7 @@ export default function BookAnalysisPage() {
             />
           )}
         </div>
-      </div>
+      </WorkspaceColumns>
 
       <BookAnalysisCreateDialog
         open={createDialogOpen}
