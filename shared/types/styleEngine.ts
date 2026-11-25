@@ -643,6 +643,18 @@ export {
   styleRewriteLedgerSchema,
 } from "./styleEngine/ledger.js";
 export type { StyleRewriteLedger, StyleRewriteLedgerEntry } from "./styleEngine/ledger.js";
+export {
+  getGeneratedTextRewritableIssues,
+  hasGeneratedTextReviewIssues,
+} from "./styleEngine/generatedTextReview.js";
+export type {
+  GeneratedTextReview,
+  GeneratedTextReviewAction,
+  GeneratedTextReviewError,
+  GeneratedTextReviewResult,
+  GeneratedTextReviewSource,
+  GeneratedTextReviewStatus,
+} from "./styleEngine/generatedTextReview.js";
 
 export interface StyleDetectionViolation {
   ruleId: string;
